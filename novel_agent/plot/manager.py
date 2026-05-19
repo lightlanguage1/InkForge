@@ -4,9 +4,24 @@ from typing import List, Optional, Dict, Any
 import json
 from datetime import datetime
 
+from functools import lru_cache
+from pathlib import Path as _Path
+
+from ..configs.constants import DATA_TEMPLATES_DIR
 from ..memory.manager import MemoryManager
-from ..agent.prompts import format_plot_generation_prompt
 from ..memory.entities import PlotBeat, PlotOutline
+
+_TEMPLATE_DIR = _Path(__file__).resolve().parent.parent / DATA_TEMPLATES_DIR
+
+
+@lru_cache(maxsize=2)
+def _load_plot_template(name: str) -> str:
+    path = _TEMPLATE_DIR / f"{name}.md"
+    return path.read_text(encoding="utf-8") if path.exists() else ""
+
+
+def format_plot_generation_prompt(context: dict) -> str:
+    return _load_plot_template("plot_generation_prompt").format(**context)
 
 
 class PlotOutlineManager:

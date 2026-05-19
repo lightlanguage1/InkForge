@@ -10,8 +10,9 @@ from fastapi.responses import StreamingResponse
 
 from ..engine.core import EngineCore
 from ..configs.config import Config
-from ..cli.project import find_project_dir, load_project_state
+from ..cli.project import find_project_dir, load_project_state, get_project_config
 from ..memory.manager import MemoryManager
+from ..agent.factory import create_agent
 from ..agent.streaming_agent import StreamingStoryAgent
 from ..skill.importer import SkillImporter
 from ..skill.injector import SkillInjector
@@ -76,7 +77,15 @@ class SkillApplyRequest(BaseModel):
     mode: str = "reference"
 
 
-# ========== Engine Singleton ==========
+# ========== Helpers ==========
+
+
+def _resolve_project_path(project_id: str) -> str:
+    """将 project_id（UUID/部分路径/完整路径）解析为项目目录路径。"""
+    return find_project_dir(project_id)
+
+
+# ========== Engine Singleton (project create/list only) ==========
 
 _engine = None
 
@@ -124,16 +133,19 @@ def list_projects():
 
 
 @app.post("/api/v1/project/{project_id}/tick", response_model=TickResponse)
-def run_tick(project_id: str):
+def run_tick(project_id: str, req: TickRequest = None):
     """Execute one story generation tick."""
-    engine = get_engine()
-    project = engine.project_manager.get_or_create_project(project_id)
+    if req is None:
+        req = TickRequest(project_path="")
+    project_dir = Path(_resolve_project_path(project_id))
+    config = get_project_config(project_dir)
     try:
-        project.status = "running"
-        result = project.agent.tick()
-        project.last_tick_at = time.time()
-        project.tick_count += 1
-        project.status = "idle"
+        agent = create_agent(
+            project_dir, config,
+            llm_backend=req.llm_backend, llm_model=req.llm_model,
+            save_prompts=req.save_prompts,
+        )
+        result = agent.tick()
         return TickResponse(
             success=True,
             tick=result.get("tick", 0),
@@ -144,16 +156,16 @@ def run_tick(project_id: str):
             tension=result.get("tension"),
         )
     except Exception as e:
-        project.status = "error"
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/v1/project/{project_id}/tick/stream")
 async def run_tick_stream(project_id: str):
     """Execute one tick with SSE streaming."""
-    engine = get_engine()
-    project = engine.project_manager.get_or_create_project(project_id)
-    streaming_agent = StreamingStoryAgent(project.agent)
+    project_dir = Path(_resolve_project_path(project_id))
+    config = get_project_config(project_dir)
+    agent = create_agent(project_dir, config)
+    streaming_agent = StreamingStoryAgent(agent)
     return StreamingResponse(
         streaming_agent.tick_stream(),
         media_type="text/event-stream",
@@ -168,15 +180,12 @@ async def run_tick_stream(project_id: str):
 @app.post("/api/v1/project/{project_id}/run")
 def run_multiple_ticks(project_id: str, n: int = 5):
     """Execute N ticks in sequence."""
-    engine = get_engine()
+    project_dir = Path(_resolve_project_path(project_id))
+    config = get_project_config(project_dir)
     results = []
-    for i in range(n):
-        project = engine.project_manager.get_or_create_project(project_id)
-        project.status = "running"
-        result = project.agent.tick()
-        project.last_tick_at = time.time()
-        project.tick_count += 1
-        project.status = "idle"
+    for _ in range(n):
+        agent = create_agent(project_dir, config)
+        result = agent.tick()
         results.append({
             "tick": result.get("tick"),
             "scene_id": result.get("scene_id"),

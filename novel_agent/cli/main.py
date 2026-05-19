@@ -3,7 +3,7 @@ import typer
 from pathlib import Path
 from typing import Optional, Dict, Any
 from ..configs.config import Config
-from ..configs.constants import DEFAULT_HOST, DEFAULT_PORT, DATA_NAMES_DIR
+from ..configs.constants import DEFAULT_HOST, DEFAULT_PORT
 from .. import setup_logging
 from .project import (
     create_novel_project,
@@ -18,22 +18,7 @@ from .foundation import (
     create_foundation_from_args
 )
 from ..tools.llm_interface import initialize_llm
-from ..tools.registry import ToolRegistry
-from ..tools.memory_tools import (
-    MemorySearchTool,
-    CharacterGenerateTool,
-    LocationGenerateTool,
-    RelationshipCreateTool,
-    RelationshipUpdateTool,
-    RelationshipQueryTool,
-    FactionGenerateTool,
-    FactionUpdateTool,
-    FactionQueryTool
-)
-from ..tools.name_generator import NameGeneratorTool
 from ..memory.manager import MemoryManager
-from ..memory.vector_store import VectorStore
-from ..agent.agent import StoryAgent
 from .recent_projects import RecentProjects
 from .commands.plot import (
     get_plot_status,
@@ -406,74 +391,24 @@ def tick(
         # Load config
         config = get_project_config(project_dir)
         
-        # Determine LLM backend configuration
-        backend = llm_backend or config.get('llm.backend', 'codex')
-        codex_bin_effective = codex_bin or config.get('llm.codex_bin_path', 'codex')
-        # Prefer generic llm.model, fall back to legacy openai_model, then default
-        model = (
-            llm_model
-            or config.get('llm.model')
-            or config.get('llm.openai_model', 'gpt-5')
-        )
-        
         # Show prompt saving status
         if save_prompts:
             typer.echo(f"    保存提示词到：{project_dir}/prompts/")
 
         current_tick = state['current_tick']
         typer.echo(f"   当前幕数：{current_tick}")
-        
-        # Initialize LLM backend
+
+        # Assemble agent via shared factory
         try:
-            llm = initialize_llm(
-                backend=backend,
-                codex_bin=codex_bin_effective,
-                model=model,
-                temperature=config.get('llm.temperature', 0.7),
-                top_p=config.get('llm.top_p', 0.8),
-                top_k=config.get('llm.top_k', 20),
-                min_p=config.get('llm.min_p', 0.0),
-                repeat_penalty=config.get('llm.repeat_penalty', 1.0),
-                enable_thinking=config.get('llm.enable_thinking', False),
+            agent = create_agent(
+                project_dir, config,
+                llm_backend=llm_backend, llm_model=llm_model,
+                codex_bin=codex_bin, save_prompts=save_prompts,
             )
-            typer.echo(f"[OK] LLM 后端已初始化：{backend}")
+            typer.echo(f"[OK] LLM 后端已初始化：{llm_backend or config.get('llm.backend', 'codex')}")
         except RuntimeError as e:
             typer.echo(f"[ERR] {e}", err=True)
             raise typer.Exit(1)
-        
-        # Initialize tool registry
-        typer.echo(f" 注册工具...")
-        tool_registry = ToolRegistry()
-        
-        # Initialize memory components
-        memory_manager = MemoryManager(project_dir)
-        vector_store = VectorStore(project_dir)
-        
-        # Register all tools
-        # Get data directory for name generator
-        data_dir = Path(__file__).parent.parent / DATA_NAMES_DIR
-        name_gen_tool = NameGeneratorTool(data_dir)
-        
-        # Get beat_mode for strict name generation enforcement
-        beat_mode = config.get('plot.beat_mode', 'soft_hint')
-        
-        tool_registry.register(name_gen_tool)
-        tool_registry.register(MemorySearchTool(memory_manager, vector_store))
-        tool_registry.register(CharacterGenerateTool(memory_manager, vector_store, name_gen_tool.generator, beat_mode=beat_mode))
-        tool_registry.register(LocationGenerateTool(memory_manager, vector_store))
-        tool_registry.register(RelationshipCreateTool(memory_manager))
-        tool_registry.register(RelationshipUpdateTool(memory_manager))
-        tool_registry.register(RelationshipQueryTool(memory_manager))
-        # Faction tools
-        tool_registry.register(FactionGenerateTool(memory_manager, vector_store, name_gen_tool.generator))
-        tool_registry.register(FactionUpdateTool(memory_manager, vector_store))
-        tool_registry.register(FactionQueryTool(memory_manager, vector_store))
-        
-        typer.echo(f"   已注册 {len(tool_registry)} 个工具")
-
-        # Create agent
-        typer.echo(f" 初始化故事代理...")
-        agent = StoryAgent(project_dir, llm, tool_registry, config, save_prompts=save_prompts)
 
         # Execute tick
         typer.echo(f"\n  执行第 {current_tick} 幕...")
@@ -640,52 +575,12 @@ def run(
                 config = get_project_config(project_dir)
                 current_tick = state['current_tick']
                 
-                # Initialize LLM backend
-                backend = llm_backend or config.get('llm.backend', 'codex')
-                codex_bin_effective = codex_bin or config.get('llm.codex_bin_path', 'codex')
-                model = (
-                    llm_model
-                    or config.get('llm.model')
-                    or config.get('llm.openai_model', 'gpt-5.1')
+                from ..agent.factory import create_agent
+                agent = create_agent(
+                    project_dir, config,
+                    llm_backend=llm_backend, llm_model=llm_model,
+                    codex_bin=codex_bin, save_prompts=False,
                 )
-                llm = initialize_llm(
-                    backend=backend,
-                    codex_bin=codex_bin_effective,
-                    model=model,
-                    temperature=config.get('llm.temperature', 0.7),
-                    top_p=config.get('llm.top_p', 0.8),
-                    top_k=config.get('llm.top_k', 20),
-                    min_p=config.get('llm.min_p', 0.0),
-                    repeat_penalty=config.get('llm.repeat_penalty', 1.0),
-                    enable_thinking=config.get('llm.enable_thinking', False),
-                )
-                
-                # Initialize tool registry
-                tool_registry = ToolRegistry()
-                memory_manager = MemoryManager(project_dir)
-                vector_store = VectorStore(project_dir)
-                
-                # Get data directory for name generator
-                data_dir = Path(__file__).parent.parent / DATA_NAMES_DIR
-                name_gen_tool = NameGeneratorTool(data_dir)
-                
-                # Get beat_mode for strict name generation enforcement
-                beat_mode = config.get('plot.beat_mode', 'soft_hint')
-                
-                tool_registry.register(name_gen_tool)
-                tool_registry.register(MemorySearchTool(memory_manager, vector_store))
-                tool_registry.register(CharacterGenerateTool(memory_manager, vector_store, name_gen_tool.generator, beat_mode=beat_mode))
-                tool_registry.register(LocationGenerateTool(memory_manager, vector_store))
-                tool_registry.register(RelationshipCreateTool(memory_manager))
-                tool_registry.register(RelationshipUpdateTool(memory_manager))
-                tool_registry.register(RelationshipQueryTool(memory_manager))
-                # Faction tools
-                tool_registry.register(FactionGenerateTool(memory_manager, vector_store, name_gen_tool.generator))
-                tool_registry.register(FactionUpdateTool(memory_manager, vector_store))
-                tool_registry.register(FactionQueryTool(memory_manager, vector_store))
-
-                # Create agent
-                agent = StoryAgent(project_dir, llm, tool_registry, config)
                 
                 # Execute tick
                 result = agent.tick()

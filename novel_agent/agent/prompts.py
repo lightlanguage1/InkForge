@@ -83,5 +83,3 @@ def format_fact_extraction_prompt(context: dict) -> str:
     return _format("fact_extraction_prompt", context)
 
 
-def format_plot_generation_prompt(context: dict) -> str:
-    return _format("plot_generation_prompt", context)
