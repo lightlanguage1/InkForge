@@ -17,6 +17,7 @@ from .foundation import (
     load_foundation_from_file,
     create_foundation_from_args
 )
+from ..agent.factory import create_agent
 from ..tools.llm_interface import initialize_llm
 from ..memory.manager import MemoryManager
 from .recent_projects import RecentProjects
