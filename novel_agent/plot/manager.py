@@ -6,7 +6,7 @@ from datetime import datetime
 
 from ..memory.manager import MemoryManager
 from ..agent.prompts import format_plot_generation_prompt
-from .entities import PlotBeat, PlotOutline
+from ..memory.entities import PlotBeat, PlotOutline
 
 
 class PlotOutlineManager:
@@ -88,6 +88,14 @@ class PlotOutlineManager:
                 return b
         return None
 
+    def validate_outline(self, outline: "PlotOutline") -> list:
+        """Validate outline consistency. Returns list of issue strings.
+
+        Currently a stub — returns empty list (no issues detected).
+        Future: check beat dependencies, status transitions, etc.
+        """
+        return []
+
     # ---------- Utilities ----------
     def _build_generation_context(self, count: int) -> Dict[str, Any]:
         state = self._load_state()
@@ -144,7 +152,7 @@ class PlotOutlineManager:
             try:
                 data = json.loads(json_str)
             except Exception as e:
-                print(f"        ⚠️  JSON parse error: {e}")
+                print(f"        [WARN]  JSON parse error: {e}")
                 data = None
         
         if not data:
@@ -178,7 +186,7 @@ class PlotOutlineManager:
     def _load_state(self) -> Dict[str, Any]:
         state_path = self.project_dir / "state.json"
         try:
-            with open(state_path) as f:
+            with open(state_path, encoding='utf-8') as f:
                 return json.load(f)
         except Exception:
             return {}

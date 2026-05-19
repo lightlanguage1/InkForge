@@ -18,28 +18,20 @@ class CharacterDetector:
         self.memory = memory_manager
         self.config = config
         
-        # Common titles and honorifics to help identify names
         self.titles = {
-            'Mr', 'Mrs', 'Ms', 'Miss', 'Dr', 'Doctor', 'Professor', 'Prof',
-            'Captain', 'Lieutenant', 'Sergeant', 'Major', 'Colonel', 'General',
-            'Lord', 'Lady', 'Sir', 'Dame', 'Agent', 'Detective', 'Officer'
+            '先生', '女士', '小姐', '博士', '医生', '教授', '老师',
+            '队长', '长官', '上尉', '少校', '上校', '将军', '大校',
+            '老板', '大师', '前辈', '道长', '少侠', '姑娘', '公子',
+            '夫人', '大人', '阁主', '掌门',
         }
-        
-        # Words that are often capitalized but aren't names
-        self.common_false_positives = {
-            'I', 'The', 'A', 'An', 'And', 'But', 'Or', 'So', 'Yet', 'For',
-            'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
-            'January', 'February', 'March', 'April', 'May', 'June', 'July',
-            'August', 'September', 'October', 'November', 'December',
-            'Earth', 'Mars', 'Moon', 'Sun', 'God', 'Gods'
-        }
-        
-        # Common prefixes that indicate non-character entities
+
+        self.common_false_positives = set()
+
         self.non_character_prefixes = {
-            'Project', 'Operation', 'Mission', 'Protocol', 'System', 'Program',
-            'Initiative', 'Plan', 'Code', 'File', 'Database', 'Network',
-            'Corporation', 'Company', 'Agency', 'Department', 'Division',
-            'Ship', 'Station', 'Base', 'Facility', 'Building', 'Tower'
+            '项目', '行动', '任务', '协议', '系统', '程序',
+            '计划', '代码', '文件', '数据', '网络',
+            '公司', '部门', '组织', '机构',
+            '飞船', '基地', '设施', '大楼',
         }
     
     def detect_character_names(self, scene_text: str) -> List[str]:

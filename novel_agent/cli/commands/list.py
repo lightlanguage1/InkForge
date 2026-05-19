@@ -213,19 +213,19 @@ def list_factions(project_dir: Path, verbose: bool = False) -> List[Dict[str, An
 
 def display_factions(factions: List[Dict[str, Any]], verbose: bool = False):
     """Display factions in formatted output."""
-    print(f"\n🏛️  Factions ({len(factions)} total)\n")
+    print(f"\n  势力（共 {len(factions)} 个）\n")
     if not factions:
-        print("  (none)")
+        print("  （无）")
         return
     if verbose:
         for f in factions:
             print(f"  {f['id']}  {f['name']}")
-            print(f"      Type: {f.get('org_type','')}")
-            print(f"      Importance: {f.get('importance','')}")
+            print(f"      类型：{f.get('org_type','')}")
+            print(f"      重要性：{f.get('importance','')}")
             if f.get('summary'):
                 print(f"      Summary: {f['summary'][:80]}...")
             if f.get('tags'):
-                print(f"      Tags: {', '.join(f['tags'])}")
+                print(f"      标签：{', '.join(f['tags'])}")
             print()
     else:
         headers = ['id', 'name', 'org_type', 'importance']
@@ -242,7 +242,7 @@ def display_table(items: List[Dict[str, Any]], headers: List[str], format_func=N
         format_func: Optional function to format each row
     """
     if not items:
-        print("  (none)")
+        print("  （无）")
         return
     
     # Calculate column widths
@@ -268,17 +268,17 @@ def display_table(items: List[Dict[str, Any]], headers: List[str], format_func=N
 
 def display_characters(characters: List[Dict[str, Any]], verbose: bool = False):
     """Display characters in formatted output."""
-    print(f"\n👥 Characters ({len(characters)} total)\n")
+    print(f"\n 角色（共 {len(characters)} 个）\n")
     
     if not characters:
-        print("  (none)")
+        print("  （无）")
         return
     
     if verbose:
         for char in characters:
             print(f"  {char['id']}  {char['name']}")
-            print(f"      Role: {char['role']}")
-            print(f"      Type: {char['type']}")
+            print(f"      职能：{char['role']}")
+            print(f"      类型：{char['type']}")
             if char.get('description'):
                 print(f"      Description: {char['description'][:80]}...")
             print()
@@ -291,10 +291,10 @@ def display_characters(characters: List[Dict[str, Any]], verbose: bool = False):
 
 def display_locations(locations: List[Dict[str, Any]], verbose: bool = False):
     """Display locations in formatted output."""
-    print(f"\n🗺️  Locations ({len(locations)} total)\n")
+    print(f"\n  地点（共 {len(locations)} 个）\n")
     
     if not locations:
-        print("  (none)")
+        print("  （无）")
         return
     
     if verbose:
@@ -314,15 +314,15 @@ def display_locations(locations: List[Dict[str, Any]], verbose: bool = False):
 
 def display_loops(loops: List[Dict[str, Any]], verbose: bool = False):
     """Display open loops in formatted output."""
-    print(f"\n🔗 Open Loops ({len(loops)} total)\n")
+    print(f"\n Open Loops ({len(loops)} total)\n")
     
     if not loops:
-        print("  (none)")
+        print("  （无）")
         return
     
     if verbose:
         for loop in loops:
-            status_icon = "✓" if loop['status'] == 'resolved' else "○"
+            status_icon = "[v]" if loop['status'] == 'resolved' else "○"
             print(f"  {status_icon} {loop['id']}  Priority: {loop['priority']}")
             print(f"      {loop['description']}")
             if loop.get('created_in_scene'):
@@ -339,10 +339,10 @@ def display_loops(loops: List[Dict[str, Any]], verbose: bool = False):
 
 def display_scenes(scenes: List[Dict[str, Any]], verbose: bool = False):
     """Display scenes in formatted output."""
-    print(f"\n📝 Scenes ({len(scenes)} total)\n")
+    print(f"\n Scenes ({len(scenes)} total)\n")
     
     if not scenes:
-        print("  (none)")
+        print("  （无）")
         return
     
     if verbose:

@@ -19,7 +19,8 @@ class NameGenerator:
         self.data_dir = Path(data_dir)
         self.scifi_data = self._load_json("scifi_syllables.json")
         self.titles_data = self._load_json("titles.json")
-        self.used_names = set()  # Track used names for uniqueness
+        self.chinese_surnames = self._load_json("chinese_surnames.json")
+        self.used_names = set()
         self.vowels = set('aeiou')
         self.consonants = set('bcdfghjklmnpqrstvwxyz')
     
@@ -97,7 +98,32 @@ class NameGenerator:
             f"Could not generate unique name after {max_attempts} attempts. "
             f"Used names: {len(self.used_names)}"
         )
-    
+
+    def generate_chinese_name(self) -> Dict[str, str]:
+        """Pick a Chinese surname from the Hundred Family Surnames list.
+
+        The given name is expected to be provided by the LLM based on story
+        context; this method supplies only the surname as a fallback when
+        the LLM hasn't provided a complete name.
+        """
+        surname = random.choice(self.chinese_surnames)
+        for _ in range(50):
+            if surname not in self.used_names:
+                self.used_names.add(surname)
+                return {
+                    "full_name": surname,
+                    "first_name": "",
+                    "family_name": surname,
+                    "title": "",
+                }
+            surname = random.choice(self.chinese_surnames)
+        return {
+            "full_name": surname,
+            "first_name": "",
+            "family_name": surname,
+            "title": "",
+        }
+
     def _generate_syllable_name(
         self,
         syllable_data: dict,

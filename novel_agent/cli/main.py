@@ -3,6 +3,8 @@ import typer
 from pathlib import Path
 from typing import Optional, Dict, Any
 from ..configs.config import Config
+from ..configs.constants import DEFAULT_HOST, DEFAULT_PORT, DATA_NAMES_DIR
+from .. import setup_logging
 from .project import (
     create_novel_project,
     find_project_dir,
@@ -15,7 +17,7 @@ from .foundation import (
     load_foundation_from_file,
     create_foundation_from_args
 )
-from ..tools.llm_interface import initialize_llm, send_prompt
+from ..tools.llm_interface import initialize_llm
 from ..tools.registry import ToolRegistry
 from ..tools.memory_tools import (
     MemorySearchTool,
@@ -46,13 +48,13 @@ from .commands.plot import (
 
 def _show_stage_stats(stats: dict):
     """Display multi-stage planner statistics."""
-    typer.echo(f"\n📊 Multi-Stage Planning Stats:")
-    typer.echo(f"   Stage 1 (Strategic): {stats.get('stage1_tokens', 0)} tokens, {stats.get('stage1_time', 0):.2f}s")
-    typer.echo(f"   Stage 2 (Semantic): {stats.get('stage2_items', 0)} items, {stats.get('stage2_time', 0):.2f}s")
-    typer.echo(f"   Stage 3 (Tactical): {stats.get('stage3_tokens', 0)} tokens, {stats.get('stage3_time', 0):.2f}s")
+    typer.echo(f"\n 多阶段规划统计：")
+    typer.echo(f"   阶段1（战略）：{stats.get('stage1_tokens', 0)} tokens，{stats.get('stage1_time', 0):.2f}s")
+    typer.echo(f"   阶段2（语义）：{stats.get('stage2_items', 0)} 项，{stats.get('stage2_time', 0):.2f}s")
+    typer.echo(f"   阶段3（战术）：{stats.get('stage3_tokens', 0)} tokens，{stats.get('stage3_time', 0):.2f}s")
     total_time = stats.get('stage1_time', 0) + stats.get('stage2_time', 0) + stats.get('stage3_time', 0)
     total_tokens = stats.get('stage1_tokens', 0) + stats.get('stage3_tokens', 0)
-    typer.echo(f"   Total: {total_tokens} tokens, {total_time:.2f}s")
+    typer.echo(f"   合计：{total_tokens} tokens，{total_time:.2f}s")
 
 
 def _show_story_stats(project_dir: Path, state: dict):
@@ -81,15 +83,15 @@ def _show_story_stats(project_dir: Path, state: dict):
     
     avg_tension = sum(tensions) / len(tensions) if tensions else 0
     
-    typer.echo(f"\n📖 Story Stats:")
-    typer.echo(f"   Scenes: {len(scene_ids)} ({total_words:,} words)")
-    typer.echo(f"   Characters: {len(all_chars)}")
-    typer.echo(f"   Locations: {len(all_locs)}")
-    typer.echo(f"   Factions: {len(all_factions)}")
-    typer.echo(f"   Open Loops: {len(all_loops)}")
-    typer.echo(f"   Lore Items: {len(all_lore)}")
+    typer.echo(f"\n 故事统计：")
+    typer.echo(f"   章节：{len(scene_ids)}（共 {total_words:,} 字）")
+    typer.echo(f"   角色：{len(all_chars)}")
+    typer.echo(f"   地点：{len(all_locs)}")
+    typer.echo(f"   势力：{len(all_factions)}")
+    typer.echo(f"   悬念线索：{len(all_loops)}")
+    typer.echo(f"   世界观条目：{len(all_lore)}")
     if tensions:
-        typer.echo(f"   Avg Tension: {avg_tension:.1f}/10")
+        typer.echo(f"   平均张力：{avg_tension:.1f}/10")
 
 
 def _prompt_for_llm_selection() -> tuple[str, str]:
@@ -103,16 +105,17 @@ def _prompt_for_llm_selection() -> tuple[str, str]:
     config = Config()
 
     default_backend = config.get("llm.backend", "codex")
-    typer.echo("\n🧠 LLM Backend & Model")
-    typer.echo("Select which LLM backend this project will use. This choice is "
-               "stored in the project's config.yaml and used by `novel tick`/`run` "
-               "unless you override it on the CLI.\n")
+    typer.echo("\n LLM 后端与模型")
+    typer.echo("请选择本项目使用的 LLM 后端。"
+               "该选择将存储在项目的 config.yaml 中，供 `novel tick`/`run` 使用，"
+               "除非在 CLI 中覆盖。\n")
 
     options = [
-        ("codex", "Codex CLI (default; uses local `codex` binary)"),
-        ("api", "API backend (OpenAI GPT-5.x, Claude 4.5, Gemini 2.5 Pro)"),
-        ("gemini-cli", "Gemini CLI (local `gemini` binary)"),
-        ("claude-cli", "Claude Code CLI (local `claude` binary)"),
+        ("ollama", "Ollama（本地模型，推荐）"),
+        ("codex", "Codex CLI（使用本地 `codex` 二进制）"),
+        ("api", "API 后端（OpenAI GPT-5.x、Claude 4.5、Gemini 2.5 Pro）"),
+        ("gemini-cli", "Gemini CLI（本地 `gemini` 二进制）"),
+        ("claude-cli", "Claude Code CLI（本地 `claude` 二进制）"),
     ]
 
     # Determine which option index corresponds to the current default backend
@@ -122,31 +125,33 @@ def _prompt_for_llm_selection() -> tuple[str, str]:
             default_index = idx
             break
 
-    typer.echo("Available backends:")
+    typer.echo("可用后端：")
     for idx, (value, label) in enumerate(options, start=1):
-        marker = " (default)" if value == default_backend else ""
+        marker = "（默认）" if value == default_backend else ""
         typer.echo(f"  {idx}. {label}{marker}")
 
     # Prompt for backend choice
     backend: Optional[str] = None
     while backend is None:
         choice = typer.prompt(
-            "Choose LLM backend [1-4]",
+            f"选择 LLM 后端 [1-{len(options)}]",
             default=str(default_index),
         ).strip()
         try:
             idx = int(choice)
         except ValueError:
-            typer.echo("Please enter a number between 1 and 4.")
+            typer.echo(f"请输入 1 到 {len(options)} 之间的数字。")
             continue
 
         if 1 <= idx <= len(options):
             backend = options[idx - 1][0]
         else:
-            typer.echo("Please enter a number between 1 and 4.")
+            typer.echo(f"请输入 1 到 {len(options)} 之间的数字。")
 
     # Choose a sensible default model for the selected backend
-    if backend == "gemini-cli":
+    if backend == "ollama":
+        default_model = "qwen3:8b"
+    elif backend == "gemini-cli":
         default_model = "gemini-2.5-pro"
     elif backend == "claude-cli":
         default_model = "claude-4.5"
@@ -158,10 +163,10 @@ def _prompt_for_llm_selection() -> tuple[str, str]:
         )
 
     typer.echo(
-        f"\nModel name for backend '{backend}' "
-        f"(press Enter to use default: {default_model})"
+        f"\n后端 '{backend}' 的模型名称"
+        f"（直接回车使用默认：{default_model}）"
     )
-    model = typer.prompt("Model", default=default_model).strip()
+    model = typer.prompt("模型", default=default_model).strip()
     if not model:
         model = default_model
 
@@ -176,6 +181,9 @@ app = typer.Typer(
 
 plot_app = typer.Typer(name="plot", help="Plot outline (PlotBeat Phase 3) commands")
 app.add_typer(plot_app, name="plot")
+
+skill_app = typer.Typer(name="skill", help="Writing skill import and management")
+app.add_typer(skill_app, name="skill")
 
 
 @app.command()
@@ -274,7 +282,7 @@ def new(
         elif foundation_file:
             # Load from file
             foundation = load_foundation_from_file(foundation_file)
-            typer.echo(f"✅ Loaded foundation from: {foundation_file}")
+            typer.echo(f"[OK] 已加载故事基础设定：{foundation_file}")
         else:
             # Try to create from command-line args (may return None)
             foundation = create_foundation_from_args(
@@ -295,31 +303,31 @@ def new(
             llm_model=llm_model_override,
             plot_config=plot_config,
         )
-        typer.echo(f"✅ Created novel project: {project_dir}")
+        typer.echo(f"[OK] 已创建小说项目：{project_dir}")
         
         if foundation:
-            typer.echo(f"\n📚 Story foundation set:")
-            typer.echo(f"   Genre: {foundation.genre}")
-            typer.echo(f"   Setting: {foundation.setting}")
+            typer.echo(f"\n 故事基础设定：")
+            typer.echo(f"   类型：{foundation.genre}")
+            typer.echo(f"   背景：{foundation.setting}")
         
         if plot_config and plot_config.get("use_plot_first"):
-            typer.echo(f"\n📋 Plot-first mode enabled:")
+            typer.echo(f"\n 情节优先模式已启用：")
             if not plot_config.get("allow_beat_skip") and not plot_config.get("fallback_to_reactive"):
-                typer.echo(f"   Mode: Strict (beats enforced)")
+                typer.echo(f"   模式：严格（强制执行节拍）")
             else:
-                typer.echo(f"   Mode: Lenient/Standard")
-            typer.echo(f"   Beats will auto-generate starting from tick 2")
-        
-        typer.echo(f"\n📝 Next steps:")
+                typer.echo(f"   模式：宽松/标准")
+            typer.echo(f"   节拍将从第2幕开始自动生成")
+
+        typer.echo(f"\n 下一步：")
         typer.echo(f"  cd {project_dir}")
-        typer.echo(f"  novel tick  # Run a few ticks to establish characters/world")
+        typer.echo(f"  novel tick  # 运行几幕以建立角色/世界")
         if plot_config and plot_config.get("use_plot_first"):
-            typer.echo(f"  # Plot beats will auto-generate from tick 2 onwards")
+            typer.echo(f"  # 情节节拍将从第2幕起自动生成")
     except ValueError as e:
-        typer.echo(f"❌ Error: {e}", err=True)
+        typer.echo(f"[ERR] 错误：{e}", err=True)
         raise typer.Exit(1)
     except IOError as e:
-        typer.echo(f"❌ Error creating project: {e}", err=True)
+        typer.echo(f"[ERR] 创建项目失败：{e}", err=True)
         raise typer.Exit(1)
 
 
@@ -351,19 +359,27 @@ def tick(
         "--codex-bin",
         help="Path to Codex CLI binary"
     ),
+    notes: Optional[str] = typer.Option(
+        None,
+        "--notes",
+        "-n",
+        help="Direction notes for this scene (injected into planner + writer). "
+             "Use for scene steering, tone shifts, if-lines, POV experiments, etc."
+    ),
 ):
     """Run one story generation tick.
-    
+
     Executes the full story generation pipeline:
     - Planning with LLM
     - Tool execution
     - Scene prose generation
     - Quality evaluation
     - Scene commit to disk and memory
-    
+
     Example:
         novel tick
         novel tick --project ~/novels/my-story
+        novel tick --notes "本场景描写两位主角在月光下的温泉中互诉衷肠"
     """
     # When tick() is called programmatically (e.g., from resume()), Typer
     # may pass OptionInfo objects instead of plain strings for llm_* args.
@@ -380,7 +396,7 @@ def tick(
     try:
         # Find project directory
         project_dir = Path(find_project_dir(project))
-        typer.echo(f"📖 Running tick for project: {project_dir}")
+        typer.echo(f" 正在为项目生成内容：{project_dir}")
         
         # Track as recent project
         recent = RecentProjects()
@@ -402,10 +418,10 @@ def tick(
         
         # Show prompt saving status
         if save_prompts:
-            typer.echo(f"   💾 Saving prompts to: {project_dir}/prompts/")
-        
+            typer.echo(f"    保存提示词到：{project_dir}/prompts/")
+
         current_tick = state['current_tick']
-        typer.echo(f"   Current tick: {current_tick}")
+        typer.echo(f"   当前幕数：{current_tick}")
         
         # Initialize LLM backend
         try:
@@ -413,14 +429,20 @@ def tick(
                 backend=backend,
                 codex_bin=codex_bin_effective,
                 model=model,
+                temperature=config.get('llm.temperature', 0.7),
+                top_p=config.get('llm.top_p', 0.8),
+                top_k=config.get('llm.top_k', 20),
+                min_p=config.get('llm.min_p', 0.0),
+                repeat_penalty=config.get('llm.repeat_penalty', 1.0),
+                enable_thinking=config.get('llm.enable_thinking', False),
             )
-            typer.echo(f"✅ LLM backend initialized: {backend}")
+            typer.echo(f"[OK] LLM 后端已初始化：{backend}")
         except RuntimeError as e:
-            typer.echo(f"❌ {e}", err=True)
+            typer.echo(f"[ERR] {e}", err=True)
             raise typer.Exit(1)
         
         # Initialize tool registry
-        typer.echo(f"🔧 Registering tools...")
+        typer.echo(f" 注册工具...")
         tool_registry = ToolRegistry()
         
         # Initialize memory components
@@ -429,7 +451,7 @@ def tick(
         
         # Register all tools
         # Get data directory for name generator
-        data_dir = Path(__file__).parent.parent / "data" / "names"
+        data_dir = Path(__file__).parent.parent / DATA_NAMES_DIR
         name_gen_tool = NameGeneratorTool(data_dir)
         
         # Get beat_mode for strict name generation enforcement
@@ -447,45 +469,46 @@ def tick(
         tool_registry.register(FactionUpdateTool(memory_manager, vector_store))
         tool_registry.register(FactionQueryTool(memory_manager, vector_store))
         
-        typer.echo(f"   Registered {len(tool_registry)} tools")
-        
+        typer.echo(f"   已注册 {len(tool_registry)} 个工具")
+
         # Create agent
-        typer.echo(f"🤖 Initializing story agent...")
+        typer.echo(f" 初始化故事代理...")
         agent = StoryAgent(project_dir, llm, tool_registry, config, save_prompts=save_prompts)
-        
+
         # Execute tick
-        typer.echo(f"\n⚙️  Executing tick {current_tick}...")
+        typer.echo(f"\n  执行第 {current_tick} 幕...")
         
-        result = agent.tick()
-        
-        typer.echo(f"\n✅ Tick {current_tick} completed successfully!")
-        typer.echo(f"   📋 Plan: {result['plan_file']}")
-        typer.echo(f"   📝 Scene: {result['scene_file']}")
-        typer.echo(f"   📊 Word count: {result['word_count']}")
-        typer.echo(f"   🔧 Actions: {result['actions_executed']}")
+        result = agent.tick(notes=notes or "")
+
+        if notes:
+            typer.echo(f"\n   方向指导：{notes[:60]}{'...' if len(notes) > 60 else ''}")
+        typer.echo(f"\n[OK] 第 {current_tick} 幕生成完成！")
+        typer.echo(f"    场景：{result.get('scene_file', '?')}")
+        typer.echo(f"    字数：{result.get('word_count', 0)}")
+        typer.echo(f"    动作：{result.get('actions_executed', 0)}")
         
         # Show entity updates if any
         entities = result.get('entities_updated', {})
         if entities and any(entities.values()):
-            typer.echo(f"\n   📊 Entity Updates:")
+            typer.echo(f"\n    实体更新：")
             if entities.get('characters_updated'):
-                typer.echo(f"      👤 Characters: {entities['characters_updated']}")
+                typer.echo(f"       角色：{entities['characters_updated']}")
             if entities.get('locations_updated'):
-                typer.echo(f"      📍 Locations: {entities['locations_updated']}")
+                typer.echo(f"       地点：{entities['locations_updated']}")
             if entities.get('loops_created'):
-                typer.echo(f"      🔄 Loops created: {entities['loops_created']}")
+                typer.echo(f"       新增线索：{entities['loops_created']}")
             if entities.get('loops_resolved'):
-                typer.echo(f"      ✓ Loops resolved: {entities['loops_resolved']}")
+                typer.echo(f"      [v] 已解决线索：{entities['loops_resolved']}")
             if entities.get('relationships_updated'):
-                typer.echo(f"      🤝 Relationships: {entities['relationships_updated']}")
+                typer.echo(f"       关系：{entities['relationships_updated']}")
         
         # Show warnings if any
         if result.get('eval_warnings'):
-            typer.echo(f"\n   ⚠️  Warnings: {len(result['eval_warnings'])}")
+            typer.echo(f"\n   [WARN]  警告：{len(result['eval_warnings'])}")
             for warning in result['eval_warnings']:
                 typer.echo(f"      - {warning}")
-        
-        typer.echo(f"\n   ⏭️  Next tick: {current_tick + 1}")
+
+        typer.echo(f"\n   ⏭  下一幕：{current_tick + 1}")
         
         # Show multi-stage planner stats if available (Phase 7A.5)
         if result.get('stage_stats'):
@@ -496,21 +519,21 @@ def tick(
         
     except RuntimeError as e:
         # Tool execution error - details saved to /errors/
-        typer.echo(f"\n❌ Tick execution failed", err=True)
-        typer.echo(f"   Error: {str(e)}", err=True)
-        typer.echo(f"\n📋 Error details saved to {project_dir}/errors/", err=True)
-        typer.echo(f"\n🔧 Recovery options:", err=True)
-        typer.echo(f"   1. Fix the issue and run 'novel tick' again", err=True)
-        typer.echo(f"   2. Manually edit the plan file", err=True)
-        typer.echo(f"   3. Skip this tick (edit state.json)", err=True)
+        typer.echo(f"\n[ERR] 幕生成失败", err=True)
+        typer.echo(f"   错误：{str(e)}", err=True)
+        typer.echo(f"\n 错误详情已保存至 {project_dir}/errors/", err=True)
+        typer.echo(f"\n 恢复选项：", err=True)
+        typer.echo(f"   1. 修复问题后重新运行 'novel tick'", err=True)
+        typer.echo(f"   2. 手动编辑计划文件", err=True)
+        typer.echo(f"   3. 跳过此幕（编辑 state.json）", err=True)
         raise typer.Exit(1)
-    
+
     except ValueError as e:
-        typer.echo(f"❌ Validation error: {e}", err=True)
+        typer.echo(f"[ERR] 验证错误：{e}", err=True)
         raise typer.Exit(1)
-    
+
     except Exception as e:
-        typer.echo(f"❌ Unexpected error: {e}", err=True)
+        typer.echo(f"[ERR] 意外错误：{e}", err=True)
         import traceback
         typer.echo(traceback.format_exc(), err=True)
         raise typer.Exit(1)
@@ -572,7 +595,7 @@ def run(
     
     try:
         project_dir = Path(find_project_dir(project))
-        typer.echo(f"📖 Running {n} ticks for project: {project_dir}")
+        typer.echo(f" 正在为项目生成 {n} 幕：{project_dir}")
         
         # Track as recent project
         recent = RecentProjects()
@@ -587,12 +610,12 @@ def run(
             or config.get('llm.model')
             or config.get('llm.openai_model', 'gpt-5.1')
         )
-        typer.echo(f"🤖 LLM backend: {backend_display} (model={model_display})")
-        
+        typer.echo(f" LLM 后端：{backend_display}（模型={model_display}）")
+
         if checkpoint_interval > 0:
-            typer.echo(f"💾 Checkpoints enabled (every {checkpoint_interval} ticks)\n")
+            typer.echo(f" 存档已启用（每 {checkpoint_interval} 幕存档一次）\n")
         else:
-            typer.echo(f"💾 Checkpoints disabled\n")
+            typer.echo(f" 存档已禁用\n")
         
         # Track last checkpoint
         state = load_project_state(project_dir)
@@ -607,7 +630,7 @@ def run(
         successful_ticks = 0
         
         for i in range(n):
-            typer.echo(f"--- Tick {i+1}/{n} ---")
+            typer.echo(f"--- 第 {i+1}/{n} 幕 ---")
             
             # Execute single tick by calling tick() logic
             # We need to import and reuse the tick logic here
@@ -629,6 +652,12 @@ def run(
                     backend=backend,
                     codex_bin=codex_bin_effective,
                     model=model,
+                    temperature=config.get('llm.temperature', 0.7),
+                    top_p=config.get('llm.top_p', 0.8),
+                    top_k=config.get('llm.top_k', 20),
+                    min_p=config.get('llm.min_p', 0.0),
+                    repeat_penalty=config.get('llm.repeat_penalty', 1.0),
+                    enable_thinking=config.get('llm.enable_thinking', False),
                 )
                 
                 # Initialize tool registry
@@ -637,7 +666,7 @@ def run(
                 vector_store = VectorStore(project_dir)
                 
                 # Get data directory for name generator
-                data_dir = Path(__file__).parent.parent / "data" / "names"
+                data_dir = Path(__file__).parent.parent / DATA_NAMES_DIR
                 name_gen_tool = NameGeneratorTool(data_dir)
                 
                 # Get beat_mode for strict name generation enforcement
@@ -652,16 +681,18 @@ def run(
                 tool_registry.register(RelationshipQueryTool(memory_manager))
                 # Faction tools
                 tool_registry.register(FactionGenerateTool(memory_manager, vector_store, name_gen_tool.generator))
-                
+                tool_registry.register(FactionUpdateTool(memory_manager, vector_store))
+                tool_registry.register(FactionQueryTool(memory_manager, vector_store))
+
                 # Create agent
                 agent = StoryAgent(project_dir, llm, tool_registry, config)
                 
                 # Execute tick
                 result = agent.tick()
                 
-                typer.echo(f"   ✅ Tick {current_tick} completed")
-                typer.echo(f"   📝 Scene: {result['scene_file']}")
-                typer.echo(f"   📊 Words: {result['word_count']}\n")
+                typer.echo(f"   [OK] 第 {current_tick} 幕已完成")
+                typer.echo(f"    场景：{result['scene_file']}")
+                typer.echo(f"    字数：{result['word_count']}\n")
                 
                 successful_ticks += 1
                 
@@ -669,30 +700,30 @@ def run(
                 if checkpoint_interval > 0:
                     new_tick = current_tick + 1  # Tick was incremented
                     if should_create_checkpoint(new_tick, checkpoint_interval, last_checkpoint_tick):
-                        typer.echo(f"   💾 Creating checkpoint...")
+                        typer.echo(f"    正在创建存档...")
                         try:
                             checkpoint_path = create_checkpoint(
-                                project_dir, 
-                                new_tick, 
+                                project_dir,
+                                new_tick,
                                 f"auto (novel run --n {n})"
                             )
-                            typer.echo(f"   ✅ Checkpoint created: {checkpoint_path.name}\n")
+                            typer.echo(f"   [OK] 存档已创建：{checkpoint_path.name}\n")
                             last_checkpoint_tick = new_tick
                         except Exception as e:
-                            typer.echo(f"   ⚠️  Checkpoint failed: {e}\n")
-                
+                            typer.echo(f"   [WARN]  存档失败：{e}\n")
+
             except Exception as e:
-                typer.echo(f"   ❌ Tick failed: {e}\n")
-                typer.echo(f"   Stopping after {successful_ticks} successful ticks")
+                typer.echo(f"   [ERR] 幕生成失败：{e}\n")
+                typer.echo(f"   已成功完成 {successful_ticks} 幕，停止生成")
                 break
         
-        typer.echo(f"\n✅ Completed {successful_ticks}/{n} ticks")
-        
+        typer.echo(f"\n[OK] 已完成 {successful_ticks}/{n} 幕")
+
     except ValueError as e:
-        typer.echo(f"❌ Error: {e}", err=True)
+        typer.echo(f"[ERR] 错误：{e}", err=True)
         raise typer.Exit(1)
     except Exception as e:
-        typer.echo(f"❌ Unexpected error: {e}", err=True)
+        typer.echo(f"[ERR] 意外错误：{e}", err=True)
         raise typer.Exit(1)
 
 
@@ -715,13 +746,14 @@ def summarize(
     """
     try:
         project_dir = find_project_dir(project)
-        typer.echo(f"📖 Summarizing project: {project_dir}")
-        
-        # TODO: Implement summarization (Phase 2-3)
-        typer.echo(f"TODO: Implement scene summarization")
-        
+        typer.echo(f" 正在汇总项目：{project_dir}")
+
+        from .commands.summarize import display_summary
+        summary = display_summary(project_dir)
+        typer.echo(summary)
+
     except ValueError as e:
-        typer.echo(f"❌ Error: {e}", err=True)
+        typer.echo(f"[ERR] 错误：{e}", err=True)
         raise typer.Exit(1)
 
 
@@ -761,7 +793,7 @@ def status(
             display_status(info)
         
     except ValueError as e:
-        typer.echo(f"❌ Error: {e}", err=True)
+        typer.echo(f"[ERR] 错误：{e}", err=True)
         raise typer.Exit(1)
 
 
@@ -841,12 +873,12 @@ def list_entities(
                 display_factions(items, verbose)
         
         else:
-            typer.echo(f"❌ Unknown entity type: {entity_type}", err=True)
-            typer.echo("Valid types: characters, locations, loops, scenes, factions", err=True)
+            typer.echo(f"[ERR] 未知实体类型：{entity_type}", err=True)
+            typer.echo("有效类型：characters、locations、loops、scenes、factions", err=True)
             raise typer.Exit(1)
         
     except ValueError as e:
-        typer.echo(f"❌ Error: {e}", err=True)
+        typer.echo(f"[ERR] 错误：{e}", err=True)
         raise typer.Exit(1)
 
 
@@ -898,7 +930,7 @@ def inspect(
             raise typer.Exit(1)
         
     except ValueError as e:
-        typer.echo(f"❌ Error: {e}", err=True)
+        typer.echo(f"[ERR] 错误：{e}", err=True)
         raise typer.Exit(1)
 
 
@@ -939,7 +971,7 @@ def goals(
             display_goals(info)
         
     except ValueError as e:
-        typer.echo(f"❌ Error: {e}", err=True)
+        typer.echo(f"[ERR] 错误：{e}", err=True)
         raise typer.Exit(1)
 
 
@@ -1023,7 +1055,7 @@ def lore(
             )
         
     except ValueError as e:
-        typer.echo(f"❌ Error: {e}", err=True)
+        typer.echo(f"[ERR] 错误：{e}", err=True)
         raise typer.Exit(1)
 
 
@@ -1083,7 +1115,7 @@ def compile(
             raise typer.Exit(1)
         
     except ValueError as e:
-        typer.echo(f"❌ Error: {e}", err=True)
+        typer.echo(f"[ERR] 错误：{e}", err=True)
         raise typer.Exit(1)
 
 
@@ -1110,7 +1142,7 @@ def plot_status(
         if detailed:
             display_plot_status_detailed(project_dir)
     except ValueError as e:
-        typer.echo(f"❌ Error: {e}", err=True)
+        typer.echo(f"[ERR] 错误：{e}", err=True)
         raise typer.Exit(1)
 
 
@@ -1129,7 +1161,7 @@ def plot_next(
         beat = get_next_beat(project_dir)
         display_next_beat(beat)
     except ValueError as e:
-        typer.echo(f"❌ Error: {e}", err=True)
+        typer.echo(f"[ERR] 错误：{e}", err=True)
         raise typer.Exit(1)
 
 
@@ -1166,21 +1198,21 @@ def plot_generate(
             or config.get("llm.openai_model", "gpt-5.1")
         )
 
-        typer.echo(f"📍 Project: {project_dir}")
-        typer.echo(f"🔧 Using LLM backend: {backend} (model={model})")
+        typer.echo(f" 项目：{project_dir}")
+        typer.echo(f" 使用 LLM 后端：{backend}（模型={model}）")
 
         # Initialize LLM and generate beats
         try:
             initialize_llm(backend=backend, codex_bin=codex_bin_effective, model=model)
         except RuntimeError as e:
-            typer.echo(f"❌ Failed to initialize LLM backend: {e}", err=True)
+            typer.echo(f"[ERR] LLM 后端初始化失败：{e}", err=True)
             raise typer.Exit(1)
 
         result = generate_and_append_beats_cli(project_dir, count)
         display_generated_beats(result)
 
     except ValueError as e:
-        typer.echo(f"❌ Error: {e}", err=True)
+        typer.echo(f"[ERR] 错误：{e}", err=True)
         raise typer.Exit(1)
 
 
@@ -1216,7 +1248,7 @@ def plot_clear(
         clear_plot_outline(project_dir, confirm=not yes)
         
     except ValueError as e:
-        typer.echo(f"❌ Error: {e}", err=True)
+        typer.echo(f"[ERR] 错误：{e}", err=True)
         raise typer.Exit(1)
 
 
@@ -1259,7 +1291,7 @@ def plan(
             raise typer.Exit(1)
         
     except ValueError as e:
-        typer.echo(f"❌ Error: {e}", err=True)
+        typer.echo(f"[ERR] 错误：{e}", err=True)
         raise typer.Exit(1)
 
 
@@ -1311,24 +1343,24 @@ def checkpoint(
             list_checkpoints_cmd(project_dir)
         elif action == "restore":
             if not checkpoint_id:
-                typer.echo("❌ --id required for restore", err=True)
+                typer.echo("[ERR] 恢复存档需要指定 --id", err=True)
                 raise typer.Exit(1)
             restore_checkpoint_cmd(project_dir, checkpoint_id)
         elif action == "delete":
             if not checkpoint_id:
-                typer.echo("❌ --id required for delete", err=True)
+                typer.echo("[ERR] 删除存档需要指定 --id", err=True)
                 raise typer.Exit(1)
             delete_checkpoint_cmd(project_dir, checkpoint_id)
         else:
-            typer.echo(f"❌ Unknown action: {action}", err=True)
-            typer.echo("Valid actions: create, list, restore, delete", err=True)
+            typer.echo(f"[ERR] 未知操作：{action}", err=True)
+            typer.echo("有效操作：create、list、restore、delete", err=True)
             raise typer.Exit(1)
         
     except ValueError as e:
-        typer.echo(f"❌ Error: {e}", err=True)
+        typer.echo(f"[ERR] 错误：{e}", err=True)
         raise typer.Exit(1)
     except IOError as e:
-        typer.echo(f"❌ Error: {e}", err=True)
+        typer.echo(f"[ERR] 错误：{e}", err=True)
         raise typer.Exit(1)
 
 
@@ -1355,11 +1387,11 @@ def recent(
         projects = recent_tracker.get_recent(limit=limit)
         
         if not projects:
-            typer.echo("📚 No recent projects found")
-            typer.echo("\n💡 Tip: Run 'novel tick' or 'novel run' on a project to track it")
+            typer.echo(" 暂无最近项目")
+            typer.echo("\n 提示：对项目运行 'novel tick' 或 'novel run' 即可追踪")
             return
-        
-        typer.echo(f"📚 Recent Projects (last {len(projects)}):\n")
+
+        typer.echo(f" 最近项目（共 {len(projects)} 个）：\n")
         
         for i, proj in enumerate(projects, 1):
             path = Path(proj['path'])
@@ -1378,16 +1410,16 @@ def recent(
             
             typer.echo(f"  {i}. {name}")
             if project_id:
-                typer.echo(f"     UUID: {project_id}")
-            typer.echo(f"     Path: {path}")
-            typer.echo(f"     Scenes: {tick_info}")
-            typer.echo(f"     Last accessed: {last_accessed[:19]}")  # Trim milliseconds
+                typer.echo(f"     UUID：{project_id}")
+            typer.echo(f"     路径：{path}")
+            typer.echo(f"     章节：{tick_info}")
+            typer.echo(f"     最近访问：{last_accessed[:19]}")  # Trim milliseconds
             typer.echo()
         
-        typer.echo("💡 Tip: Use 'novel resume' or 'novel resume --uuid <UUID>'")
+        typer.echo(" 提示：使用 'novel resume' 或 'novel resume --uuid <UUID>'")
         
     except Exception as e:
-        typer.echo(f"❌ Error: {e}", err=True)
+        typer.echo(f"[ERR] 错误：{e}", err=True)
         raise typer.Exit(1)
 
 
@@ -1440,8 +1472,8 @@ def resume(
                     continue
             
             if not matching_project:
-                typer.echo(f"❌ No recent project found with UUID: {uuid}")
-                typer.echo("\n💡 Tip: Use 'novel recent' to see available projects")
+                typer.echo(f"[ERR] 未找到 UUID 为 {uuid} 的最近项目")
+                typer.echo("\n 提示：使用 'novel recent' 查看可用项目")
                 raise typer.Exit(1)
             
             recent_path = matching_project
@@ -1450,8 +1482,8 @@ def resume(
             recent_path = recent_tracker.get_most_recent()
             
             if not recent_path:
-                typer.echo("❌ No recent projects found")
-                typer.echo("\n💡 Tip: Create a project with 'novel new <name>'")
+                typer.echo("[ERR] 暂无最近项目")
+                typer.echo("\n 提示：使用 'novel new <名称>' 创建项目")
                 raise typer.Exit(1)
         
         # Load project info
@@ -1460,7 +1492,7 @@ def resume(
         project_id = state.get('project_id', 'unknown')
         current_tick = state.get('current_tick', 0)
         
-        typer.echo(f"📖 Resuming: {project_name}")
+        typer.echo(f" Resuming: {project_name}")
         typer.echo(f"   Path: {recent_path}")
         typer.echo(f"   Current progress: {current_tick} scenes")
         typer.echo()
@@ -1475,10 +1507,10 @@ def resume(
             run(n=n, project=str(recent_path))
         
     except ValueError as e:
-        typer.echo(f"❌ Error: {e}", err=True)
+        typer.echo(f"[ERR] 错误：{e}", err=True)
         raise typer.Exit(1)
     except Exception as e:
-        typer.echo(f"❌ Error: {e}", err=True)
+        typer.echo(f"[ERR] 错误：{e}", err=True)
         raise typer.Exit(1)
 
 
@@ -1522,12 +1554,96 @@ def titles(
         generate_titles(project_dir, count=count, output_file=output_path)
         
     except ValueError as e:
-        typer.echo(f"❌ Error: {e}", err=True)
+        typer.echo(f"[ERR] 错误：{e}", err=True)
         raise typer.Exit(1)
+
+
+@app.command()
+def serve(
+    host: str = typer.Option(DEFAULT_HOST, "--host", "-h", help="监听地址"),
+    port: int = typer.Option(DEFAULT_PORT, "--port", "-p", help="监听端口"),
+    reload: bool = typer.Option(False, "--reload", help="热重载（开发用）"),
+):
+    """启动 StoryDaemon 服务（常驻进程模式）。
+
+    以 HTTP 服务模式运行，提供 REST API。
+    """
+    from .server import start_server
+    start_server(host=host, port=port, reload=reload)
+
+
+# ---- skill commands ----------------------------------------------------
+
+
+@skill_app.command("import")
+def skill_import(
+    file_path: str = typer.Argument(..., help="Novel file path (.txt)"),
+    name: Optional[str] = typer.Option(None, "--name", "-n", help="Skill name (default: filename stem)"),
+):
+    """Import a novel file and extract a writing skill.
+
+    Extracts style profiles, narrative patterns, and character archetypes
+    via LLM analysis. Stores the result as YAML in data/skills/<slug>/.
+
+    Example:
+        novel skill import story.txt
+        novel skill import story.txt --name "My Novel"
+    """
+    from .commands.skill import import_skill
+    import_skill(file_path, name=name)
+
+
+@skill_app.command("list")
+def skill_list():
+    """List all imported writing skills."""
+    from .commands.skill import list_skills
+    list_skills()
+
+
+@skill_app.command("apply")
+def skill_apply(
+    slug: str = typer.Argument(..., help="Skill slug or ID"),
+    project: Optional[str] = typer.Option(
+        None, "--project", "-p", help="Project path (default: current directory)"
+    ),
+    mode: str = typer.Option(
+        "reference", "--mode", "-m", help="Injection mode: reference, style_only, full"
+    ),
+):
+    """Apply a writing skill to a novel project.
+
+    Injects style profiles, narrative patterns, and character archetypes
+    into the project state to guide the Writer and Planner.
+
+    Example:
+        novel skill apply sword-and-fairy-3
+        novel skill apply sword-and-fairy-3 --project ./my-novel
+        novel skill apply sword-and-fairy-3 --mode full
+    """
+    from .commands.skill import apply_skill
+    from .project import find_project_dir
+    project_dir = find_project_dir(project)
+    apply_skill(slug, project_dir, mode=mode)
+
+
+@skill_app.command("delete")
+def skill_delete(
+    slug: str = typer.Argument(..., help="Skill slug or ID"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
+):
+    """Delete a skill by slug or ID.
+
+    Example:
+        novel skill delete sword-and-fairy-3
+        novel skill delete sword-and-fairy-3 --force
+    """
+    from .commands.skill import delete_skill
+    delete_skill(slug, force=force)
 
 
 def main():
     """Entry point for CLI."""
+    setup_logging()
     app()
 
 

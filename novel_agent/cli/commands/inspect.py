@@ -56,7 +56,7 @@ def load_entity(filepath: Path) -> Optional[Dict[str, Any]]:
         with open(filepath, 'r', encoding='utf-8') as f:
             return json.load(f)
     except Exception as e:
-        print(f"Error loading entity: {e}")
+        print(f"加载实体失败：{e}")
         return None
 
 
@@ -68,7 +68,7 @@ def display_character(data: Dict[str, Any], filepath: Path, history_limit: int =
         filepath: Path to character file
         history_limit: Number of history entries to show
     """
-    print(f"\n🔍 Inspecting Character: {data.get('id', 'Unknown')}\n")
+    print(f"\n Inspecting Character: {data.get('id', 'Unknown')}\n")
     
     # Build full name from components (backward compatible)
     if 'first_name' in data or 'family_name' in data:
@@ -83,46 +83,46 @@ def display_character(data: Dict[str, Any], filepath: Path, history_limit: int =
     else:
         name = data.get('name', 'Unknown')
     
-    print(f"Name: {name}")
-    print(f"Type: {data.get('type', 'Unknown')}")
-    print(f"Role: {data.get('role', 'Unknown')}")
+    print(f"姓名：{name}")
+    print(f"类型：{data.get('type', 'Unknown')}")
+    print(f"职能：{data.get('role', 'Unknown')}")
     
     # Current state
     current_state = data.get('current_state', {})
     if current_state:
         print(f"\nCurrent State:")
         if current_state.get('emotional_state'):
-            print(f"  Emotional: {current_state['emotional_state']}")
+            print(f"  情绪：{current_state['emotional_state']}")
         if current_state.get('physical_state'):
-            print(f"  Physical: {current_state['physical_state']}")
+            print(f"  体态：{current_state['physical_state']}")
         if current_state.get('location_id'):
-            print(f"  Location: {current_state['location_id']}")
+            print(f"  位置：{current_state['location_id']}")
         if current_state.get('inventory'):
-            print(f"  Inventory: {', '.join(current_state['inventory'])}")
+            print(f"  物品：{', '.join(current_state['inventory'])}")
         if current_state.get('goals'):
-            print(f"  Goals: {', '.join(current_state['goals'])}")
+            print(f"  目标：{', '.join(current_state['goals'])}")
     
     # Physical traits
     physical = data.get('physical_traits', {})
     if physical:
         print(f"\nPhysical Traits:")
         if physical.get('age'):
-            print(f"  Age: {physical['age']}")
+            print(f"  年龄：{physical['age']}")
         if physical.get('appearance'):
-            print(f"  Appearance: {physical['appearance']}")
+            print(f"  外貌：{physical['appearance']}")
         if physical.get('distinctive_features'):
-            print(f"  Features: {', '.join(physical['distinctive_features'])}")
+            print(f"  特征：{', '.join(physical['distinctive_features'])}")
     
     # Personality
     personality = data.get('personality', {})
     if personality:
         print(f"\nPersonality:")
         if personality.get('core_traits'):
-            print(f"  Traits: {', '.join(personality['core_traits'])}")
+            print(f"  性格特征：{', '.join(personality['core_traits'])}")
         if personality.get('desires'):
-            print(f"  Desires: {', '.join(personality['desires'])}")
+            print(f"  欲望：{', '.join(personality['desires'])}")
         if personality.get('fears'):
-            print(f"  Fears: {', '.join(personality['fears'])}")
+            print(f"  恐惧：{', '.join(personality['fears'])}")
     
     # Relationships
     relationships = data.get('relationships', [])
@@ -139,7 +139,7 @@ def display_character(data: Dict[str, Any], filepath: Path, history_limit: int =
             tick = entry.get('tick', '?')
             scene = entry.get('scene_id', '?')
             summary = entry.get('summary', 'No summary')
-            print(f"  [Tick {tick}] {summary}")
+            print(f"  [第{tick}幕] {summary}")
     
     print(f"\nFull JSON: {filepath}")
     print()
@@ -153,11 +153,11 @@ def display_location(data: Dict[str, Any], filepath: Path, history_limit: int = 
         filepath: Path to location file
         history_limit: Number of history entries to show
     """
-    print(f"\n🔍 Inspecting Location: {data.get('id', 'Unknown')}\n")
+    print(f"\n Inspecting Location: {data.get('id', 'Unknown')}\n")
     
-    print(f"Name: {data.get('name', 'Unknown')}")
-    print(f"Type: {data.get('type', 'Unknown')}")
-    print(f"Atmosphere: {data.get('atmosphere', 'Unknown')}")
+    print(f"名称：{data.get('name', 'Unknown')}")
+    print(f"类型：{data.get('type', 'Unknown')}")
+    print(f"氛围：{data.get('atmosphere', 'Unknown')}")
     
     # Description
     if data.get('description'):
@@ -169,11 +169,11 @@ def display_location(data: Dict[str, Any], filepath: Path, history_limit: int = 
     if sensory:
         print(f"\nSensory Details:")
         if sensory.get('visual'):
-            print(f"  Visual: {sensory['visual']}")
+            print(f"  视觉：{sensory['visual']}")
         if sensory.get('auditory'):
-            print(f"  Auditory: {sensory['auditory']}")
+            print(f"  听觉：{sensory['auditory']}")
         if sensory.get('olfactory'):
-            print(f"  Olfactory: {sensory['olfactory']}")
+            print(f"  嗅觉：{sensory['olfactory']}")
     
     # Significance
     if data.get('significance'):
@@ -195,7 +195,7 @@ def display_location(data: Dict[str, Any], filepath: Path, history_limit: int = 
             tick = entry.get('tick', '?')
             scene = entry.get('scene_id', '?')
             summary = entry.get('summary', 'No summary')
-            print(f"  [Tick {tick}] {summary}")
+            print(f"  [第{tick}幕] {summary}")
     
     print(f"\nFull JSON: {filepath}")
     print()
@@ -208,13 +208,13 @@ def display_scene(data: Dict[str, Any], filepath: Path):
         data: Scene data dictionary
         filepath: Path to scene file
     """
-    print(f"\n🔍 Inspecting Scene: {data.get('id', 'Unknown')}\n")
+    print(f"\n Inspecting Scene: {data.get('id', 'Unknown')}\n")
     
-    print(f"Tick: {data.get('tick', 'Unknown')}")
-    print(f"POV Character: {data.get('pov_character', 'Unknown')}")
+    print(f"幕数：{data.get('tick', 'Unknown')}")
+    print(f"视角角色：{data.get('pov_character', 'Unknown')}")
     
     if data.get('location'):
-        print(f"Location: {data['location']}")
+        print(f"地点：{data['location']}")
     
     # Summary
     if data.get('summary'):
@@ -275,16 +275,16 @@ def inspect_entity(project_dir: Path, entity_id: Optional[str] = None,
     elif entity_id:
         filepath = find_entity_file(project_dir, entity_id)
         if not filepath:
-            print(f"❌ Entity not found: {entity_id}")
+            print(f"[ERR] 未找到实体：{entity_id}")
             return False
     else:
-        print("❌ Must specify either --id or --file")
+        print("[ERR] 需要指定 --id 或 --file")
         return False
     
     # Load entity
     data = load_entity(filepath)
     if not data:
-        print(f"❌ Could not load entity from: {filepath}")
+        print(f"[ERR] 无法从以下路径加载实体：{filepath}")
         return False
     
     # Display
@@ -299,10 +299,10 @@ def inspect_entity(project_dir: Path, entity_id: Optional[str] = None,
         elif entity_type.startswith('S'):
             display_scene(data, filepath)
         elif entity_type.startswith('F'):
-            print(f"\n🔍 Inspecting Faction: {data.get('id','Unknown')}\n")
-            print(f"Name: {data.get('name','Unknown')}")
+            print(f"\n Inspecting Faction: {data.get('id','Unknown')}\n")
+            print(f"名称：{data.get('name','Unknown')}")
             print(f"Type: {data.get('org_type','Unknown')}")
-            print(f"Importance: {data.get('importance','medium')}")
+            print(f"重要性：{data.get('importance','medium')}")
             if data.get('summary'):
                 print(f"\nSummary:\n  {data['summary']}")
             if data.get('mandate_objectives'):

@@ -59,50 +59,50 @@ def prompt_for_foundation() -> tuple[StoryFoundation, Dict[str, Any]]:
     Returns:
         Tuple of (StoryFoundation object, plot_config dict)
     """
-    typer.echo("\n📚 Story Foundation Setup")
+    typer.echo("\n 故事基础设定")
     typer.echo("━" * 60)
-    typer.echo("\nDefine the immutable constraints for your story.\n")
+    typer.echo("\n设定故事的核心约束条件。\n")
     
     # Genre
     genre = typer.prompt(
-        "Genre (e.g., fantasy, sci-fi, thriller, literary)",
+        "故事类型（如：仙侠、科幻、悬疑、现实）",
         type=str
     ).strip()
-    
+
     # Premise
-    typer.echo("\nPremise (1-2 sentences describing the story's core question):")
+    typer.echo("\n故事前提（1-2句，描述故事核心问题）：")
     premise = typer.prompt("", type=str).strip()
-    
+
     # Protagonist archetype
     protagonist_archetype = typer.prompt(
-        "\nProtagonist archetype (personality/role)",
+        "\n主角性格/定位",
         type=str
     ).strip()
-    
+
     # Setting
     setting = typer.prompt(
-        "Setting (time/place/world)",
+        "故事背景（时代/地点/世界观）",
         type=str
     ).strip()
-    
+
     # Tone
     tone = typer.prompt(
-        "Tone (mood/atmosphere)",
+        "基调（氛围/风格）",
         type=str
     ).strip()
-    
+
     # Themes (optional)
     themes_input = typer.prompt(
-        "Themes (optional, comma-separated)",
+        "主题（可选，逗号分隔）",
         default="",
         type=str
     ).strip()
-    
+
     themes = [t.strip() for t in themes_input.split(",") if t.strip()] if themes_input else []
-    
+
     # Primary goal (optional)
     primary_goal = typer.prompt(
-        "Primary story goal (optional, will auto-emerge if not specified)",
+        "主要故事目标（可选，留空则自动生成）",
         default="",
         type=str
     ).strip()
@@ -111,29 +111,29 @@ def prompt_for_foundation() -> tuple[StoryFoundation, Dict[str, Any]]:
     
     # Plot-First Mode Configuration
     typer.echo("\n" + "━" * 60)
-    typer.echo("📋 Plot-First Mode Configuration")
+    typer.echo(" 情节优先模式配置")
     typer.echo("━" * 60)
-    typer.echo("\nPlot-first mode generates plot beats that guide scene generation.")
-    typer.echo("This provides forward momentum and reduces repetition.\n")
+    typer.echo("\n情节优先模式会生成情节节拍，引导场景生成。")
+    typer.echo("这能提供叙事推进力并减少重复。\n")
     
     use_plot_first = typer.confirm(
-        "Enable plot-first mode? (Recommended for structured stories)",
+        "启用情节优先模式？（结构化故事推荐开启）",
         default=False
     )
     
     plot_config = {}
     
     if use_plot_first:
-        typer.echo("\n📖 Plot-First Settings:")
+        typer.echo("\n 情节优先设置：")
         
         # Enforcement level
-        typer.echo("\nEnforcement level:")
-        typer.echo("  1. Lenient - Beats guide but don't block (fallback to reactive)")
-        typer.echo("  2. Standard - Verify beats, allow skipping if not accomplished")
-        typer.echo("  3. Strict - Beats must be accomplished, no fallback (recommended)")
+        typer.echo("\n执行级别：")
+        typer.echo("  1. 宽松 - 节拍引导但不阻断（回退到被动模式）")
+        typer.echo("  2. 标准 - 验证节拍，未完成时允许跳过")
+        typer.echo("  3. 严格 - 必须完成节拍，无回退（推荐）")
         
         enforcement = typer.prompt(
-            "\nSelect enforcement level",
+            "\n请选择执行级别",
             type=int,
             default=3
         )
@@ -173,14 +173,14 @@ def prompt_for_foundation() -> tuple[StoryFoundation, Dict[str, Any]]:
             }
         
         # Advanced options
-        if typer.confirm("\nCustomize advanced settings?", default=False):
+        if typer.confirm("\n自定义高级设置？", default=False):
             plot_config["plot_beats_ahead"] = typer.prompt(
-                "  Beats to generate at once",
+                "  每次生成节拍数",
                 type=int,
                 default=5
             )
             plot_config["plot_regeneration_threshold"] = typer.prompt(
-                "  Regenerate when pending beats drop below",
+                "  待执行节拍低于此数时重新生成",
                 type=int,
                 default=2
             )
@@ -192,32 +192,32 @@ def prompt_for_foundation() -> tuple[StoryFoundation, Dict[str, Any]]:
     
     # Confirmation
     typer.echo("\n" + "━" * 60)
-    typer.echo("📋 Foundation Summary:")
-    typer.echo(f"  Genre: {genre}")
-    typer.echo(f"  Premise: {premise}")
-    typer.echo(f"  Protagonist: {protagonist_archetype}")
-    typer.echo(f"  Setting: {setting}")
-    typer.echo(f"  Tone: {tone}")
+    typer.echo(" 基础设定摘要：")
+    typer.echo(f"  类型：{genre}")
+    typer.echo(f"  前提：{premise}")
+    typer.echo(f"  主角：{protagonist_archetype}")
+    typer.echo(f"  背景：{setting}")
+    typer.echo(f"  基调：{tone}")
     if themes:
-        typer.echo(f"  Themes: {', '.join(themes)}")
+        typer.echo(f"  主题：{', '.join(themes)}")
     if primary_goal:
-        typer.echo(f"  Primary Goal: {primary_goal}")
-    
-    typer.echo("\n📖 Plot Configuration:")
+        typer.echo(f"  主要目标：{primary_goal}")
+
+    typer.echo("\n 情节配置：")
     if plot_config.get("use_plot_first"):
         if not plot_config.get("allow_beat_skip") and not plot_config.get("fallback_to_reactive"):
-            typer.echo("  Mode: Strict (beats enforced)")
+            typer.echo("  模式：严格（强制节拍）")
         elif plot_config.get("allow_beat_skip"):
-            typer.echo("  Mode: Lenient/Standard (beats guide)")
-        typer.echo(f"  Beats ahead: {plot_config.get('plot_beats_ahead', 5)}")
-        typer.echo(f"  Regeneration threshold: {plot_config.get('plot_regeneration_threshold', 2)}")
+            typer.echo("  模式：宽松/标准（节拍引导）")
+        typer.echo(f"  每次节拍数：{plot_config.get('plot_beats_ahead', 5)}")
+        typer.echo(f"  重生成阈值：{plot_config.get('plot_regeneration_threshold', 2)}")
     else:
-        typer.echo("  Mode: Reactive (no plot beats)")
+        typer.echo("  模式：被动（无情节节拍）")
     typer.echo("━" * 60)
-    
-    confirm = typer.confirm("\nProceed with this configuration?", default=True)
+
+    confirm = typer.confirm("\n确认以上配置并继续？", default=True)
     if not confirm:
-        typer.echo("Setup cancelled.")
+        typer.echo("设置已取消。")
         raise typer.Abort()
     
     foundation = StoryFoundation(
@@ -250,7 +250,7 @@ def load_foundation_from_file(file_path: Path) -> StoryFoundation:
         raise FileNotFoundError(f"Foundation file not found: {file_path}")
     
     try:
-        with open(file_path, 'r') as f:
+        with open(file_path, 'r', encoding='utf-8') as f:
             data = yaml.safe_load(f)
     except yaml.YAMLError as e:
         raise ValueError(f"Invalid YAML file: {e}")
@@ -310,8 +310,8 @@ def create_foundation_from_args(
     
     # If some but not all are provided, prompt for missing ones
     if not all([genre, premise, protagonist, setting, tone]):
-        typer.echo("⚠️  Some foundation fields provided but not all. Please provide all required fields:")
-        typer.echo("   --genre, --premise, --protagonist, --setting, --tone")
+        typer.echo("[WARN]  部分基础设定字段已提供，但并非全部。请提供所有必填字段：")
+        typer.echo("   --genre、--premise、--protagonist、--setting、--tone")
         raise typer.Exit(1)
     
     # Parse themes
@@ -337,7 +337,7 @@ def format_foundation_display(foundation: StoryFoundation) -> str:
         Formatted string for display
     """
     lines = [
-        "📚 Story Foundation",
+        " Story Foundation",
         "━" * 60,
         f"Genre: {foundation.genre}",
         f"Premise: {foundation.premise}",

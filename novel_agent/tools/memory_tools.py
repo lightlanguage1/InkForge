@@ -143,34 +143,34 @@ class CharacterGenerateTool(Tool):
         first_name = ""
         family_name = ""
         title = ""
-        
-        # Check if name looks like a placeholder
-        is_placeholder = False
-        if name:
-            placeholder_indicators = ['placeholder', 'generated', 'tbd', 'todo', 'will use', 'to be']
-            name_lower = name.lower()
-            is_placeholder = any(indicator in name_lower for indicator in placeholder_indicators)
-        
-        # In strict mode, always use name generator (ignore LLM-provided names)
+
+        is_placeholder = bool(name) and any(
+            p in name.lower() for p in ['placeholder', 'generated', 'tbd', 'todo', 'will use', 'to be']
+        ) if name else False
+
         force_generate = self.beat_mode == "strict"
-        
+
         if (not name or is_placeholder or force_generate) and self.name_generator:
-            # Random 50/50 if gender not specified (to avoid LLM bias)
-            char_gender = gender or random.choice(["male", "female"])
-            name_result = self.name_generator.generate_name(gender=char_gender, genre="scifi")
-            first_name = name_result["first_name"]
-            family_name = name_result["last_name"]
-            title = name_result.get("title", "")
+            result = self.name_generator.generate_chinese_name()
+            first_name = result["first_name"]
+            family_name = result["family_name"]
         elif name and not is_placeholder:
-            # Split provided name
-            parts = name.strip().split()
-            if len(parts) >= 2:
+            name = name.strip()
+            if ' ' in name:
+                parts = name.split()
                 first_name = parts[0]
-                family_name = ' '.join(parts[1:])
-            elif len(parts) == 1:
-                first_name = parts[0]
+                family_name = parts[-1] if len(parts) > 1 else ""
+            elif len(name) <= 4 and all('一' <= c <= '鿿' for c in name):
+                # Chinese name: detect double-character surname
+                if len(name) >= 2 and self.name_generator and name[:2] in self.name_generator.chinese_surnames:
+                    family_name = name[:2]
+                    first_name = name[2:]
+                else:
+                    family_name = name[0]
+                    first_name = name[1:] if len(name) > 1 else ""
+            else:
+                first_name = name
         else:
-            # Fallback if no generator available - generate ID here for fallback name
             character_id = self.memory_manager.generate_id("character")
             first_name = f"Character_{character_id}"
         

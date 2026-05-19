@@ -21,7 +21,7 @@ setup(
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.11",
     ],
-    python_requires=">=3.11",
+    python_requires=">=3.10",
     install_requires=[
         "typer>=0.9.0",
         "pyyaml>=6.0.0",
@@ -32,6 +32,11 @@ setup(
         "dev": [
             "pytest>=7.0.0",
             "pytest-cov>=4.0.0",
+        ],
+        "server": [
+            "fastapi>=0.100.0",
+            "uvicorn>=0.20.0",
+            "pydantic>=2.0.0",
         ],
     },
     entry_points={

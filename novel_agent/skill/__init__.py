@@ -1,0 +1,1 @@
+"""Skill system - writing style pattern extraction and injection."""

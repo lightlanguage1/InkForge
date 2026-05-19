@@ -1,5 +1,6 @@
 """Configuration management for StoryDaemon."""
 import os
+import warnings
 import yaml
 from typing import Dict, Any, Optional
 
@@ -7,36 +8,47 @@ from typing import Dict, Any, Optional
 # Default configuration
 DEFAULT_CONFIG = {
     'llm': {
-        'backend': 'codex',
+        'backend': 'api',
         'codex_bin_path': 'codex',
         'default_max_tokens': 2000,
-        'planner_max_tokens': 1000,
-        'writer_max_tokens': 3000,
+        'planner_max_tokens': 4000,
+        'writer_max_tokens': 8192,
         'extractor_max_tokens': 2000,
+        'lore_extractor_max_tokens': 1500,
         'timeout': 120,
-        'model': 'gpt-5.1',  # Generic model name for API backend (OpenAI/Gemini/Claude)
-        'openai_model': 'gpt-5.1',
-        'openai_api_key_env': 'OPENAI_API_KEY',
+        'model': 'deepseek-chat',
+        'openai_model': 'deepseek-chat',
+        # Sampling parameters (Ollama + API backends)
+        'temperature': 0.7,
+        'top_p': 0.8,
+        'top_k': 20,
+        'min_p': 0.0,
+        'repeat_penalty': 1.0,
+        'enable_thinking': False,
     },
     'paths': {
-        'novels_dir': os.path.expanduser('~/novels'),
+        'novels_dir': os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'work', 'novels'),
     },
     'generation': {
         'max_tools_per_tick': 3,
         'recent_scenes_count': 3,
-        'full_text_scenes_count': 2,  # Number of recent scenes to include as full text in writer context
-        'summary_scenes_count': 3,    # Number of older scenes to include as summaries in writer context
+        'summary_scenes_count': 5,    # Number of older scenes to include as summaries in writer context
         'include_overall_summary': True,
         'enable_fact_extraction': True,
         'enable_entity_updates': True,
         'enable_tension_tracking': True,  # Phase 7A.3: Track scene tension levels
         'enable_lore_tracking': True,  # Phase 7A.4: Track world rules and lore
-        
+        'beat_verification_threshold': 0.5,  # Semantic similarity threshold for beat verification
+
+        # Word count targets: null = no limit (project config.yaml can override)
+        'target_word_count_min': None,
+        'target_word_count_max': None,
+
         # Character detection (Phase 6)
         'auto_detect_characters': True,  # Detect new character names in scenes
         'auto_create_minor_characters': False,  # Auto-create stubs for detected characters
         'prompt_for_character_creation': True,  # Show tips about detected characters
-        
+
         # Plot-first mode configuration
         'use_plot_first': False,  # Enable emergent plot-first architecture
         'plot_first_start_tick': 2,  # Start plot-first mode from this tick (allows character setup)
@@ -45,6 +57,10 @@ DEFAULT_CONFIG = {
         'verify_beat_execution': True,  # Verify beat was accomplished via LLM
         'allow_beat_skip': False,  # Allow skipping beats that aren't accomplished
         'fallback_to_reactive': True,  # Fall back to reactive mode if beat generation fails
+
+        # API content safety fallback: auto-switch to local model on refusal
+        'content_safety_fallback': True,
+        'prefer_local_writer': False,  # Always use local model for writing when True
     },
     'lore': {
         'contradiction_threshold': 0.5,  # Similarity threshold for flagging contradictions (0.0-2.0)
@@ -57,7 +73,35 @@ DEFAULT_CONFIG = {
         #   guided    - planner expected to fill beat_target and beats may be updated
         #   strict    - future: hard validation around beat usage
         'beat_mode': 'soft_hint',
-    }
+    },
+    'daemon': {
+        'health_check_interval': 60,
+        'max_error_count': 3,
+        'max_concurrent_projects': 10,
+    },
+    'skill': {
+        'store_path': os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'data', 'skills'),
+        'max_reference_count': 3,
+    },
+    'reference': {
+        'store_path': os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'data', 'references'),
+        'max_results': 3,
+    },
+    'router': {
+        'enabled': True,
+        # Writer: API (DeepSeek) — creative quality matters
+        'writer_model': 'deepseek-chat',
+        'writer_backend': 'api',
+        'fallback_writer': 'deepseek-chat',
+        # Planner: API (DeepSeek) — structural quality matters
+        'planner_model': 'deepseek-chat',
+        'planner_backend': 'api',
+        'fallback_planner': 'deepseek-chat',
+        # Extractor / Evaluator / Agent tools: local llama-server — cost efficiency
+        'extractor_model': 'local-llama',
+        'extractor_backend': 'api',
+        'fallback_extractor': 'deepseek-chat',
+    },
 }
 
 
@@ -201,9 +245,20 @@ class Config:
         except Exception as e:
             raise IOError(f"Error saving config to {config_path}: {e}")
     
+    def __getitem__(self, key: str) -> Any:
+        """Direct dict access (deprecated).
+
+        Warns and delegates to ``get()``.
+        """
+        warnings.warn(
+            "Direct dict access is deprecated. Use config.get('...') instead.",
+            DeprecationWarning, stacklevel=2,
+        )
+        return self.config[key]
+
     def to_dict(self) -> Dict[str, Any]:
         """Get configuration as dictionary.
-        
+
         Returns:
             Configuration dictionary
         """

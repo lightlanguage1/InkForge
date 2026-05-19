@@ -38,7 +38,7 @@ def preview_plan(project_dir: Path, save: Optional[Path] = None, verbose: bool =
         
         current_tick = state['current_tick']
         
-        print(f"📋 Generating plan preview for tick {current_tick}...\n")
+        print(f" Generating plan preview for tick {current_tick}...\n")
         
         # Initialize LLM backend
         backend = config.get('llm.backend', 'codex')
@@ -54,7 +54,7 @@ def preview_plan(project_dir: Path, save: Optional[Path] = None, verbose: bool =
                 model=model,
             )
         except RuntimeError as e:
-            print(f"❌ {e}")
+            print(f"[ERR] {e}")
             return False
         
         # Initialize components
@@ -103,7 +103,7 @@ def preview_plan(project_dir: Path, save: Optional[Path] = None, verbose: bool =
         prompt = format_planner_prompt(context)
         max_tokens = config.get('llm.planner_max_tokens', 2000)
         
-        print("Calling LLM...")
+        print("正在调用 LLM...")
         response = llm.generate(prompt, max_tokens=max_tokens)
         
         # Parse plan
@@ -116,7 +116,7 @@ def preview_plan(project_dir: Path, save: Optional[Path] = None, verbose: bool =
             if json_match:
                 json_str = json_match.group(0)
             else:
-                print("❌ Could not extract JSON from LLM response")
+                print("[ERR] 无法从 LLM 响应中提取 JSON")
                 if verbose:
                     print("\nRaw response:")
                     print(response)
@@ -125,7 +125,7 @@ def preview_plan(project_dir: Path, save: Optional[Path] = None, verbose: bool =
         try:
             plan = json.loads(json_str)
         except json.JSONDecodeError as e:
-            print(f"❌ Invalid JSON in plan: {e}")
+            print(f"[ERR] 计划中的 JSON 无效：{e}")
             if verbose:
                 print("\nExtracted JSON:")
                 print(json_str)
@@ -139,16 +139,16 @@ def preview_plan(project_dir: Path, save: Optional[Path] = None, verbose: bool =
             try:
                 with open(save, 'w', encoding='utf-8') as f:
                     json.dump(plan, f, indent=2)
-                print(f"\n💾 Plan saved to: {save}")
+                print(f"\n Plan saved to: {save}")
             except Exception as e:
-                print(f"\n⚠️  Could not save plan: {e}")
+                print(f"\n[WARN]  Could not save plan: {e}")
         
-        print("\n⚠️  This plan has NOT been executed. Use 'novel tick' to execute.\n")
+        print("\n[WARN]  This plan has NOT been executed. Use 'novel tick' to execute.\n")
         
         return True
         
     except Exception as e:
-        print(f"❌ Error generating plan preview: {e}")
+        print(f"[ERR] 生成计划预览失败：{e}")
         if verbose:
             import traceback
             print("\nTraceback:")
@@ -164,17 +164,17 @@ def display_plan_preview(plan: dict, tick: int, active_character: Optional[str] 
         tick: Current tick number
         active_character: Active character ID
     """
-    print(f"📋 Plan Preview (Tick {tick})\n")
+    print(f" Plan Preview (Tick {tick})\n")
     
     # Rationale
     rationale = plan.get('rationale', 'No rationale provided')
-    print("Rationale:")
+    print("理由：")
     print(f"  {rationale}\n")
     
     # Actions
     actions = plan.get('actions', [])
     if actions:
-        print(f"Actions ({len(actions)}):")
+        print(f"动作（{len(actions)} 个）：")
         for i, action in enumerate(actions, 1):
             tool = action.get('tool', 'unknown')
             args = action.get('args', {})
@@ -189,14 +189,14 @@ def display_plan_preview(plan: dict, tick: int, active_character: Optional[str] 
     
     # Scene intention
     scene_intention = plan.get('scene_intention', 'No scene intention provided')
-    print("Scene Intention:")
+    print("场景意图：")
     print(f"  {scene_intention}\n")
     
     # Metadata
-    print(f"POV Character: {active_character or 'None'}")
+    print(f"视角角色：{active_character or '无'}")
     
     # Estimate tokens (rough)
     import json
     plan_str = json.dumps(plan)
     estimated_tokens = len(plan_str.split()) * 1.3  # Rough estimate
-    print(f"Estimated Tokens: ~{int(estimated_tokens):,}")
+    print(f"预估 Token 数：~{int(estimated_tokens):,}")

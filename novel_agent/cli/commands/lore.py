@@ -111,7 +111,7 @@ def display_lore(
         return f"{colors.get(importance, '')}{importance}{reset}"
     
     print()
-    print(f"🌍 {bold('World Lore')}")
+    print(f" {bold('World Lore')}")
     print("━" * 80)
     
     total = info.get('total_count', 0)
@@ -135,7 +135,7 @@ def display_lore(
         return
     
     print(f"\n{bold('Summary:')}")
-    print(f"  Total lore items: {total}")
+    print(f"  世界观条目总数：{total}")
     
     importance_counts = info.get('importance_counts', {})
     if importance_counts:
@@ -224,7 +224,7 @@ def _display_lore_item(item: Dict[str, Any], use_color: bool, indent: int = 2):
     # Contradictions
     if item.get('contradictions'):
         contradiction_count = len(item['contradictions'])
-        print(f"{prefix}  {dim('⚠️  Potential contradictions: ' + str(contradiction_count))}")
+        print(f"{prefix}  {dim('[WARN]  Potential contradictions: ' + str(contradiction_count))}")
 
 
 def display_lore_json(info: Dict[str, Any]):
@@ -247,7 +247,7 @@ def display_lore_stats(info: Dict[str, Any], use_color: bool = True):
         return f"\033[1m{text}\033[0m" if use_color else text
     
     print()
-    print(f"📊 {bold('Lore Statistics')}")
+    print(f" {bold('Lore Statistics')}")
     print("━" * 60)
     
     total = info.get('total_count', 0)
@@ -287,6 +287,6 @@ def display_lore_stats(info: Dict[str, Any], use_color: bool = True):
     with_contradictions = [l for l in all_lore if l.get('contradictions')]
     if with_contradictions:
         print(f"\n{bold('Contradictions:')}")
-        print(f"  ⚠️  {len(with_contradictions)} items have potential contradictions")
+        print(f"  [WARN]  {len(with_contradictions)} items have potential contradictions")
     
     print()

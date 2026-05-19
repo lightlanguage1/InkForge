@@ -2,9 +2,12 @@
 
 import json
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Union
+from typing import Callable, List, Dict, Any, Optional, Union
 from datetime import datetime
 
+from ..configs.constants import (
+    OPEN_LOOPS_FILE, RELATIONSHIPS_FILE, LORE_FILE, COUNTERS_FILE, STATE_FILE,
+)
 from .entities import (
     Character, Location, Scene, OpenLoop, RelationshipGraph, Lore, Faction,
     HistoryEntry, RelationshipHistoryEntry
@@ -27,13 +30,15 @@ class MemoryManager:
         self.scenes_path = self.memory_path / "scenes"
         self.factions_path = self.memory_path / "factions"
         self.qa_path = self.memory_path / "qa"
-        self.open_loops_file = self.memory_path / "open_loops.json"
-        self.relationships_file = self.memory_path / "relationships.json"
-        self.lore_file = self.memory_path / "lore.json"
-        self.counters_file = self.memory_path / "counters.json"
+        self.open_loops_file = self.memory_path / OPEN_LOOPS_FILE
+        self.relationships_file = self.memory_path / RELATIONSHIPS_FILE
+        self.lore_file = self.memory_path / LORE_FILE
+        self.counters_file = self.memory_path / COUNTERS_FILE
         
         self._ensure_directories()
         self._load_counters()
+        self._cache: Dict[str, Any] = {}
+        self._cache_tick: int = -1
     
     def _ensure_directories(self):
         """Ensure all required directories exist."""
@@ -186,6 +191,21 @@ class MemoryManager:
         if changed:
             self._save_counters()
     
+    # ——— tick 级缓存 ———
+
+    def _cache_get(self, key: str, loader: Callable[[], Any]) -> Any:
+        """同一 tick 内复用缓存值。tick 变更或 invalidate_cache 调用时自动重建。"""
+        if self._cache_tick != self.counters.get("_tick", 0):
+            self._cache.clear()
+            self._cache_tick = self.counters.get("_tick", 0)
+        if key not in self._cache:
+            self._cache[key] = loader()
+        return self._cache[key]
+
+    def invalidate_cache(self):
+        """数据变更后调用，下次 _cache_get 时重建所有缓存。"""
+        self._cache_tick = -1
+
     def _save_counters(self):
         """Save ID counters to disk."""
         self._write_json(self.counters_file, self.counters)
@@ -287,6 +307,7 @@ class MemoryManager:
         character.updated_at = datetime.utcnow().isoformat() + "Z"
         path = self.characters_path / f"{character.id}.json"
         self._write_json(path, character.to_dict())
+        self.invalidate_cache()
     
     def update_character(self, character_id: str, changes: Dict[str, Any]):
         """Update specific fields of a character.
@@ -309,6 +330,12 @@ class MemoryManager:
     def list_characters(self) -> List[str]:
         """List all character IDs."""
         return [f.stem for f in self.characters_path.glob("*.json")]
+
+    def get_all_characters(self) -> List[Character]:
+        """Load all characters (with tick cache)."""
+        return self._cache_get("all_characters", lambda: [
+            self.load_character(c) for c in self.list_characters()
+        ])
     
     # ========================================================================
     # CRUD Operations - Locations
@@ -327,6 +354,7 @@ class MemoryManager:
         location.updated_at = datetime.utcnow().isoformat() + "Z"
         path = self.locations_path / f"{location.id}.json"
         self._write_json(path, location.to_dict())
+        self.invalidate_cache()
     
     def update_location(self, location_id: str, changes: Dict[str, Any]):
         """Update specific fields of a location."""
@@ -343,6 +371,12 @@ class MemoryManager:
     def list_locations(self) -> List[str]:
         """List all location IDs."""
         return [f.stem for f in self.locations_path.glob("*.json")]
+
+    def get_all_locations(self) -> List[Location]:
+        """Load all locations (with tick cache)."""
+        return self._cache_get("all_locations", lambda: [
+            self.load_location(l) for l in self.list_locations()
+        ])
     
     # ========================================================================
     # CRUD Operations - Scenes
@@ -482,6 +516,7 @@ class MemoryManager:
         faction.updated_at = datetime.utcnow().isoformat() + "Z"
         path = self.factions_path / f"{faction.id}.json"
         self._write_json(path, faction.to_dict())
+        self.invalidate_cache()
 
     def update_faction(self, faction_id: str, changes: Dict[str, Any]):
         """Update specific fields of a faction.
@@ -529,9 +564,10 @@ class MemoryManager:
     # ========================================================================
     
     def load_open_loops(self) -> List[OpenLoop]:
-        """Load all open loops."""
-        data = self._read_json(self.open_loops_file)
-        return [OpenLoop.from_dict(loop) for loop in data.get("loops", [])]
+        """Load all open loops (with tick cache)."""
+        return self._cache_get("open_loops", lambda: [
+            OpenLoop.from_dict(loop) for loop in self._read_json(self.open_loops_file).get("loops", [])
+        ])
     
     def save_open_loops(self, loops: List[OpenLoop]):
         """Save open loops to disk."""
@@ -543,10 +579,11 @@ class MemoryManager:
         loops = self.load_open_loops()
         loops.append(loop)
         self.save_open_loops(loops)
+        self.invalidate_cache()
     
     def resolve_open_loop(self, loop_id: str, scene_id: str, summary: str):
         """Mark an open loop as resolved.
-        
+
         Args:
             loop_id: ID of the loop to resolve
             scene_id: Scene where it was resolved
@@ -560,6 +597,7 @@ class MemoryManager:
                 loop.resolution_summary = summary
                 break
         self.save_open_loops(loops)
+        self.invalidate_cache()
     
     def get_open_loops(self, status: str = "open") -> List[OpenLoop]:
         """Get loops by status.
@@ -592,10 +630,11 @@ class MemoryManager:
         relationships = self.load_relationships()
         relationships.append(relationship)
         self.save_relationships(relationships)
+        self.invalidate_cache()
     
     def update_relationship(self, relationship_id: str, changes: Dict[str, Any]):
         """Update a relationship.
-        
+
         Args:
             relationship_id: Relationship ID
             changes: Dictionary of fields to update
@@ -610,6 +649,7 @@ class MemoryManager:
                 rel.updated_at = datetime.utcnow().isoformat() + "Z"
                 break
         self.save_relationships(relationships)
+        self.invalidate_cache()
     
     def get_character_relationships(self, character_id: str) -> List[RelationshipGraph]:
         """Get all relationships involving a character.
@@ -664,7 +704,8 @@ class MemoryManager:
                 rel.updated_at = datetime.utcnow().isoformat() + "Z"
                 break
         self.save_relationships(relationships)
-    
+        self.invalidate_cache()
+
     # ========================================================================
     # State Management
     # ========================================================================
@@ -675,29 +716,29 @@ class MemoryManager:
         Args:
             character_id: Character ID to set as active
         """
-        state_file = self.project_path / "state.json"
+        state_file = self.project_path / STATE_FILE
         
         # Load current state
-        with open(state_file, 'r') as f:
+        with open(state_file, 'r', encoding='utf-8') as f:
             state = json.load(f)
-        
+
         # Update active character
         state["active_character"] = character_id
         state["last_updated"] = datetime.utcnow().isoformat() + "Z"
-        
+
         # Save state
-        with open(state_file, 'w') as f:
+        with open(state_file, 'w', encoding='utf-8') as f:
             json.dump(state, f, indent=2)
     
     def get_active_character(self) -> Optional[str]:
         """Get the active character ID from state.json.
-        
+
         Returns:
             Active character ID or None
         """
-        state_file = self.project_path / "state.json"
-        
-        with open(state_file, 'r') as f:
+        state_file = self.project_path / STATE_FILE
+
+        with open(state_file, 'r', encoding='utf-8') as f:
             state = json.load(f)
         
         return state.get("active_character")
@@ -720,12 +761,12 @@ class MemoryManager:
     
     def save_lore(self, lore: Lore):
         """Save a lore entry.
-        
+
         Args:
             lore: Lore object to save
         """
         lore_list = self.load_all_lore()
-        
+
         # Update existing or append new
         found = False
         for i, existing in enumerate(lore_list):
@@ -733,13 +774,14 @@ class MemoryManager:
                 lore_list[i] = lore
                 found = True
                 break
-        
+
         if not found:
             lore_list.append(lore)
-        
+
         # Save to file
         data = {"lore": [l.to_dict() for l in lore_list]}
         self._write_json(self.lore_file, data)
+        self.invalidate_cache()
     
     def load_lore(self, lore_id: str) -> Optional[Lore]:
         """Load a specific lore entry.
@@ -757,13 +799,14 @@ class MemoryManager:
         return None
     
     def load_all_lore(self) -> List[Lore]:
-        """Load all lore entries.
-        
+        """Load all lore entries (with tick cache).
+
         Returns:
             List of Lore objects
         """
-        data = self._read_json(self.lore_file)
-        return [Lore.from_dict(l) for l in data.get("lore", [])]
+        return self._cache_get("all_lore", lambda: [
+            Lore.from_dict(l) for l in self._read_json(self.lore_file).get("lore", [])
+        ])
     
     def list_lore_by_category(self, category: str) -> List[Lore]:
         """List lore entries by category.
@@ -791,7 +834,7 @@ class MemoryManager:
     
     def delete_lore(self, lore_id: str):
         """Delete a lore entry.
-        
+
         Args:
             lore_id: Lore ID to delete
         """
@@ -799,3 +842,4 @@ class MemoryManager:
         lore_list = [l for l in lore_list if l.id != lore_id]
         data = {"lore": [l.to_dict() for l in lore_list]}
         self._write_json(self.lore_file, data)
+        self.invalidate_cache()

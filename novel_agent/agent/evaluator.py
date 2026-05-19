@@ -1,47 +1,94 @@
-"""Scene evaluator for quality and consistency checking."""
+"""Scene evaluator — quality and consistency checks with LLM fallback."""
 
-from typing import Dict, Any, List
-from ..memory.plot_outline import PlotOutlineManager
+import json
+import logging
+import re
+from typing import Dict, Any, List, Optional
+
+from ..plot.manager import PlotOutlineManager
+
+logger = logging.getLogger(__name__)
+
+# ---- Fast-path keywords (bypass LLM when none are matched) ----------------
+
+_FAST_PATH_MARKERS = [
+    "他不知道的是", "殊不知", "后来他才知道",
+    "谁也不曾料到", "没有人注意到", "他们不知道",
+]
+
+# ---- LLM judge prompts --------------------------------------------------
+
+_POV_JUDGE_PROMPT = """你是小说POV检测专家。请通读以下场景，判断是否存在视点（POV）违规。
+
+当前POV角色：{character_name}（角色类型：{role}）
+
+POV规则：
+- 一切描写必须通过 {character_name} 的感知过滤——他看到、听到、感受到、想到的
+- 禁止揭示其他角色的内心想法（除非 {character_name} 能观察到其外部表现）
+- 禁止叙述者直接介入评论（全知叙述）
+- 禁止跳到另一个角色的视角（头跳）
+- 禁止出现"{character_name}不知道的是"之类的全知预告
+
+判断标准：
+- 角色基于经验/观察做出的合理推测 → 不算违规
+- 角色回忆过去的事 → 不算违规
+- 角色猜测/想象别人的想法 → 不算违规（只要明确是他在想）
+- 叙述者直接说出角色不可能知道的信息 → 违规
+- 突然从另一个角色的感官出发描写 → 违规
+
+场景全文：
+```
+{scene_text}
+```
+
+请找出所有POV违规之处。只输出JSON：
+{{"violations": [{{"text": "违规原文片段", "reason": "为什么这是违规"}}], "passed": true/false}}"""
+
+_CONTINUITY_JUDGE_PROMPT = """你是小说连续性检测专家。场景中POV角色的身体状况与行动存在矛盾。
+
+POV角色：{character_name}
+身体状态：{physical_state}
+矛盾动作：{action}
+
+场景文本片段：
+```
+{text_snippet}
+```
+
+请判断：角色的行动是否与其身体状况构成真正的连续性矛盾？
+- 如果角色只是尝试做动作但失败了 → 不算矛盾
+- 如果角色以受伤状态做出了不可能的动作 → 才是矛盾
+
+只输出JSON：{{"is_contradiction": true/false, "reason": "一句话理由(中文)"}}"""
 
 
 class SceneEvaluator:
-    """Evaluates scene quality and consistency."""
-    
-    def __init__(self, memory_manager, config):
-        """Initialize scene evaluator.
-        
-        Args:
-            memory_manager: MemoryManager instance
-            config: Configuration object
-        """
+    """Evaluates scene quality and consistency.
+
+    Uses fast keyword pre-filters for POV and continuity checks.
+    When keywords trigger and an LLM interface is available, asks the
+    LLM to confirm ambiguous cases — reducing false positives.
+    """
+
+    def __init__(self, memory_manager, config, llm_interface=None):
         self.memory = memory_manager
         self.config = config
-    
+        self.llm = llm_interface
+
+    # ---- public API ------------------------------------------------------
+
     def evaluate_scene(self, scene_text: str, scene_context: Dict[str, Any]) -> Dict[str, Any]:
-        """Evaluate scene for quality and consistency.
-        
-        Args:
-            scene_text: The generated scene prose
-            scene_context: Context used to generate the scene
-        
-        Returns:
-            Dictionary with:
-                - passed: bool - Whether scene passed all checks
-                - issues: List[str] - Critical issues that failed checks
-                - warnings: List[str] - Non-critical warnings
-                - checks: Dict[str, bool] - Individual check results
-        """
-        issues = []
-        warnings = []
-        checks = {}
+        issues: List[str] = []
+        warnings: List[str] = []
+        checks: Dict[str, bool] = {}
 
         checks["pov"] = self._check_pov(scene_text, scene_context)
         if not checks["pov"]:
-            warnings.append("Possible POV violations detected (omniscient narration)")
+            issues.append("POV违规：场景存在全知叙述或视角跳跃，需要修正")
 
         checks["continuity"] = self._check_continuity(scene_text, scene_context)
         if not checks["continuity"]:
-            warnings.append("Possible continuity issues detected")
+            issues.append("连续性错误：场景与角色状态矛盾")
 
         continuity_flags: List[str] = []
         if not checks["continuity"]:
@@ -59,93 +106,128 @@ class SceneEvaluator:
         }
         result.update(qa_metrics)
         return result
-    
+
+    # ---- POV check -------------------------------------------------------
+
     def _check_pov(self, text: str, context: Dict[str, Any]) -> bool:
-        """Check for POV violations using heuristics.
-        
-        Args:
-            text: Scene text
-            context: Scene context
-        
-        Returns:
-            True if POV appears correct, False if violations detected
-        """
-        # Simple heuristic: look for common omniscient narration markers
-        omniscient_markers = [
-            "unknown to",
-            "little did",
-            "would later",
-            "meanwhile",
-            "across town",
-            "at that moment",
-            "unbeknownst",
-            "little did they know",
-            "what they didn't know",
-            "in another part of"
-        ]
-        
+        """POV check: fast-path keyword bypass → LLM full-scene scan."""
+        # Fast path: no common markers at all, skip LLM to save cost
         text_lower = text.lower()
-        
-        # Check for each marker
-        for marker in omniscient_markers:
-            if marker in text_lower:
-                return False
-        
-        return True
-    
-    def _check_continuity(self, text: str, context: Dict[str, Any]) -> bool:
-        """Enhanced continuity check using character and location state.
-        
-        Phase 5: Checks for basic contradictions with established facts.
-        
-        Args:
-            text: Scene text
-            context: Scene context
-        
-        Returns:
-            True if no obvious contradictions detected
-        """
+        if not any(m in text_lower for m in _FAST_PATH_MARKERS):
+            if not self.llm:
+                return True  # No LLM, no markers — assume clean
+            # Even without markers, run LLM on first 2 ticks or when configured
+            tick = context.get("current_tick", 99)
+            if tick > 2 and not self.config.get("generation", {}).get("eval_always_llm", False):
+                return True  # Skip LLM for cost efficiency on established stories
+
+        if self.llm:
+            return self._llm_check_pov(text, context)
+        return False
+
+    def _llm_check_pov(self, text: str, context: Dict[str, Any]) -> bool:
+        """LLM scans the full scene for any form of POV violation."""
+        pov_id = context.get("pov_character_id", "")
+        char_name = context.get("pov_character_name", "未知")
+        char_role = ""
+        if pov_id:
+            char = self.memory.load_character(pov_id)
+            if char:
+                char_name = char.display_name or char_name
+                char_role = char.role or ""
+
+        # Send first 2500 chars to keep token cost low
+        sample = text[:2500]
+
+        prompt = _POV_JUDGE_PROMPT.format(
+            character_name=char_name,
+            role=char_role or "未知",
+            scene_text=sample,
+        )
         try:
-            # Get POV character
-            pov_char_id = context.get('pov_character_id')
-            if not pov_char_id:
-                return True  # Can't check without POV character
-            
-            character = self.memory.load_character(pov_char_id)
-            if not character:
-                return True  # Can't check if character doesn't exist
-            
-            text_lower = text.lower()
-            
-            # Basic checks for common contradictions
-            # These are heuristic and may have false positives
-            
-            # Check 1: Character physical state consistency
-            # If character is described as injured/exhausted in state, 
-            # scene shouldn't describe them as energetic/healthy
-            if character.current_state.physical_state:
-                physical_state = character.current_state.physical_state.lower()
-                if "injured" in physical_state or "wounded" in physical_state:
-                    # Look for contradictory descriptions
-                    if "leaped" in text_lower or "sprinted" in text_lower:
-                        # This might be a contradiction, but not critical
-                        pass
-            
-            # Check 2: Location consistency
-            # If character is in a specific location, they shouldn't suddenly
-            # be described in a completely different location without transition
-            # (This is hard to check heuristically, so we'll keep it simple)
-            
-            # For Phase 5, we'll keep this basic
-            # More sophisticated checking can be added later
-            
+            response = self.llm.generate(prompt, max_tokens=300)
+            data = self._extract_json(response)
+            if data is None:
+                logger.warning("LLM POV check: JSON parse failed, defaulting to pass")
+                return True
+            violations = data.get("violations", [])
+            passed = data.get("passed", True)
+            if violations:
+                for v in violations:
+                    logger.info("POV违规: %s — %s", v.get("text", "")[:40], v.get("reason", ""))
+            return passed
+        except Exception:
+            logger.warning("LLM POV check failed, defaulting to pass")
+        return True
+
+    # ---- continuity check ------------------------------------------------
+
+    def _check_continuity(self, text: str, context: Dict[str, Any]) -> bool:
+        """Two-phase continuity check: heuristic → LLM confirmation."""
+        pov_id = context.get("pov_character_id")
+        if not pov_id:
             return True
-            
-        except Exception as e:
-            # If checking fails, don't fail the scene
+        character = self.memory.load_character(pov_id)
+        if not character:
             return True
 
-    def _compute_qa_metrics(self, text: str, context: Dict[str, Any], continuity_flags: List[str], warnings: List[str]) -> Dict[str, Any]:
+        text_lower = text.lower()
+        physical_state = (character.current_state.physical_state or "").lower()
+
+        if "injured" in physical_state or "wounded" in physical_state:
+            athletic_actions = ["leaped", "sprinted", "跃起", "飞奔", "猛地起身", "一跃"]
+            for action in athletic_actions:
+                if action in text_lower or action in text:
+                    if self.llm:
+                        return self._llm_check_continuity(text, character, action, context)
+                    return False
+        return True
+
+    def _llm_check_continuity(self, text: str, character, action: str, context: Dict[str, Any]) -> bool:
+        char_name = character.display_name or character.first_name or "角色"
+        hit_pos = text.find(action)
+        start = max(0, hit_pos - 100)
+        end = min(len(text), hit_pos + 100)
+        snippet = text[start:end]
+
+        prompt = _CONTINUITY_JUDGE_PROMPT.format(
+            character_name=char_name,
+            physical_state=character.current_state.physical_state or "受伤",
+            action=action,
+            text_snippet=snippet,
+        )
+        try:
+            response = self.llm.generate(prompt, max_tokens=150)
+            data = self._extract_json(response)
+            if data and not data.get("is_contradiction", True):
+                logger.info("LLM continuity check: false alarm — %s", data.get("reason", ""))
+                return True
+            logger.info("LLM continuity check: confirmed — %s", data.get("reason", "") if data else "parse failed")
+        except Exception:
+            logger.warning("LLM continuity check failed, falling back to keyword result")
+        return False
+
+    # ---- JSON extraction -------------------------------------------------
+
+    @staticmethod
+    def _extract_json(response: str) -> Optional[dict]:
+        match = re.search(r'\{[^{}]*\}', response)
+        if match:
+            try:
+                return json.loads(match.group(0))
+            except json.JSONDecodeError:
+                pass
+        return None
+
+    # ---- QA metrics (non-fatal quality signals) --------------------------
+
+    def _compute_qa_metrics(
+        self,
+        text: str,
+        context: Dict[str, Any],
+        continuity_flags: List[str],
+        warnings: List[str],
+    ) -> Dict[str, Any]:
         key_change = context.get("key_change", "") or ""
         progress_milestone = context.get("progress_milestone", "") or ""
         scene_mode = context.get("scene_mode", "") or ""
@@ -154,30 +236,52 @@ class SceneEvaluator:
         text_lower = text.lower()
 
         def extract_keywords(value: str) -> List[str]:
-            words = [w.strip(".,!?;:\"'()").lower() for w in value.split()]
-            return [w for w in words if len(w) >= 4]
+            """Extract meaningful substrings from a Chinese sentence.
+
+            Chinese has no spaces — split by common punctuation and
+            take chunks of 2+ characters.
+            """
+            import re
+            chunks = re.split(r'[，。、；：！？\s,.;:!?\-\—]+', value)
+            result = []
+            for chunk in chunks:
+                chunk = chunk.strip()
+                if len(chunk) >= 2:
+                    result.append(chunk)
+                # Also take character bigrams for broader matching
+                for i in range(len(chunk) - 1):
+                    result.append(chunk[i:i+2])
+            return list(set(result))
 
         change_keywords = extract_keywords(key_change) or extract_keywords(progress_milestone)
-        achieved_change_value = False
+        # A change is "achieved" if at least 30% of the key_change keywords
+        # appear in the scene text (fuzzy, not exact substring)
+        kw_hits = 0
         if change_keywords:
-            achieved_change_value = any(w in text_lower for w in change_keywords)
+            kw_hits = sum(1 for w in change_keywords if w in text_lower)
+            achieved_change_value = kw_hits >= max(1, len(change_keywords) * 0.3)
         else:
             achieved_change_value = True
 
         achieved_change = {
             "value": achieved_change_value,
-            "explanation": "Heuristic match between key_change/progress_milestone and scene text."
+            "explanation": f"{kw_hits}/{len(change_keywords)} keywords matched" if change_keywords else "no keywords to match",
         }
 
-        quote_count = text.count("\"")
-        dialogue_count = max(0, quote_count // 2)
+        # Count Chinese dialogue pairs: 「」, "", '', ""
+        quote_pairs = (
+            len(re.findall(r'「[^」]*」', text)) +
+            len(re.findall(r'"[^"]*"', text)) +
+            len(re.findall(r'“[^”]*”', text)) +
+            len(re.findall(r"'[^']*'", text))
+        )
+        dialogue_count = quote_pairs
 
-        min_exchanges = None
-        met_dialogue_target = None
+        min_exchanges: Optional[int] = None
+        met_dialogue_target: Optional[bool] = None
         if isinstance(dialogue_targets_raw, dict):
             min_exchanges = dialogue_targets_raw.get("min_exchanges")
         elif isinstance(dialogue_targets_raw, str):
-            import re
             match = re.search(r"min_exchanges\s*[:=]\s*(\d+)", dialogue_targets_raw)
             if match:
                 try:
@@ -187,51 +291,42 @@ class SceneEvaluator:
         if isinstance(min_exchanges, int):
             met_dialogue_target = dialogue_count >= min_exchanges
 
-        if context.get("transition_path"):
-            transition_clarity_score = 8
-            transition_notes = "Transition path provided in plan."
-        else:
-            transition_clarity_score = 5
-            transition_notes = "No explicit transition_path provided."
+        transition_clarity_score = 8 if context.get("transition_path") else 5
+        transition_notes = (
+            "Transition path provided in plan."
+            if context.get("transition_path")
+            else "No explicit transition_path provided."
+        )
 
         mode_used = scene_mode or "unknown"
 
-        # Mode diversity warning based on recent QA history
-        mode_diversity_warning = False
         recent_qa: List[Dict[str, Any]] = []
         try:
             recent_qa = self.memory.get_recent_scene_qa(count=3)
         except Exception:
-            recent_qa = []
+            pass
 
-        recent_modes: List[str] = []
+        recent_modes = []
         for entry in recent_qa:
             evaluation = entry.get("evaluation", {}) or {}
             m = evaluation.get("mode_used")
             if isinstance(m, str) and m:
                 recent_modes.append(m)
 
+        mode_diversity_warning = False
         if mode_used != "unknown" and recent_modes:
             last_modes = recent_modes[-3:]
-            # If the last few scenes all used the same mode and we are repeating it again,
-            # flag a diversity warning to encourage switching things up.
             if len(last_modes) >= 2 and all(m == last_modes[-1] for m in last_modes) and mode_used == last_modes[-1]:
                 mode_diversity_warning = True
             elif len(last_modes) >= 2 and all(m == mode_used for m in last_modes):
                 mode_diversity_warning = True
 
         if mode_diversity_warning:
-            # Soft guidance only; planner can choose to ignore.
             if mode_used == "technical":
-                warnings.append(
-                    "Recent scenes have repeated technical mode; consider a dialogue or political scene next for variety."
-                )
+                warnings.append("最近几幕重复了技术性场景模式；下次可以考虑对话或政治场景以增加多样性。")
             else:
-                warnings.append(
-                    f"Recent scenes have repeated scene_mode '{mode_used}'; consider choosing a different mode for variety."
-                )
+                warnings.append(f"最近几幕重复了 scene_mode '{mode_used}'；建议更换模式以增加多样性。")
 
-        # Novelty score: simple heuristic vs last scene using QA signals
         novelty_score = 5.0
         if recent_qa:
             last_eval = recent_qa[-1].get("evaluation", {}) or {}
@@ -240,17 +335,11 @@ class SceneEvaluator:
             last_dialogue = last_eval.get("dialogue_count")
 
             score = 5.0
-
             if mode_used != "unknown" and isinstance(last_mode, str) and last_mode:
-                if mode_used != last_mode:
-                    score += 1.5
-                else:
-                    score -= 1.0
-
+                score += 1.5 if mode_used != last_mode else -1.0
             if isinstance(achieved_change_value, bool) and isinstance(last_achieved, bool):
                 if achieved_change_value != last_achieved:
                     score += 0.5
-
             if isinstance(dialogue_count, int) and isinstance(last_dialogue, int):
                 if dialogue_count == 0 and last_dialogue == 0:
                     score -= 1.0
@@ -258,17 +347,9 @@ class SceneEvaluator:
                     score += 1.0
                 elif abs(dialogue_count - last_dialogue) <= 2:
                     score -= 0.5
-
             novelty_score = max(1.0, min(9.0, score))
 
-        # Beat hint alignment: compare current scene text against the next
-        # pending plot beat description using simple keyword overlap. This is
-        # a soft signal only and does not affect pass/fail.
-        beat_hint_alignment: Dict[str, Any] = {
-            "beat_id": None,
-            "score": None,
-            "label": "none",
-        }
+        beat_hint_alignment: Dict[str, Any] = {"beat_id": None, "score": None, "label": "none"}
         try:
             manager = PlotOutlineManager(self.memory.project_path)
             next_beat = manager.get_next_beat()
@@ -279,7 +360,6 @@ class SceneEvaluator:
             beat_id = getattr(next_beat, "id", None)
             description = getattr(next_beat, "description", "") or ""
             beat_hint_alignment["beat_id"] = beat_id
-
             beat_keywords = extract_keywords(description)
             if beat_keywords:
                 unique_keywords = set(beat_keywords)
@@ -287,26 +367,19 @@ class SceneEvaluator:
                 ratio = shared / max(1, len(unique_keywords))
                 beat_hint_alignment["score"] = round(ratio, 2)
                 if ratio >= 0.6:
-                    label = "high"
+                    beat_hint_alignment["label"] = "high"
                 elif ratio >= 0.3:
-                    label = "medium"
+                    beat_hint_alignment["label"] = "medium"
                 elif ratio > 0:
-                    label = "low"
+                    beat_hint_alignment["label"] = "low"
                 else:
-                    label = "none"
-                beat_hint_alignment["label"] = label
+                    beat_hint_alignment["label"] = "none"
 
         return {
             "achieved_change": achieved_change,
             "dialogue_count": dialogue_count,
-            "dialogue_target": {
-                "min_exchanges": min_exchanges,
-                "met": met_dialogue_target,
-            },
-            "transition_clarity": {
-                "score": transition_clarity_score,
-                "notes": transition_notes,
-            },
+            "dialogue_target": {"min_exchanges": min_exchanges, "met": met_dialogue_target},
+            "transition_clarity": {"score": transition_clarity_score, "notes": transition_notes},
             "mode_used": scene_mode or "unknown",
             "mode_diversity_warning": mode_diversity_warning,
             "novelty_score": novelty_score,

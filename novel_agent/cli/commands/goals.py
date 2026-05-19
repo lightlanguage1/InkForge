@@ -76,15 +76,15 @@ def display_goals(info: Dict[str, Any], use_color: bool = True):
         return f"\033[1m{text}\033[0m" if use_color else text
     
     print()
-    print(f"🎯 {bold('Goal Hierarchy')}")
+    print(f" {bold('目标层级')}")
     print("━" * 60)
     
     # Story Goal
     story_goal = info.get('story_goal')
     if story_goal:
-        print(f"\n{bold('Story Goal:')} {story_goal['description']}")
-        print(f"  └─ Emerged at tick {story_goal['promoted_at_tick']}")
-        print(f"  └─ Loop ID: {story_goal['loop_id']}")
+        print(f"\n{bold('故事目标：')} {story_goal['description']}")
+        print(f"  └─ 于第 {story_goal['promoted_at_tick']} 幕浮现")
+        print(f"  └─ 线索ID：{story_goal['loop_id']}")
     else:
         tick = info.get('current_tick', 0)
         if tick < 10:
@@ -95,7 +95,7 @@ def display_goals(info: Dict[str, Any], use_color: bool = True):
     # Secondary Goals
     secondary = info.get('secondary_goals', [])
     if secondary:
-        print(f"\n{bold('Secondary Goals:')}")
+        print(f"\n{bold('次要目标：')}")
         for goal in secondary:
             print(f"  • {goal['description']}")
     
@@ -104,60 +104,60 @@ def display_goals(info: Dict[str, Any], use_color: bool = True):
     protagonist_goals = info.get('protagonist_goals')
     
     if protagonist_name and protagonist_goals:
-        print(f"\n{bold(f'Protagonist Goals ({protagonist_name}):')}")
+        print(f"\n{bold(f'主角目标（{protagonist_name}）：')}")
         
         # Immediate goals
         immediate = protagonist_goals.get('immediate', [])
         if immediate:
-            print(f"\n  {bold('Immediate:')}")
+            print(f"\n  {bold('即时目标：')}")
             for goal in immediate:
                 progress = protagonist_goals.get('progress', {}).get(goal, 0.0)
                 progress_bar = _format_progress_bar(progress)
                 print(f"    • {goal} {progress_bar}")
         else:
-            print(f"\n  {bold('Immediate:')} None")
+            print(f"\n  {bold('即时目标：')} None")
         
         # Arc goal
         arc_goal = protagonist_goals.get('arc_goal')
         if arc_goal:
             progress = protagonist_goals.get('progress', {}).get(arc_goal, 0.0)
             progress_bar = _format_progress_bar(progress)
-            print(f"\n  {bold('Arc Goal:')} {arc_goal} {progress_bar}")
+            print(f"\n  {bold('弧线目标：')} {arc_goal} {progress_bar}")
         
         # Story goal
         story_goal_char = protagonist_goals.get('story_goal')
         if story_goal_char:
             progress = protagonist_goals.get('progress', {}).get(story_goal_char, 0.0)
             progress_bar = _format_progress_bar(progress)
-            print(f"\n  {bold('Story Goal:')} {story_goal_char} {progress_bar}")
+            print(f"\n  {bold('故事目标：')} {story_goal_char} {progress_bar}")
         
         # Completed goals
         completed = protagonist_goals.get('completed', [])
         if completed:
-            print(f"\n  {bold('Completed:')}")
+            print(f"\n  {bold('已完成：')}")
             for goal in completed:
-                print(f"    ✓ {goal}")
+                print(f"    [v] {goal}")
         
         # Abandoned goals
         abandoned = protagonist_goals.get('abandoned', [])
         if abandoned:
-            print(f"\n  {bold('Abandoned:')}")
+            print(f"\n  {bold('已放弃：')}")
             for goal in abandoned:
-                print(f"    ✗ {goal}")
+                print(f"    [x] {goal}")
     
     elif protagonist_name:
-        print(f"\n{bold(f'Protagonist ({protagonist_name}):')} No goals tracked yet")
+        print(f"\n{bold(f'主角（{protagonist_name}）：')} No goals tracked yet")
     else:
-        print(f"\n{bold('Protagonist:')} Not yet established")
+        print(f"\n{bold('主角：')} Not yet established")
     
     # Story goal loops
     story_goal_loops = info.get('story_goal_loops', [])
     if story_goal_loops:
-        print(f"\n{bold('Story Goal Loops:')}")
+        print(f"\n{bold('故事目标线索：')}")
         for loop in story_goal_loops:
             print(f"  • [{loop['id']}] {loop['description']}")
-            print(f"    Category: {loop['category']}, Importance: {loop['importance']}")
-            print(f"    Mentioned in {loop['scenes_mentioned']} scenes")
+            print(f"    分类：{loop['category']}，重要性：{loop['importance']}")
+            print(f"    出现于 {loop['scenes_mentioned']} 个场景")
     
     print()
 

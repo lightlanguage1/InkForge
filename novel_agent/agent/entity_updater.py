@@ -81,13 +81,43 @@ class EntityUpdater:
                 if self._update_relationship(rel_change, tick, scene_id):
                     stats["relationships_updated"] += 1
             
+            # 6. Track character appearances
+            self._track_appearances(facts, tick)
+
             logger.info(f"Applied updates: {stats}")
             
         except Exception as e:
             logger.error(f"Error applying updates: {e}")
         
         return stats
-    
+
+    def _track_appearances(self, facts: dict, tick: int) -> None:
+        """Update character lifecycle fields for characters appearing in this scene."""
+        appeared_ids = set()
+
+        for cu in facts.get("character_updates", []):
+            cid = cu.get("id", "") or cu.get("character_id", "")
+            if cid:
+                appeared_ids.add(cid)
+
+        for rc in facts.get("relationship_changes", []):
+            for key in ("id", "character_id", "target_id"):
+                cid = rc.get(key, "")
+                if cid:
+                    appeared_ids.add(cid)
+
+        for cid in appeared_ids:
+            char = self.memory.load_character(cid)
+            if not char:
+                continue
+            char.last_scene_tick = tick
+            if tick not in char.appearance_ticks:
+                char.appearance_ticks.append(tick)
+            # Auto-transition: departed → returning if they reappear
+            if char.status == "departed" and char.last_scene_tick >= 0:
+                char.status = "returning"
+            self.memory.save_character(char)
+
     def _update_character(self, update: dict, tick: int, scene_id: str, scene_context: dict = None) -> str:
         """Update character with history tracking, detecting POV switches.
         
@@ -158,6 +188,22 @@ class EntityUpdater:
                     setattr(character.current_state, field, new_value)
                     history_changes[field] = {"old": old_value, "new": new_value}
             
+            # If emotional_state changed, map to structured EmotionState
+            if "emotional_state" in changes:
+                from ..memory.entities import EMOTION_MAP, EmotionState
+                emotion_text = changes.get("emotional_state", "")
+                if emotion_text in EMOTION_MAP:
+                    character.current_state.emotion = EMOTION_MAP[emotion_text]
+                elif emotion_text:
+                    character.current_state.emotion = EmotionState(dominant=emotion_text)
+                character.current_state.emotion_history.append({
+                    "tick": tick,
+                    "scene_id": scene_id,
+                    "dominant": character.current_state.emotion.dominant,
+                    "valence": character.current_state.emotion.valence,
+                    "arousal": character.current_state.emotion.arousal,
+                })
+
             # Add to history if there were changes
             if history_changes:
                 history_entry = HistoryEntry(
@@ -167,7 +213,7 @@ class EntityUpdater:
                     summary=f"Updated in scene {scene_id}"
                 )
                 character.history.append(history_entry)
-                
+
                 # Save character
                 self.memory.save_character(character)
                 logger.debug(f"Updated character {char_id}: {list(history_changes.keys())}")

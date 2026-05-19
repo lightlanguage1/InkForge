@@ -4,7 +4,7 @@ from typing import Dict, Any, Optional, List
 
 from ..project import load_project_state
 from ...memory.manager import MemoryManager
-from ...memory.plot_outline import PlotOutlineManager
+from ...plot.manager import PlotOutlineManager
 from ...memory.entities import PlotBeat, PlotOutline
 from ...tools.llm_interface import send_prompt_with_retry
 
@@ -39,26 +39,26 @@ def get_plot_status(project_dir: Path) -> Dict[str, Any]:
 
 def display_plot_status(info: Dict[str, Any]) -> None:
     print()
-    print(f"📍 Project: {info['project_dir']}")
-    print(f"📈 Plot Beats: {info['total_beats']} (pending: {info['pending']}, in_progress: {info['in_progress']}, completed: {info['completed']}, skipped: {info['skipped']})")
+    print(f" 项目：{info['project_dir']}")
+    print(f" 情节节拍：{info['total_beats']} 个（待执行：{info['pending']}，进行中：{info['in_progress']}，已完成：{info['completed']}，已跳过：{info['skipped']}）")
     if info.get("current_arc"):
-        print(f"🎭 Current Arc: {info['current_arc']} (progress: {info['arc_progress']:.2f})")
-    print(f"🕒 Outline Created: {info['created_at']}")
-    print(f"🕒 Last Updated: {info['last_updated']}")
+        print(f" 当前弧线：{info['current_arc']}（进度：{info['arc_progress']:.2f}）")
+    print(f" 大纲创建时间：{info['created_at']}")
+    print(f" 最后更新：{info['last_updated']}")
 
     duplicates = info.get("duplicate_ids") or []
     missing = info.get("missing_prerequisites") or []
     if duplicates or missing:
         print()
-        print("⚠️  Validation issues detected:")
+        print("[WARN]  检测到验证问题：")
         if duplicates:
-            print(f"   Duplicate beat IDs: {', '.join(duplicates)}")
+            print(f"   重复节拍ID：{', '.join(duplicates)}")
         if missing:
             for item in missing:
                 print(f"   Beat {item['beat_id']} has missing prerequisite {item['prerequisite']}")
     else:
         print()
-        print("✅ No validation issues detected.")
+        print("[OK] 未检测到验证问题。")
 
 
 def display_plot_status_detailed(project_dir: Path) -> None:
@@ -71,11 +71,11 @@ def display_plot_status_detailed(project_dir: Path) -> None:
 
     if not outline.beats:
         print()
-        print("No beats in plot outline.")
+        print("情节大纲中暂无节拍。")
         return
 
     print()
-    print("Detailed beats:")
+    print("详细节拍列表：")
     for beat in outline.beats:
         status = getattr(beat, "status", "pending")
         executed_in_scene = getattr(beat, "executed_in_scene", None)
@@ -95,7 +95,7 @@ def display_plot_status_detailed(project_dir: Path) -> None:
                 # Add warning indicator for low scores
                 score_str = f"score={verification_score:.2f}"
                 if verification_score < 0.4:
-                    score_str += " ⚠️"
+                    score_str += " [WARN]"
                 parts.append(score_str)
             if verification_method:
                 parts.append(f"method={verification_method}")
@@ -109,22 +109,22 @@ def get_next_beat(project_dir: Path) -> Optional[PlotBeat]:
 
 def display_next_beat(beat: Optional[PlotBeat]) -> None:
     if not beat:
-        print("No pending plot beats in outline.")
+        print("大纲中暂无待执行节拍。")
         return
 
     print()
-    print(f"Next Beat: {beat.id} [{beat.status}]")
-    print(f"Description: {beat.description}")
+    print(f"下一节拍：{beat.id}【{beat.status}】")
+    print(f"描述：{beat.description}")
     if beat.characters_involved:
-        print(f"Characters: {', '.join(beat.characters_involved)}")
+        print(f"涉及角色：{', '.join(beat.characters_involved)}")
     if beat.location:
-        print(f"Location: {beat.location}")
+        print(f"地点：{beat.location}")
     if beat.plot_threads:
-        print(f"Threads: {', '.join(beat.plot_threads)}")
+        print(f"剧情线：{', '.join(beat.plot_threads)}")
     if beat.tension_target is not None:
-        print(f"Tension Target: {beat.tension_target}/10")
+        print(f"张力目标：{beat.tension_target}/10")
     if beat.prerequisites:
-        print(f"Prerequisites: {', '.join(beat.prerequisites)}")
+        print(f"前置条件：{', '.join(beat.prerequisites)}")
 
 
 def _strip_json_fences(text: str) -> str:
@@ -370,11 +370,11 @@ def display_generated_beats(result: Dict[str, Any]) -> None:
     issues: Dict[str, Any] = result.get("issues", {}) or {}
 
     if not beats:
-        print("No beats were generated.")
+        print("未生成任何节拍。")
         return
 
     print()
-    print(f"Generated {len(beats)} plot beats:")
+    print(f"已生成 {len(beats)} 个情节节拍：")
     for beat in beats:
         print(f"  {beat.id}: {beat.description}")
 
@@ -382,7 +382,7 @@ def display_generated_beats(result: Dict[str, Any]) -> None:
     missing = issues.get("missing_prerequisites") or []
     if duplicates or missing:
         print()
-        print("Validation notes:")
+        print("验证说明：")
         if duplicates:
             print(f"  Duplicate beat IDs: {', '.join(duplicates)}")
         if missing:
@@ -403,7 +403,7 @@ def clear_plot_outline(project_dir: Path, confirm: bool = True) -> bool:
     outline_path = project_dir / "plot_outline.json"
     
     if not outline_path.exists():
-        print("❌ No plot outline found.")
+        print("[ERR] 未找到情节大纲。")
         return False
     
     # Load current outline to show what will be deleted
@@ -414,21 +414,21 @@ def clear_plot_outline(project_dir: Path, confirm: bool = True) -> bool:
     pending = sum(1 for b in outline.beats if b.status == "pending")
     completed = sum(1 for b in outline.beats if b.status in ("completed", "executed"))
     
-    print(f"\n⚠️  About to delete plot outline:")
-    print(f"   Total beats: {total_beats}")
-    print(f"   Pending: {pending}")
-    print(f"   Completed: {completed}")
+    print(f"\n[WARN]  About to delete plot outline:")
+    print(f"   节拍总数：{total_beats}")
+    print(f"   待执行：{pending}")
+    print(f"   已完成：{completed}")
     
     if confirm:
         import typer
         proceed = typer.confirm("\nAre you sure you want to delete all plot beats?", default=False)
         if not proceed:
-            print("❌ Cancelled.")
+            print("[ERR] 已取消。")
             return False
     
     # Delete the file
     outline_path.unlink()
-    print("✅ Plot outline cleared.")
-    print("   Beats will auto-regenerate when plot-first mode is active.")
+    print("[OK] 情节大纲已清除。")
+    print("   情节优先模式激活时节拍将自动重新生成。")
     
     return True

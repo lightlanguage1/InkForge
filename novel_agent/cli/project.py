@@ -9,6 +9,17 @@ from datetime import datetime
 from typing import Optional, Dict, Any, TYPE_CHECKING
 from ..utils.file_ops import write_json, write_file, read_json
 from ..configs.config import Config
+from ..configs.constants import (
+    MEMORY_SUBDIRS,
+    PROJECT_SUBDIRS,
+    STATE_FILE,
+    CONFIG_FILE,
+    README_FILE,
+    OPEN_LOOPS_FILE,
+    RELATIONSHIPS_FILE,
+    COUNTERS_FILE,
+    PLOT_OUTLINE_FILE,
+)
 
 if TYPE_CHECKING:
     from .foundation import StoryFoundation
@@ -58,13 +69,10 @@ def create_novel_project(
     
     try:
         # Create directory structure
-        os.makedirs(os.path.join(project_dir, 'memory', 'characters'), exist_ok=True)
-        os.makedirs(os.path.join(project_dir, 'memory', 'locations'), exist_ok=True)
-        os.makedirs(os.path.join(project_dir, 'memory', 'scenes'), exist_ok=True)
-        os.makedirs(os.path.join(project_dir, 'memory', 'index'), exist_ok=True)
-        os.makedirs(os.path.join(project_dir, 'scenes'), exist_ok=True)
-        os.makedirs(os.path.join(project_dir, 'plans'), exist_ok=True)
-        os.makedirs(os.path.join(project_dir, 'errors'), exist_ok=True)
+        for subdir in MEMORY_SUBDIRS:
+            os.makedirs(os.path.join(project_dir, "memory", subdir), exist_ok=True)
+        for subdir in PROJECT_SUBDIRS:
+            os.makedirs(os.path.join(project_dir, subdir), exist_ok=True)
         
         # Create initial state file
         initial_state = {
@@ -97,7 +105,7 @@ def create_novel_project(
             'promotion_tick': 0 if primary_goal else None
         }
         
-        write_json(os.path.join(project_dir, 'state.json'), initial_state)
+        write_json(os.path.join(project_dir, STATE_FILE), initial_state)
         
         # Create initial config. Snapshot the current LLM backend/model settings so
         # that this project keeps using the same defaults even if global config
@@ -121,7 +129,7 @@ def create_novel_project(
         if plot_config:
             novel_config['generation'].update(plot_config)
         
-        config_path = os.path.join(project_dir, 'config.yaml')
+        config_path = os.path.join(project_dir, CONFIG_FILE)
         with open(config_path, 'w', encoding='utf-8') as f:
             yaml.dump(novel_config, f, default_flow_style=False, sort_keys=False)
         
@@ -151,20 +159,20 @@ novel summarize         # Compile all scenes
 
 Created: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 """
-        write_file(os.path.join(project_dir, 'README.md'), readme)
+        write_file(os.path.join(project_dir, README_FILE), readme)
         
         # Create empty open_loops.json
-        write_json(os.path.join(project_dir, 'memory', 'open_loops.json'), {
+        write_json(os.path.join(project_dir, "memory", OPEN_LOOPS_FILE), {
             'loops': []
         })
-        
+
         # Create empty relationships.json
-        write_json(os.path.join(project_dir, 'memory', 'relationships.json'), {
+        write_json(os.path.join(project_dir, "memory", RELATIONSHIPS_FILE), {
             'relationships': []
         })
-        
+
         # Create counters.json
-        write_json(os.path.join(project_dir, 'memory', 'counters.json'), {
+        write_json(os.path.join(project_dir, "memory", COUNTERS_FILE), {
             'character': 0,
             'location': 0,
             'scene': 0,

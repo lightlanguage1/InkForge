@@ -219,7 +219,7 @@ def restore_checkpoint(project_dir: Path, checkpoint_id: str, backup_current: bo
             # Load current tick
             state_file = project_dir / "state.json"
             if state_file.exists():
-                with open(state_file, 'r') as f:
+                with open(state_file, 'r', encoding='utf-8') as f:
                     state = json.load(f)
                     current_tick = state.get('current_tick', 0)
                 

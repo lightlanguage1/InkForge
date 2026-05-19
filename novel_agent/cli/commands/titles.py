@@ -144,7 +144,7 @@ def generate_titles(
     try:
         initialize_llm(backend=backend, codex_bin=codex_bin, model=model)
     except RuntimeError as e:
-        print(f"❌ Failed to initialize LLM: {e}")
+        print(f"[ERR] LLM 初始化失败：{e}")
         return []
     
     # Gather context
@@ -179,21 +179,21 @@ def generate_titles(
         count=count,
     )
     
-    print(f"🎯 Generating {count} title suggestions...")
+    print(f" 正在生成 {count} 个标题建议...")
     
     try:
         response = send_prompt(prompt, max_tokens=500)
         titles = parse_titles(response)
     except Exception as e:
-        print(f"❌ Error generating titles: {e}")
+        print(f"[ERR] 生成标题失败：{e}")
         return []
     
     if not titles:
-        print("❌ No titles could be parsed from response")
+        print("[ERR] 无法从响应中解析标题")
         return []
     
     # Output results
-    print(f"\n📚 Title Suggestions:\n")
+    print(f"\n Title Suggestions:\n")
     for i, title in enumerate(titles, 1):
         print(f"  {i}. {title}")
     
@@ -204,6 +204,6 @@ def generate_titles(
             f.write(f"# Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
             for i, title in enumerate(titles, 1):
                 f.write(f"{i}. {title}\n")
-        print(f"\n✅ Saved to: {output_file}")
+        print(f"\n[OK] Saved to: {output_file}")
     
     return titles

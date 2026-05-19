@@ -1,445 +1,87 @@
-"""Prompt templates for agent LLM interactions."""
+"""Prompt templates for agent LLM interactions.
 
-PLANNER_PROMPT_TEMPLATE = """You are a creative story planner for an emergent narrative system.
+Large instruction templates are loaded from data/templates/*.md at import time.
+System prompts and format functions remain in code.
+"""
 
-Your task is to analyze the current story state and create a plan for the next scene that ADVANCES THE PLOT.
+import os
+from pathlib import Path
+from functools import lru_cache
 
-## Current Story State
+from ..configs.constants import DATA_TEMPLATES_DIR
 
-**Novel:** {novel_name}
-**Current Tick:** {current_tick}
-**Active Character:** {active_character_name} ({active_character_id})
+# === System prompts (stable, stay in code) ===
 
-### Overall Story Summary
-{overall_summary}
+SYSTEM_CORE = """你是一个涌现式叙事系统的小说写作助手。
 
-### Recent Scenes (Detailed)
-{recent_scenes_summary}
+核心规则：
+1. 严格 POV：只从当前视角角色的感知出发写作
+2. 展示而非告知——通过动作、对话和感官细节来呈现
+3. 每一幕必须推进情节或角色发展
+4. 与已建立的世界观和角色特质保持一致
+5. 追踪开放的故事线索——解决一些，创造另一些"""
 
-### Open Story Loops (PRIORITIZED BY IMPORTANCE)
-{open_loops_list}
+SYSTEM_PLANNER = SYSTEM_CORE + """
 
-### Tension Pattern (Pacing Awareness)
-{tension_history}
+所有输出必须是符合计划 schema 的有效 JSON。"""
 
-### Recent QA Feedback (Scene Quality & Momentum)
-{qa_feedback}
-
-### Next Plot Beat
-{next_plot_beat}
-
-{beat_enforcement_instructions}
-
-### Active Character Details
-{active_character_details}
-
-### Available Relationships
-{character_relationships}
-
-### Factions (Organizations)
-{factions_summary}
-
-## Available Tools
-
-You can use the following tools to gather information or create entities:
-
-{available_tools_description}
-
-## Your Task: ADVANCE THE STORY
-
-Create a plan for the next scene that makes CONCRETE PROGRESS on the plot.
-
-**CRITICAL REQUIREMENTS:**
-
-1. **CHANGE THE SITUATION** - The scene must alter the story state in a meaningful way
-   - NOT: "Character continues doing X"
-   - YES: "Character succeeds/fails at X, leading to Y"
-   - NOT: "Character struggles with problem"
-   - YES: "Character discovers new information that changes their approach"
-
-2. **ADVANCE OR ESCALATE** - Select at least ONE high-priority open loop and:
-   - Make measurable progress toward resolution (milestones over multiple scenes are OK)
-   - OR introduce a meaningful complication/escalation that moves it forward
-   - If full resolution is premature, specify a 'progress_milestone' for this scene
-
-3. **FORWARD MOMENTUM** - The scene must move the story toward:
-   - Resolution of a conflict
-   - Discovery of crucial information
-   - A character making a significant choice
-   - A situation reaching a turning point
-   - Introduction of a new complication (if current ones are stale)
-
-4. **AVOID REPETITION** - Review recent scenes. Do NOT repeat:
-   - Similar situations (e.g., "character negotiates again")
-   - Similar actions (e.g., "character struggles with same problem")
-   - Similar emotional beats (e.g., "character feels desperate again")
+SYSTEM_WRITER = SYSTEM_CORE + """
 
-**PLANNING QUESTIONS:**
+只输出小说正文，不要任何元评论或说明文字。"""
 
-1. What will CHANGE by the end of this scene?
-2. Which high-priority open loop will you advance?
-3. How will this scene be DIFFERENT from recent scenes?
-4. What is the TURNING POINT or KEY EVENT?
 
-## Output Format
+def split_prompt(template: str, context: dict) -> dict:
+    """将 prompt 拆为 system（稳定段）和 user（动态段）。
 
-Before you respond, make deliberate choices for these planning fields using the **Recent Scenes**, **Tension Pattern**, and **Recent QA Feedback** sections above:
+    返回 {"system": str, "user": str}，可用于 chat() 接口。
+    非 Anthropic 后端自动拼回纯文本。
+    """
+    lines = template.split("\n")
+    mid = len(lines) // 3
+    system_text = "\n".join(lines[:mid])
 
-- `scene_mode`  Primary mode for this scene. Choose from `dialogue`, `political`, `action`, `technical`, or `introspective`.
-  - Prefer a different `scene_mode` than the last few scenes when possible.
-  - If recent QA or recent scenes show repeated `technical` mode, bias this scene toward `dialogue` or `political` to vary texture.
-- `palette_shift`  Short phrase or list that changes the sensory/emotional palette (e.g., `"heat, copper, crowd-noise"` or `"administrative neon, recycled air, clipped voices"`).
-- `transition_path`  1-3 sentence outline of how we move from the end of the previous scene into this one (physical/temporal bridge). Use this when changing location, time, or situation.
-- `dialogue_targets`  Optional dialogue goals. Prefer a structured object (e.g. `{{ "min_exchanges": 6, "conflict_axis": "leverage vs trust", "participants": ["C0", "corp_proxy"] }}`).
-- `beat_target`  Specify how this scene relates to the Next Plot Beat (if shown above). Choose from `"direct"`, `"setup"`, `"followup"`, or `"skip"` and provide a brief explanation in `notes`.
+    user_text = template
+    for key, value in context.items():
+        placeholder = "{" + key + "}"
+        if placeholder in user_text:
+            user_text = user_text.replace(placeholder, str(value))
 
-Then emit the JSON object below:
+    return {"system": system_text, "user": user_text}
 
-```json
-{{
-  "rationale": "Brief explanation focusing on HOW this scene advances the plot and WHAT changes",
-  "scene_intention": "What CHANGES in this scene - be specific about the outcome/turning point",
-  "key_change": "One sentence: What is fundamentally different after this scene?",
-  "progress_milestone": "Specific milestone achieved toward resolving a loop (optional)",
-  "progress_step": "setup|complication|reversal|revelation|decision|resolution (optional)",
-  "scene_mode": "dialogue|political|action|technical|introspective (choose mode that differs from the previous scene when possible)",
-  "palette_shift": "Short description of the scene's sensory/emotional palette (e.g., 'heat, copper, crowd-noise')",
-  "transition_path": "1–3 sentence description of how we move from the previous scene/location to this one (optional if no transition is needed)",
-  "dialogue_targets": "Optional description of dialogue goals (e.g., 'at least 6 exchanges, conflict axis: leverage vs trust, participants: C0 and corp_proxy')",
-  "beat_target": {{
-    "beat_id": "{optional beat id from Next Plot Beat or null}",
-    "strategy": "direct|setup|followup|skip",
-    "notes": "Brief explanation of how/why this scene does or does not execute the beat"
-  }},
-  "loops_addressed": ["OL4", "OL5"],
-  "pov_character": "Character ID for POV (use {active_character_id} or specify another)",
-  "target_location": "Location ID where scene takes place (or null for new location)",
-  "actions": [
-    {{
-      "tool": "tool.name",
-      "args": {{
-        "arg1": "value1"
-      }},
-      "reason": "Why this tool is needed"
-    }}
-  ],
-  "expected_outcomes": [
-    "Concrete outcome 1 (something that CHANGES)",
-    "Concrete outcome 2 (something that CHANGES)"
-  ],
-  "metadata": {{
-    "scene_length": "brief|short|long|extended (optional - only if you want to guide scene length)"
-  }}
-}}
-```
-
-## Guidelines
-
-- Keep actions focused (2-4 tools maximum per plan)
-- Use memory.search to recall relevant context
-- Use character.generate to create characters - names will be auto-generated uniquely
-- Use location.generate to create locations as needed
-- Use relationship.create when characters first interact significantly
-- Use relationship.update to track relationship changes
-- Use faction.generate/update/query to ground organizations when referenced (avoid generic “corporate”)
-  - When you need a new organization, ALWAYS call faction.generate to create it; do not try to create factions by calling faction.update with a made-up id.
-  - When you call faction.update, the id parameter MUST be a real faction id returned from a previous faction.generate or faction.query call (for example, an id from the "faction_id" field in tool results).
-  - Never invent faction ids or guess ids (for example, do not use strings like FACTION_WEIRSPAN_IF_FOUND as ids). You may invent names and summaries for factions, but the ids are opaque tokens assigned by the system.
-- Scene intention must describe a CHANGE, not a continuation
-- Expected outcomes must be CONCRETE changes to story state (or a clear progress milestone)
-- Every scene should contain a turning point or a clear setup beat that commits to future change
-- Avoid repeating recent scene patterns
-- Scene length is optional: use "brief" for quick transitions, "short" for focused moments, "long" for developed scenes, "extended" for major events
-
-**REMEMBER: Your job is to ADVANCE the story, not just continue it. Make something CHANGE.**
-
-Generate your plan now:"""
-
-
-WRITER_PROMPT_TEMPLATE = """You are a creative fiction writer specializing in deep POV narrative.
-
-## Story Context
-
-**Novel:** {novel_name}
-**Tick:** {current_tick}
-
-## Recent Story
-
-The following context includes FULL TEXT from the most recent scenes to help you match prose style, voice, and atmosphere. Earlier scenes are summarized for plot continuity.
-
-{recent_context}
-
-## This Scene's Plan
-
-**Intention:** {scene_intention}
-
-**KEY CHANGE THIS SCENE MUST ACCOMPLISH:** {key_change}
-**PROGRESS MILESTONE (if not resolving):** {progress_milestone}
-
-{plot_beat_section}
-
-**Scene Mode:** {scene_mode}
-**Palette Shift:** {palette_shift}
-**Transition Path (if provided):** {transition_path}
-**Dialogue Targets (if provided):** {dialogue_targets}
-
-**Tool Results:** {tool_results_summary}
-
-## POV Character
-
-{pov_character_details}
-
-## Location
-
-{location_details}
-
-## Your Task
-
-Write a scene passage from {pov_character_name}'s deep POV that ACCOMPLISHES THE KEY CHANGE or CLEARLY ACHIEVES THE PROGRESS MILESTONE described above.{scene_length_guidance}
-
-**CRITICAL REQUIREMENTS:**
-
-1. **EXECUTE THE CHANGE OR ACHIEVE THE MILESTONE** - This scene must accomplish the key change or clearly achieve the specified progress milestone
-   - The situation at the END must be meaningfully different from the BEGINNING
-   - Something must be resolved, discovered, decided, escalated, or firmly set up
-   - DO NOT end with the same status quo as the start
-
-2. **BUILD TO A TURNING POINT** - Structure the scene with:
-   - Opening: Establish current situation
-   - Rising action: Build tension/conflict
-   - Turning point: The moment something CHANGES
-   - Resolution: Show the new situation
-
-3. **USE THE PLANNED TRANSITION (IF PROVIDED)**
-   - If a transition path is provided in the plan, include a brief bridge sequence that moves the reader from the end of the previous scene into this one (anchor-from → traversal → anchor-to).
-   - Make the transition concrete in space/time or situation so the shift never feels like a hard cut.
-
-4. **HONOR DIALOGUE TARGETS (IF PROVIDED)**
-   - If the plan specifies a minimum number of dialogue exchanges, ensure at least that many back-and-forths between the specified participants.
-   - Use those exchanges to drive a visible power shift, decision, or change in leverage by the end of the scene.
-
-5. **APPLY THE PALETTE SHIFT**
-   - Weave in details that reflect the planned sensory/emotional palette (sounds, textures, light, smells, emotional tone), without simply repeating the palette list verbatim.
-   - Use these details throughout the scene to make this passage feel distinct from recent scenes.
-
-6. **AVOID REPETITION** - Review the recent context above
-   - Do NOT repeat similar actions from recent scenes
-   - Do NOT repeat similar emotional beats
-   - Find fresh ways to show character state and conflict
-
-**WRITING RULES:**
-
-1. **Use character name naturally** - The POV character is "{pov_character_name}" - use this name in prose
-   - NEVER use placeholder formats like "char_name" or "character_name"
-   - Use "{pov_character_name}" when introducing the character or for clarity
-   - After introduction, you can vary between the name and pronouns naturally
-   - NEVER invent nicknames or alternate names not provided
-2. **Third-person POV** - Write in third person using "{pov_character_name}" or pronouns (he/she)
-   - NEVER use first person ("I", "my", "me") unless in dialogue
-   - Example: "{pov_character_name} pressed a palm against..." NOT "I pressed my palm against..."
-3. **Deep POV only** - Everything filtered through {pov_character_name}'s perception
-4. **No omniscient narration** - Don't reveal what the character can't know
-5. **Show don't tell** - Use actions, dialogue, and sensory details
-6. **Sensory details** - Engage sight, sound, smell, touch, taste
-7. **Internal thoughts and reactions** - Show character's mental state
-8. **Length:** Write as much as the scene needs - no arbitrary limits
-9. **Ground factions** - When an organization appears for the first time, include a brief identity line (who they are) or use a generated faction representative in dialogue
-
-**OUTPUT FORMAT:** 
-Begin directly with the scene prose (optionally a markdown scene title).
-Do NOT include notes about what you are about to do.
-Do NOT mention files, directories, code, prompts, commands, or being an AI/model.
-
-**AVOID:**
-- Ending with the same situation as the start
-- Repeating actions/beats from recent scenes
-- First-person POV except in dialogue
-- Placeholder names
-- Head-hopping
-- Telling emotions instead of showing
-
-**FOCUS ON:**
-- Accomplishing the key change
-- The turning point moment
-- What {pov_character_name} sees, hears, feels, thinks
-- Concrete actions and dialogue
-- Fresh approaches (not repetitive)
-
-Generate the scene now:"""
 
+# === Template loader ===
+
+_TEMPLATE_DIR = Path(__file__).resolve().parent.parent / DATA_TEMPLATES_DIR
+
+
+@lru_cache(maxsize=8)
+def _load_template(name: str) -> str:
+    """Load a prompt template from data/templates/{name}.md."""
+    path = _TEMPLATE_DIR / f"{name}.md"
+    if not path.exists():
+        raise FileNotFoundError(f"Template not found: {path}")
+    return path.read_text(encoding="utf-8")
+
+
+def _format(name: str, context: dict) -> str:
+    """Load template and interpolate context variables."""
+    template = _load_template(name)
+    return template.format(**context)
+
+
+# === Public format functions ===
 
 def format_planner_prompt(context: dict) -> str:
-    """Format the planner prompt with context variables.
-    
-    Args:
-        context: Dictionary with all context variables
-    
-    Returns:
-        Formatted prompt string
-    """
-    return PLANNER_PROMPT_TEMPLATE.format(**context)
-
-
-FACT_EXTRACTION_PROMPT_TEMPLATE = """Extract structured updates from this scene.
-
-Scene: {scene_text}
-
-POV: {pov_character_id} | Location: {location_id}
-
-Open Loops: {existing_open_loops}
-
-Return ONLY JSON with these updates:
-
-```json
-{{
-  "character_updates": [
-    {{
-      "id": "C0",
-      "changes": {{
-        "emotional_state": "string or null",
-        "physical_state": "string or null",
-        "inventory": ["item1", "item2"] or null,
-        "goals": ["goal1", "goal2"] or null,
-        "beliefs": ["belief1", "belief2"] or null
-      }}
-    }}
-  ],
-  "location_updates": [
-    {{
-      "id": "L0",
-      "changes": {{
-        "description": "string or null",
-        "atmosphere": "string or null",
-        "features": ["feature1", "feature2"] or null
-      }}
-    }}
-  ],
-  "open_loops_created": [
-    {{
-      "description": "string",
-      "importance": "low|medium|high|critical",
-      "category": "mystery|relationship|goal|threat|etc",
-      "related_characters": ["C0"],
-      "related_locations": ["L0"]
-    }}
-  ],
-  "open_loops_resolved": ["OL1", "OL2"],
-  "relationship_changes": [
-    {{
-      "character_a": "C0",
-      "character_b": "C1",
-      "changes": {{
-        "status": "string or null",
-        "perspective_a": "string or null",
-        "perspective_b": "string or null",
-        "intensity": 0-10 or null
-      }}
-    }}
-  ]
-}}
-```
-
-Rules: Use null for no change. Only extract what's clearly shown. For lists, only include NEW items."""
-
-
-def format_planner_prompt(context: dict) -> str:
-    """Format the planner prompt with context variables.
-    
-    Args:
-        context: Dictionary with all context variables
-    
-    Returns:
-        Formatted prompt string
-    """
-    return PLANNER_PROMPT_TEMPLATE.format(**context)
+    return _format("planner_prompt", context)
 
 
 def format_writer_prompt(context: dict) -> str:
-    """Format the writer prompt with context variables.
-    
-    Args:
-        context: Dictionary with all context variables
-    
-    Returns:
-        Formatted prompt string
-    """
-    return WRITER_PROMPT_TEMPLATE.format(**context)
+    return _format("writer_prompt", context)
 
 
 def format_fact_extraction_prompt(context: dict) -> str:
-    """Format the fact extraction prompt with context variables.
-    
-    Args:
-        context: Dictionary with all context variables
-    
-    Returns:
-        Formatted prompt string
-    """
-    return FACT_EXTRACTION_PROMPT_TEMPLATE.format(**context)
-
-
-PLOT_GENERATION_PROMPT_TEMPLATE = """You are a plot architect for a long-form story. Your job is to generate the next {count} factual plot beats.
-
-Return your answer as JSON only, with no explanations, no markdown fences, and no extra text. The JSON must have this shape:
-
-{{
-  "beats": [
-    {{
-      "description": "...",
-      "characters_involved": ["C0", "C1"],
-      "location": "L2",
-      "plot_threads": ["thread_a"],
-      "tension_target": 7,
-      "prerequisites": [],
-      "resolves_loops": [],
-      "creates_loops": []
-    }}
-  ]
-}}
-
-Do not include the fields id, status, created_at, executed_in_scene, or execution_notes. The system will set those fields.
-
-# Current story state
-
-Novel: {novel_name}
-Current tick: {current_tick}
-
-## Open loops
-{open_loops}
-
-## Recent scenes (most recent last)
-{recent_scenes}
-
-# Beat style and granularity rules
-
-Each beat must follow these constraints:
-- The "description" is a single short sentence (roughly 10–20 words) with at most one comma or conjunction ("and", "but", "so").
-- Each beat describes one primary story move: one decision, one action, or one clear consequence. If you feel multiple things happen, split them into multiple beats instead of compressing them.
-- Do not compress long sequences (for example, "over the next few weeks...") into one beat. Focus on the next concrete step.
-- Avoid more than 2–3 proper nouns or technical terms in a single description.
-- Favor concrete external actions and observable changes over vague summaries or internal monologue.
-- The "plot_threads" field should list at most 3 concise thread names per beat; pick only the most relevant threads.
-
-# Your task
-
-Generate {count} new plot beats that:
-- Are small and atomic, following the style rules above.
-- Are factual (no prose or dialogue).
-- Advance existing threads and character arcs.
-- Maintain or increase overall story tension appropriately.
-- Avoid repeating previous beats or scenes.
-
-Remember: respond with JSON only.
-"""
+    return _format("fact_extraction_prompt", context)
 
 
 def format_plot_generation_prompt(context: dict) -> str:
-    """Format the plot generation prompt with context variables.
-    
-    Args:
-        context: Dictionary with all context variables
-    
-    Returns:
-        Formatted prompt string
-    """
-    return PLOT_GENERATION_PROMPT_TEMPLATE.format(**context)
+    return _format("plot_generation_prompt", context)

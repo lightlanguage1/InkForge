@@ -1,13 +1,16 @@
 """Main StoryAgent orchestrator for coordinating the planning and execution loop."""
 
 import json
+import logging
 import re
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any
 
+logger = logging.getLogger(__name__)
+
 from .context import ContextBuilder
-from .prompts import format_planner_prompt
+from .prompts import format_planner_prompt, SYSTEM_PLANNER
 from .schemas import validate_plan
 from .runtime import PlanExecutor
 from .plan_manager import PlanManager
@@ -15,35 +18,47 @@ from .writer_context import WriterContextBuilder
 from .writer import SceneWriter
 from .evaluator import SceneEvaluator
 from .scene_committer import SceneCommitter
-from .fact_extractor import FactExtractor
-from .entity_updater import EntityUpdater
 from .tension_evaluator import TensionEvaluator
-from .lore_extractor import LoreExtractor
-from .lore_contradiction_detector import LoreContradictionDetector
-from .multi_stage_planner import MultiStagePlanner
-from .character_detector import CharacterDetector
 from ..tools.registry import ToolRegistry
 from ..memory.manager import MemoryManager
 from ..memory.vector_store import VectorStore
 from ..memory.summarizer import SceneSummarizer
+from ..configs.constants import (
+    BEAT_LOW_CONFIDENCE_THRESHOLD,
+    GOAL_PROMOTION_WINDOW_START,
+    GOAL_PROMOTION_WINDOW_END,
+    LOOP_MIN_MENTIONS_FOR_PROMOTION,
+)
 from ..plot.manager import PlotOutlineManager
+
+
+def _format_eval_feedback(eval_result: dict) -> str:
+    """Format evaluation issues as Chinese feedback for the Writer retry."""
+    issues = eval_result.get("issues", [])
+    warnings = eval_result.get("warnings", [])
+    if not issues and not warnings:
+        return ""
+    lines = ["## [修正] 上一版场景存在问题，请修正：", ""]
+    for i, issue in enumerate(issues, 1):
+        lines.append(f"{i}. **{issue}**")
+    if warnings:
+        lines.append("")
+        lines.append("**建议改进：**")
+        for w in warnings:
+            lines.append(f"- {w}")
+    lines.append("")
+    lines.append("请重新生成场景，务必修正上述问题。保持故事的连贯性和文笔质量。")
+    return "\n".join(lines)
 
 
 class StoryAgent:
     """Main agent orchestrator for story generation.
-    
-    Coordinates the full tick cycle:
-    1. Gather context
-    2. Generate plan with LLM
-    3. Execute plan
-    4. Store results
-    5. Write scene prose (Phase 4)
-    6. Evaluate scene (Phase 4)
-    7. Commit scene (Phase 4)
-    8. Extract facts (Phase 5)
-    9. Update entities (Phase 5)
-    10. Re-index entities (Phase 5)
-    11. Update state
+
+    Coordinates the tick cycle:
+    1. Plan — gather context, generate plan, execute tools
+    2. Write — build writer context, write scene prose
+    3. Commit — evaluate, save tension, commit scene
+    4. Update — extract facts, entities, lore, detect characters
     """
     
     def __init__(
@@ -64,386 +79,383 @@ class StoryAgent:
             save_prompts: Whether to save prompts to files (Phase 7A.5)
         """
         self.project_path = Path(project_path)
-        self.llm = llm_interface
+        from ..tools.provider import LLMProvider
+        from ..tools.router import ModelRouter
+
         self.tools = tool_registry
         self.config = config
-        
+        self._router = ModelRouter(config)
+
+        # Dual-connection architecture:
+        #   api_llm  → DeepSeek (Writer, Planner) — creative quality
+        #   agent_llm → Ollama local (Evaluator, Extractors) — cost efficiency
+        backend_type = "anthropic" if "claude" in str(config.get("llm.model", "")).lower() else "api"
+        self.llm = LLMProvider(llm_interface, backend_type)
+
+        if self._router.enabled:
+            try:
+                _agent_raw = self._router.get_interface_for_task("extractor")
+                self.agent_llm = LLMProvider(_agent_raw, "api")
+                logger.info("Agent LLM: %s (backend=%s)",
+                            self._router.get_model_for_task("extractor"),
+                            self._router.get_backend_for_task("extractor"))
+            except Exception:
+                logger.warning("Agent LLM init failed, using API fallback")
+                self.agent_llm = self.llm
+        else:
+            self.agent_llm = self.llm
+
         # Initialize components
         self.memory = MemoryManager(self.project_path)
         self.vector = VectorStore(self.project_path)
         self.context_builder = ContextBuilder(
-            self.memory,
-            self.vector,
-            self.tools,
-            config
+            self.memory, self.vector, self.tools, config,
         )
         self.executor = PlanExecutor(self.tools, self.memory, self.vector)
         self.plan_manager = PlanManager(self.project_path)
-        
+
         # Phase 4 components
         self.writer_context_builder = WriterContextBuilder(
-            self.memory,
-            self.vector,
-            config
+            self.memory, self.vector, config,
         )
-        self.writer = SceneWriter(llm_interface, config)
-        self.evaluator = SceneEvaluator(self.memory, config)
+        self.writer = SceneWriter(self.llm, config, fallback_llm=self.agent_llm)
+        self.evaluator = SceneEvaluator(self.memory, config, llm_interface=self.agent_llm)
         self.summarizer = SceneSummarizer(llm_interface)
         self.committer = SceneCommitter(
-            self.memory,
-            self.vector,
-            self.summarizer,
-            project_path
+            self.memory, self.vector, self.summarizer, project_path,
         )
-        
+
         # Phase 5 components
-        self.fact_extractor = FactExtractor(llm_interface, self.memory, config)
-        self.entity_updater = EntityUpdater(self.memory, config)
-        self.character_detector = CharacterDetector(self.memory, config)
-        
-        # Phase 7A.3 components
         self.tension_evaluator = TensionEvaluator(config)
-        
-        # Phase 7A.4 components
-        self.lore_extractor = LoreExtractor(llm_interface, self.memory, config)
-        self.lore_detector = LoreContradictionDetector(self.memory, self.vector, config)
-        
-        # Phase 7A.5 components (optional)
-        self.use_multi_stage = config.get('generation.use_multi_stage_planner', True)
-        if self.use_multi_stage:
-            prompts_dir = self.project_path / "prompts" if save_prompts else None
-            self.multi_stage_planner = MultiStagePlanner(
-                llm_interface,
-                self.memory,
-                self.vector,
-                self.tools,
-                config,
-                save_prompts=save_prompts,
-                prompts_dir=prompts_dir
-            )
-        
+
         # Plot-first components
         self.plot_manager = PlotOutlineManager(self.project_path, llm_interface)
         
         # Load state
         self.state = self._load_state()
-    
-    def tick(self) -> Dict[str, Any]:
+
+    def _load_state(self) -> dict:
+        """Load project state from state.json."""
+        state_file = self.project_path / "state.json"
+        with open(state_file, 'r', encoding='utf-8') as f:
+            return json.load(f)
+
+    def _save_state(self):
+        """Save project state to state.json."""
+        state_file = self.project_path / "state.json"
+        self.state["last_updated"] = datetime.utcnow().isoformat() + "Z"
+        with open(state_file, 'w', encoding='utf-8') as f:
+            json.dump(self.state, f, indent=2)
+
+    def tick(self, notes: str = "") -> Dict[str, Any]:
         """Execute one story generation tick.
-        
-        Uses two-phase execution for tick 0 (entity setup then scene writing)
-        and normal execution for subsequent ticks.
-        
+
+        Args:
+            notes: Optional direction notes for this tick only.
+                   Injected into both planner and writer contexts to
+                   allow on-the-fly scene steering (if-lines, tone
+                   shifts, POV experiments, etc.).  Overrides the
+                   project-level ``generation.writer_notes`` config
+                   for this tick when non-empty.
+
         Returns:
             Result dictionary with tick info and success status
-        
-        Raises:
-            RuntimeError: If tool execution fails
-            ValueError: If plan validation fails
         """
+        self._tick_notes = notes
         tick = self.state["current_tick"]
-        
-        # Use two-phase execution for first tick only
         if tick == 0:
             return self._first_tick()
         else:
             return self._normal_tick()
     
     def _normal_tick(self) -> Dict[str, Any]:
-        """Execute normal tick (tick 1+).
-        
-        Returns:
-            Result dictionary with tick info and success status
-        """
+        """Execute normal tick (tick 1+)."""
         tick = self.state["current_tick"]
-        
-        try:
-            # Check if plot-first mode is enabled
-            # Skip plot-first for tick 1 to allow character/world establishment
-            use_plot_first = self.config.get('generation.use_plot_first', False)
-            plot_first_start_tick = self.config.get('generation.plot_first_start_tick', 2)
-            current_beat = None
-            
-            if use_plot_first and tick >= plot_first_start_tick:
-                # Check if we need to regenerate beats
-                if self._needs_beat_regeneration():
-                    print("   📖 Generating plot beats...")
-                    beats_ahead = self.config.get('generation.plot_beats_ahead', 5)
-                    try:
-                        new_beats = self.plot_manager.generate_next_beats(count=beats_ahead)
-                        self.plot_manager.add_beats(new_beats)
-                        print(f"        Generated {len(new_beats)} new plot beats")
-                    except Exception as e:
-                        print(f"        ⚠️  Beat generation failed: {e}")
-                        # Fallback to reactive mode if configured
-                        if not self.config.get('generation.fallback_to_reactive', True):
-                            raise
-                
-                # Get next beat to execute
-                current_beat = self.plot_manager.get_next_beat()
-                if current_beat:
-                    print(f"   🎯 Executing beat: {current_beat.description}")
-                elif not self.config.get('generation.fallback_to_reactive', True):
-                    raise RuntimeError("No plot beats available and fallback disabled")
-            
-            # Step 1: Gather context
-            print("   1. Gathering context...")
-            context = self.context_builder.build_planner_context(self.state, current_beat=current_beat)
-            
-            # Step 2: Generate plan with LLM
-            print("   2. Generating plan with LLM...")
-            plan = self._generate_plan(context)
-            
-            # Step 3: Validate plan
-            print("   3. Validating plan...")
-            validate_plan(plan)
-            
-            # Step 4: Execute plan
-            print("   4. Executing tool calls...")
-            execution_results = self.executor.execute_plan(plan, tick)
-            
-            # Step 4.5: Set active character if none exists and a character was created
-            if self.state.get("active_character") is None:
-                # Check if a character was created in this tick
-                for action in execution_results.get("actions_executed", []):
-                    if action.get("tool") == "character.generate" and action.get("success"):
-                        char_id = action.get("result", {}).get("character_id")
-                        if char_id:
-                            self.state["active_character"] = char_id
-                            # Also update the plan's POV character to use the real ID
-                            if plan.get("pov_character") and not plan["pov_character"].startswith("C"):
-                                plan["pov_character"] = char_id
-                            break
-            
-            # Step 5: Store plan and results
-            print("   5. Storing plan...")
-            plan_file = self.plan_manager.save_plan(
-                tick,
-                plan,
-                execution_results,
-                context
-            )
-            
-            # Step 6: Write scene prose (Phase 4)
-            print("   6. Writing scene prose...")
-            
-            # Inject beat constraints into plan before building writer context
-            if use_plot_first and current_beat:
-                plan["plot_beat"] = {
-                    "description": current_beat.description,
-                    "characters_involved": current_beat.characters_involved,
-                    "location": current_beat.location,
-                    "tension_target": current_beat.tension_target,
-                    "plot_threads": current_beat.plot_threads
-                }
-            
-            writer_context = self.writer_context_builder.build_writer_context(
-                plan,
-                execution_results,
-                self.state
-            )
-            
-            scene_data = self.writer.write_scene(writer_context)
-            
-            print("   7. Evaluating scene...")
-            eval_result = self.evaluator.evaluate_scene(
-                scene_data["text"],
-                writer_context
-            )
-            
-            # Log evaluation warnings (non-blocking)
-            if eval_result["warnings"]:
-                # Warnings are logged but don't fail the tick
-                pass
-            
-            # Fail if critical issues found
-            if not eval_result["passed"]:
-                raise ValueError(f"Scene evaluation failed: {eval_result['issues']}")
-            
-            # Step 7.5: Evaluate tension (Phase 7A.3)
-            print("   7.5. Evaluating tension...")
-            tension_result = self.tension_evaluator.evaluate_tension(
-                scene_data["text"],
-                writer_context
-            )
-            
-            print("   8. Committing scene...")
-            scene_id = self.committer.commit_scene(scene_data, tick, plan)
 
-            if eval_result:
+        try:
+            current_beat = self._resolve_plot_beat(tick)
+
+            # Phase 1: Plan
+            context = self.context_builder.build_planner_context(self.state, current_beat=current_beat, notes=getattr(self, '_tick_notes', ''))
+            for plan_attempt in range(3):
                 try:
-                    self.memory.save_scene_qa(scene_id, tick, eval_result)
-                except Exception:
-                    pass
-                try:
-                    self._update_beats_from_evaluation(scene_id, plan, eval_result)
-                except Exception:
-                    pass
-            
-            # Verify beat execution and mark complete
-            if use_plot_first and current_beat:
-                print("   8.5. Verifying beat execution...")
-                
-                # Check if planner explicitly targeted this beat
-                beat_target = plan.get("beat_target", {}) or {}
-                planner_targeted = beat_target.get("beat_id") == current_beat.id
-                
-                # Compute semantic similarity score (always, for visibility)
-                semantic_score = self.vector.compute_semantic_similarity(
-                    current_beat.description,
-                    scene_data["text"][:3000]  # Use first 3000 chars
-                )
-                
-                if planner_targeted:
-                    # Trust the planner - mark complete with semantic score for reference
-                    print(f"        ✓ Beat {current_beat.id} accomplished (trusted planner, score={semantic_score:.2f})")
-                    self._mark_beat_complete(
-                        current_beat.id, 
-                        scene_id,
-                        verification_score=semantic_score,
-                        verification_method="trusted_planner"
-                    )
-                    if semantic_score < 0.4:
-                        print(f"        ⚠️  Low confidence score - consider manual review")
-                elif self.config.get('generation.verify_beat_execution', True):
-                    # No explicit target - use semantic score with threshold
-                    score_threshold = self.config.get('generation.beat_verification_threshold', 0.5)
-                    
-                    if semantic_score >= score_threshold:
-                        print(f"        ✓ Beat {current_beat.id} accomplished (semantic, score={semantic_score:.2f})")
-                        self._mark_beat_complete(
-                            current_beat.id,
-                            scene_id,
-                            verification_score=semantic_score,
-                            verification_method="semantic"
+                    plan = self._generate_plan(context)
+                    validate_plan(plan)
+                    self._enforce_beat_target(plan, current_beat)
+                    self._enforce_pacing(plan, tick)
+                    break
+                except ValueError as e:
+                    if plan_attempt < 2:
+                        logger.warning("计划被拒 (尝试%d/3): %s", plan_attempt + 1, e)
+                        context = self.context_builder.build_planner_context(
+                            self.state, current_beat=current_beat,
+                            notes=getattr(self, '_tick_notes', ''),
+                            rejection_feedback=str(e),
                         )
                     else:
-                        print(f"        ⚠️  Beat may not have been fully executed (score={semantic_score:.2f} < {score_threshold})")
-                        if not self.config.get('generation.allow_beat_skip', False):
-                            print(f"        Keeping beat {current_beat.id} as pending")
+                        raise
+            execution_results = self.executor.execute_plan(plan, tick)
+            self._set_active_char(execution_results, plan)
+            self.plan_manager.save_plan(tick, plan, execution_results, context)
+
+            # Phase 2: Write + Evaluate (with retry on failure)
+            max_retries = self.config.get("generation", {}).get("eval_max_retries", 2)
+            eval_feedback = ""
+            for attempt in range(max_retries + 1):
+                writer_context = self.writer_context_builder.build_writer_context(
+                    plan, execution_results, self.state, eval_feedback=eval_feedback,
+                    notes=getattr(self, '_tick_notes', ''),
+                )
+                scene_data = self.writer.write_scene(writer_context)
+                eval_result = self.evaluator.evaluate_scene(scene_data["text"], writer_context)
+                if eval_result["passed"] or not eval_result.get("issues"):
+                    break
+                if attempt < max_retries:
+                    logger.warning("评估失败 (第%d次)，带反馈重试...", attempt + 1)
+                    eval_feedback = _format_eval_feedback(eval_result)
                 else:
-                    # Auto-mark complete without verification
-                    self._mark_beat_complete(
-                        current_beat.id, 
-                        scene_id,
-                        verification_score=semantic_score,
-                        verification_method="auto"
-                    )
-            
-            # Step 8.5: Update scene with tension data (Phase 7A.3)
-            if tension_result.get('enabled'):
-                scene = self.memory.load_scene(scene_id)
-                if scene:
-                    scene.tension_level = tension_result['tension_level']
-                    scene.tension_category = tension_result['tension_category']
-                    self.memory.save_scene(scene)
-                    print(f"        Tension: {tension_result['tension_level']}/10 ({tension_result['tension_category']})")
-            
-            # Step 8.6: Detect new characters (Phase 6)
-            if self.config.get('generation.auto_detect_characters', True):
-                print("   8.6. Detecting new characters...")
-                new_characters = self.character_detector.find_new_characters(scene_data["text"])
-                if new_characters:
-                    print(f"        Found {len(new_characters)} new character(s): {', '.join(new_characters)}")
-                    
-                    # Check if we should prompt or auto-create
-                    prompt_for_creation = self.config.get('generation.prompt_for_character_creation', True)
-                    auto_create = self.config.get('generation.auto_create_minor_characters', False)
-                    
-                    if auto_create:
-                        # Auto-create stubs for all new characters
-                        for name in new_characters:
-                            char_id = self.character_detector.create_character_stub(name)
-                            print(f"        ✓ Created stub for '{name}' ({char_id})")
-                    elif prompt_for_creation:
-                        # Prompt user for each character
-                        print(f"        💡 Tip: Run 'novel list characters' to see tracked characters")
-                        print(f"        💡 Consider creating entities for: {', '.join(new_characters)}")
-                        print(f"        💡 Use character.generate tool in next tick or enable auto_create_minor_characters")
-            
-            # Step 9: Extract facts (Phase 5)
-            print("   9. Extracting facts...")
-            facts = self._extract_facts_with_retry(
-                scene_data["text"],
-                writer_context
-            )
-            
-            # Step 10: Update entities (Phase 5)
-            print("   10. Updating entities...")
-            update_stats = {}
-            if facts:  # Only update if extraction succeeded
-                update_stats = self.entity_updater.apply_updates(facts, tick, scene_id, writer_context)
-                
-                # Step 11: Re-index updated entities (Phase 5)
-                print("   11. Syncing vector database...")
-                self._reindex_updated_entities(facts)
-            
-            # Step 12: Extract lore (Phase 7A.4)
-            print("   12. Extracting lore...")
-            lore_items = self._extract_lore_with_retry(
-                scene_data["text"],
-                writer_context,
-                tick
-            )
-            if lore_items:
-                print(f"        Found {len(lore_items)} lore items")
-                self._save_lore_items(lore_items, scene_id, tick)
-            
-            # Step 13: Check for goal promotion (Phase 7A.2)
-            print("   13. Checking goal promotion...")
+                    raise ValueError(f"Scene evaluation failed after {max_retries + 1} attempts: {eval_result['issues']}")
+
+            # Phase 3: Commit
+            tension = self.tension_evaluator.evaluate_tension(scene_data["text"], writer_context)
+            scene_id = self.committer.commit_scene(scene_data, tick, plan)
+
+            # Phase 3: Post-commit
+            self._save_qa(scene_id, tick, eval_result, plan)
+            self._verify_beat(scene_id, plan, current_beat, scene_data)
+            self._save_tension(scene_id, tension)
+
+            # Phase 4: Memory update
+            self._update_memory(scene_data["text"], scene_id, tick)
             promotion_result = self._check_goal_promotion(tick)
-            
-            # Step 14: Update state
+
             self.state["current_tick"] += 1
             self._save_state()
-            
-            result = {
-                "success": True,
-                "tick": tick,
-                "plan_file": str(plan_file),
-                "scene_id": scene_id,
-                "scene_file": f"scenes/scene_{tick:03d}.md",
-                "word_count": scene_data["word_count"],
-                "actions_executed": len(execution_results.get("actions_executed", [])),
-                "eval_warnings": eval_result.get("warnings", []),
-                "entities_updated": update_stats
-            }
-            
-            if promotion_result:
-                result["goal_promoted"] = promotion_result
-            
-            if tension_result.get('enabled'):
-                result["tension"] = {
-                    "level": tension_result['tension_level'],
-                    "category": tension_result['tension_category']
-                }
-            
-            # Include multi-stage planner stats if available (Phase 7A.5)
-            if self.use_multi_stage and hasattr(self.multi_stage_planner, 'stage_stats'):
-                result["stage_stats"] = self.multi_stage_planner.stage_stats
-            
-            return result
-        
+
+            return self._build_tick_result(
+                tick, scene_id, scene_data, execution_results,
+                eval_result, tension, promotion_result,
+            )
+
         except RuntimeError as e:
-            # Tool execution error - save error details
             execution_results = getattr(e, 'execution_results', {
-                "tick": tick,
-                "actions_executed": [],
-                "errors": [str(e)],
-                "success": False
+                "tick": tick, "actions_executed": [], "errors": [str(e)], "success": False
             })
-            
-            # Try to get the plan from the exception context
             plan = getattr(e, 'plan', {})
-            
             self.plan_manager.save_error(tick, e, plan, execution_results)
             raise
-        
+
         except Exception as e:
-            # Other errors (validation, LLM, etc.)
+            logger.exception("tick %d 失败: %s", tick, e)
             self.plan_manager.save_error(tick, e, {}, {})
             raise
-    
+
+    # ---- tick pipeline helpers ----
+
+    def _enforce_beat_target(self, plan: dict, current_beat) -> None:
+        """Reject plans that don't target the current beat in strict mode."""
+        if current_beat is None:
+            return
+        mode = self.config.get("plot", {}).get("beat_mode", "soft_hint")
+        allow_skip = self.config.get("generation", {}).get("allow_beat_skip", False)
+        fallback = self.config.get("generation", {}).get("fallback_to_reactive", True)
+
+        # Only enforce when strict: guided mode + no skip + no fallback
+        if mode not in ("guided", "strict") or allow_skip or fallback:
+            return
+
+        beat_target = plan.get("beat_target", {}) or {}
+        target_id = beat_target.get("beat_id")
+        strategy = beat_target.get("strategy")
+
+        if not target_id or target_id != current_beat.id:
+            raise ValueError(
+                f"节拍强制：计划必须指定 beat_target.beat_id = {current_beat.id}，"
+                f"当前为 beat_target={beat_target}"
+            )
+        if strategy in ("skip", "followup", "setup"):
+            raise ValueError(
+                f"节拍强制：strategy 必须为 'direct'，当前为 '{strategy}'"
+            )
+        logger.info("节拍强制通过：%s (strategy=%s)", current_beat.id, strategy)
+
+    def _enforce_pacing(self, plan: dict, tick: int) -> None:
+        """Reject plans that repeat the same progress_step too many times."""
+        if tick < 2:
+            return
+        mode = self.config.get("plot", {}).get("beat_mode", "soft_hint")
+        if mode == "off":
+            return
+        current_step = plan.get("progress_step", "")
+        if not current_step:
+            return
+        prev_steps = []
+        for t in range(tick - 1, max(0, tick - 3), -1):
+            try:
+                prev_plan = self.plan_manager.load_plan(t)
+                if prev_plan:
+                    pdata = prev_plan.get("plan", {}) if isinstance(prev_plan, dict) else {}
+                    step = pdata.get("progress_step", "")
+                    if step:
+                        prev_steps.append(step)
+            except Exception:
+                continue
+        if len(prev_steps) < 2:
+            return
+        if len(set(prev_steps)) == 1 and current_step == prev_steps[0]:
+            alts = {"revelation": "decision 或 setup",
+                    "complication": "decision 或 resolution",
+                    "decision": "revelation 或 complication",
+                    "setup": "revelation 或 complication",
+                    "resolution": "setup 或 complication"}
+            suggestion = alts.get(current_step, "其他类型")
+            raise ValueError(
+                f"节奏约束：连续 {len(prev_steps)} 章 progress_step 都是 "
+                f"'{current_step}'。本章必须使用不同的 step，"
+                f"建议使用 '{suggestion}'。给故事喘息空间。"
+            )
+
+    def _resolve_plot_beat(self, tick: int):
+        """Manage plot-first beat lifecycle: regenerate if needed, return current beat."""
+        use_plot_first = self.config.get('generation.use_plot_first', False)
+        start_tick = self.config.get('generation.plot_first_start_tick', 2)
+        if not use_plot_first or tick < start_tick:
+            return None
+
+        if self._needs_beat_regeneration():
+            logger.info("正在生成情节节拍...")
+            try:
+                beats = self.plot_manager.generate_next_beats(
+                    count=self.config.get('generation.plot_beats_ahead', 5)
+                )
+                self.plot_manager.add_beats(beats)
+                logger.info("已生成 %d 个新情节节拍", len(beats))
+            except (ValueError, json.JSONDecodeError, RuntimeError) as e:
+                logger.warning("Beat generation failed: %s", e)
+                if not self.config.get('generation.fallback_to_reactive', True):
+                    raise
+
+        beat = self.plot_manager.get_next_beat()
+        if beat:
+            logger.info("执行节拍：%s", beat.description)
+        elif not self.config.get('generation.fallback_to_reactive', True):
+            raise RuntimeError("No plot beats available and fallback disabled")
+        return beat
+
+    def _set_active_char(self, execution_results, plan):
+        plan_pov = plan.get("pov_character", "")
+        current_active = self.state.get("active_character")
+
+        # POV switch: planner selected a different existing character
+        if plan_pov and plan_pov.startswith("C") and plan_pov != current_active:
+            target = self.memory.load_character(plan_pov)
+            if target:
+                logger.info("POV 切换: %s -> %s", current_active, plan_pov)
+                self.state["active_character"] = plan_pov
+                target.pov_count = getattr(target, "pov_count", 0) + 1
+                self.memory.save_character(target)
+                return
+
+        # First tick: set from character.generate result
+        if current_active is not None:
+            return
+        for action in execution_results.get("actions_executed", []):
+            if action.get("tool") == "character.generate" and action.get("success"):
+                char_id = action.get("result", {}).get("character_id")
+                if char_id:
+                    self.state["active_character"] = char_id
+                    if plan_pov and not plan_pov.startswith("C"):
+                        plan["pov_character"] = char_id
+                    char = self.memory.load_character(char_id)
+                    if char:
+                        char.pov_count = getattr(char, "pov_count", 0) + 1
+                        self.memory.save_character(char)
+                    break
+
+    def _save_qa(self, scene_id, tick, eval_result, plan):
+        if not eval_result:
+            return
+        try:
+            self.memory.save_scene_qa(scene_id, tick, eval_result)
+        except (IOError, OSError) as e:
+            logger.warning("Failed to save scene QA: %s", e)
+        try:
+            self._update_beats_from_evaluation(scene_id, plan, eval_result)
+        except (IOError, OSError, AttributeError, ValueError) as e:
+            logger.warning("Failed to update beats from evaluation: %s", e)
+
+    def _verify_beat(self, scene_id, plan, current_beat, scene_data):
+        if not current_beat:
+            return
+        logger.info("   验证节拍执行情况...")
+        beat_target = plan.get("beat_target", {}) or {}
+        planner_targeted = beat_target.get("beat_id") == current_beat.id
+        semantic_score = self.vector.compute_semantic_similarity(
+            current_beat.description, scene_data["text"][:3000]
+        )
+
+        if planner_targeted:
+            self._mark_beat_complete(current_beat.id, scene_id,
+                                     verification_score=semantic_score,
+                                     verification_method="trusted_planner")
+            logger.info("        [v] 节拍 %s 已完成（规划器确认，得分=%.2f）", current_beat.id, semantic_score)
+            if semantic_score < BEAT_LOW_CONFIDENCE_THRESHOLD:
+                logger.info("        [WARN]  置信度较低，建议人工复核")
+        elif self.config.get('generation.verify_beat_execution', True):
+            threshold = self.config.get('generation.beat_verification_threshold', 0.5)
+            if semantic_score >= threshold:
+                self._mark_beat_complete(current_beat.id, scene_id,
+                                         verification_score=semantic_score,
+                                         verification_method="semantic")
+                logger.info("        [v] 节拍 %s 已完成（语义匹配，得分=%.2f）", current_beat.id, semantic_score)
+            else:
+                logger.info("        [WARN]  节拍可能未完全执行（得分=%.2f < %s）", semantic_score, threshold)
+                if not self.config.get('generation.allow_beat_skip', False):
+                    logger.info("        节拍 %s 保持待执行状态", current_beat.id)
+        else:
+            self._mark_beat_complete(current_beat.id, scene_id,
+                                     verification_score=semantic_score,
+                                     verification_method="auto")
+
+    def _save_tension(self, scene_id, tension_result):
+        if not tension_result.get('enabled'):
+            return
+        scene = self.memory.load_scene(scene_id)
+        if not scene:
+            return
+        scene.tension_level = tension_result['tension_level']
+        scene.tension_category = tension_result['tension_category']
+        self.memory.save_scene(scene)
+        logger.info("        张力：%s/10（%s）", tension_result['tension_level'], tension_result['tension_category'])
+
+    def _update_memory(self, scene_text: str, scene_id: str, tick: int):
+        """Post-processing: facts, entities, lore, characters via memory/update.py."""
+        from ..memory.update import update_from_scene
+        try:
+            update_from_scene(scene_text, scene_id, tick, self.state, self.memory, self.agent_llm, self.config)
+        except Exception as e:
+            logger.warning("内存更新失败 (tick %d): %s", tick, e)
+
+    def _build_tick_result(self, tick, scene_id, scene_data, execution_results,
+                           eval_result, tension_result, promotion_result=None):
+        result = {
+            "success": True,
+            "tick": tick,
+            "scene_id": scene_id,
+            "scene_file": f"scenes/scene_{tick:03d}.md",
+            "word_count": scene_data["word_count"],
+            "actions_executed": len(execution_results.get("actions_executed", [])),
+            "eval_warnings": eval_result.get("warnings", []),
+        }
+        if promotion_result:
+            result["goal_promoted"] = promotion_result
+        if tension_result.get('enabled'):
+            result["tension"] = {
+                "level": tension_result['tension_level'],
+                "category": tension_result['tension_category']
+            }
+        return result
+
     def _first_tick(self) -> Dict[str, Any]:
         """Execute first tick with two-phase entity generation.
         
@@ -455,124 +467,92 @@ class StoryAgent:
         """
         tick = 0
         
-        print("   ⚙️  Executing tick 0 (two-phase initialization)...")
+        logger.info("     执行第0幕（两阶段初始化）...")
         
         try:
             # PHASE 1: Entity Generation
-            print("   Phase 1: Generating entities...")
-            
+            logger.info("   阶段一：生成实体...")
+
             # Step 1: Gather context
-            print("   1. Gathering context...")
+            logger.info("   1. 收集上下文...")
             context = self.context_builder.build_planner_context(self.state)
-            
+
             # Step 2: Generate plan
-            print("   2. Generating plan with LLM...")
+            logger.info("   2. 生成故事计划...")
             plan = self._generate_plan(context)
-            
+
             # Step 3: Validate plan
-            print("   3. Validating plan...")
+            logger.info("   3. 验证计划...")
             validate_plan(plan)
-            
+
             # Step 4: Execute ONLY entity generation tools
-            print("   4. Pre-generating entities...")
+            logger.info("   4. 预生成实体...")
             entity_results = self._execute_entity_generation_only(plan, tick)
-            
+
             # Step 5: Update plan with real entity IDs
-            print("   5. Updating plan with entity IDs...")
+            logger.info("   5. 将实体ID写入计划...")
             self._update_plan_with_entity_ids(plan, entity_results)
             
-            # Step 6: Set active character
-            if self.state.get("active_character") is None:
-                for action in entity_results.get("actions_executed", []):
-                    if action.get("tool") == "character.generate" and action.get("success"):
-                        char_id = action.get("result", {}).get("character_id")
-                        if char_id:
-                            self.state["active_character"] = char_id
-                            plan["pov_character"] = char_id
-                            break
+            self._set_active_char(entity_results, plan)
             
             # PHASE 2: Scene Writing
-            print("   Phase 2: Writing scene...")
-            
+            logger.info("   阶段二：撰写场景...")
+
             # Step 7: Execute remaining tools (if any)
-            print("   6. Executing remaining tools...")
+            logger.info("   6. 执行剩余工具...")
             remaining_results = self._execute_remaining_tools(plan, tick, entity_results)
             
             # Merge results
             execution_results = self._merge_execution_results(entity_results, remaining_results)
             
             # Step 8: Store plan
-            print("   7. Storing plan...")
+            logger.info("   7. 保存计划...")
             plan_file = self.plan_manager.save_plan(tick, plan, execution_results, context)
-            
-            # Step 9: Write scene (entities are now established)
-            print("   8. Writing scene prose...")
-            writer_context = self.writer_context_builder.build_writer_context(
-                plan,
-                execution_results,
-                self.state
-            )
-            scene_data = self.writer.write_scene(writer_context)
-            
-            print("   9. Evaluating scene...")
-            eval_result = self.evaluator.evaluate_scene(
-                scene_data["text"],
-                writer_context
-            )
-            
-            # Log evaluation warnings (non-blocking)
-            if eval_result["warnings"]:
-                pass
-            
-            # Fail if critical issues found
-            if not eval_result["passed"]:
-                raise ValueError(f"Scene evaluation failed: {eval_result['issues']}")
-            
-            print("   10. Committing scene...")
+
+            # Step 9: Write scene with retry on evaluation failure
+            logger.info("   8. 撰写场景正文...")
+            max_retries = self.config.get("generation", {}).get("eval_max_retries", 2)
+            eval_feedback = ""
+            for attempt in range(max_retries + 1):
+                writer_context = self.writer_context_builder.build_writer_context(
+                    plan, execution_results, self.state, eval_feedback=eval_feedback,
+                    notes=getattr(self, '_tick_notes', ''),
+                )
+                scene_data = self.writer.write_scene(writer_context)
+
+                logger.info("   9. 评估场景...")
+                eval_result = self.evaluator.evaluate_scene(
+                    scene_data["text"], writer_context,
+                )
+                if eval_result["passed"] or not eval_result.get("issues"):
+                    break
+                if attempt < max_retries:
+                    logger.warning("评估失败 (第%d次)，带反馈重试...", attempt + 1)
+                    eval_feedback = _format_eval_feedback(eval_result)
+                else:
+                    raise ValueError(f"Scene evaluation failed after {max_retries + 1} attempts: {eval_result['issues']}")
+
+            logger.info("   10. 提交场景...")
             scene_id = self.committer.commit_scene(scene_data, tick, plan)
 
             if eval_result:
                 try:
                     self.memory.save_scene_qa(scene_id, tick, eval_result)
-                except Exception:
-                    pass
+                except (IOError, OSError) as e:
+                    logger.warning("Failed to save scene QA (first tick): %s", e)
                 try:
                     self._update_beats_from_evaluation(scene_id, plan, eval_result)
-                except Exception:
-                    pass
-            
-            # Step 12: Extract facts
-            print("   11. Extracting facts...")
-            facts = self._extract_facts_with_retry(
-                scene_data["text"],
-                writer_context
-            )
-            
-            # Step 13: Update entities
-            print("   12. Updating entities...")
-            update_stats = {}
-            if facts:
-                update_stats = self.entity_updater.apply_updates(facts, tick, scene_id, writer_context)
-            
-            # Step 14: Extract lore (Phase 7A.4)
-            print("   13. Extracting lore...")
-            lore_items = self._extract_lore_with_retry(
-                scene_data["text"],
-                writer_context,
-                tick
-            )
-            if lore_items:
-                print(f"        Found {len(lore_items)} lore items")
-                self._save_lore_items(lore_items, scene_id, tick)
-            
-            # Step 15: Sync vector database
-            print("   14. Syncing vector database...")
+                except (IOError, OSError, AttributeError, ValueError) as e:
+                    logger.warning("Failed to update beats from evaluation (first tick): %s", e)
+
+            # Post-processing via memory/update.py
+            self._update_memory(scene_data["text"], scene_id, tick)
             self.vector.index_scene(self.memory.load_scene(scene_id))
-            
+
             # Increment tick
             self.state["current_tick"] += 1
             self._save_state()
-            
+
             return {
                 "success": True,
                 "tick": tick,
@@ -580,7 +560,6 @@ class StoryAgent:
                 "scene_file": f"scenes/scene_{tick:03d}.md",
                 "word_count": scene_data["word_count"],
                 "plan_file": str(plan_file),
-                "update_stats": update_stats,
                 "actions_executed": len(execution_results.get("actions_executed", []))
             }
         
@@ -722,7 +701,8 @@ class StoryAgent:
         try:
             manager = PlotOutlineManager(self.project_path)
             outline = manager.load_outline()
-        except Exception:
+        except (FileNotFoundError, IOError, json.JSONDecodeError) as e:
+            logger.warning("Failed to load outline: %s", e)
             return
         updated = False
         for beat in outline.beats:
@@ -744,75 +724,24 @@ class StoryAgent:
         if updated:
             try:
                 manager.save_outline(outline)
-            except Exception:
-                return
-    
+            except (IOError, OSError) as e:
+                logger.warning("Failed to save outline: %s", e)
+
     def _generate_plan(self, context: dict) -> dict:
-        """Generate a plan using the planner LLM.
-        
-        Args:
-            context: Context dictionary for prompt
-        
-        Returns:
-            Parsed plan dictionary
-        
-        Raises:
-            ValueError: If LLM response cannot be parsed
-        """
-        # Use multi-stage planner if enabled (Phase 7A.5)
-        if self.use_multi_stage:
-            # Check if we have a current beat to execute (from plot-first mode)
-            # Get beat from context if it was passed in
-            beat_to_execute = context.get('_current_beat')  # Internal key
-            
-            if beat_to_execute is not None:
-                # Use beat-first planning
-                try:
-                    return self.multi_stage_planner.plan_for_beat(self.state, beat_to_execute)
-                except Exception as e:
-                    print(f"        ⚠️  Beat-first planning failed: {e}")
-                    # Fall back to normal planning
-                    pass
-            
-            # Legacy beat_mode check for backwards compatibility
-            try:
-                if isinstance(self.config, dict):
-                    beat_mode = self.config.get("plot", {}).get("beat_mode", "soft_hint")
-                else:
-                    beat_mode = self.config.get("plot.beat_mode", "soft_hint")
-            except Exception:
-                beat_mode = "soft_hint"
-
-            if beat_mode == "guided":
-                try:
-                    manager = PlotOutlineManager(self.project_path)
-                    next_beat = manager.get_next_beat()
-                except Exception:
-                    next_beat = None
-
-                if next_beat is not None:
-                    try:
-                        return self.multi_stage_planner.plan_for_beat(self.state, next_beat)
-                    except Exception:
-                        # Fall back to normal planning if beat-first path fails
-                        pass
-
-            return self.multi_stage_planner.plan(self.state)
-        
-        # Otherwise use legacy single-stage planning
-        # Format prompt
-        prompt = format_planner_prompt(context)
-        
-        # Get token limit from config
+        """Generate a plan using the planner LLM."""
         max_tokens = self.config.get('llm.planner_max_tokens', 2000)
-        
-        # Call LLM
-        response = self.llm.generate(prompt, max_tokens=max_tokens)
-        
-        # Parse response
-        plan = self._parse_plan_response(response)
-        
-        return plan
+        if self.llm.backend_type == "anthropic":
+            messages = [
+                {"role": "system", "content": [
+                    {"type": "text", "text": SYSTEM_PLANNER,
+                     "cache_control": {"type": "ephemeral"}}
+                ]},
+                {"role": "user", "content": format_planner_prompt(context)}
+            ]
+            response = self.llm.chat(messages, max_tokens=max_tokens)
+        else:
+            response = self.llm.generate(format_planner_prompt(context), max_tokens=max_tokens)
+        return self._parse_plan_response(response)
     
     def _parse_plan_response(self, response: str) -> dict:
         """Parse LLM response into plan dictionary.
@@ -845,90 +774,6 @@ class StoryAgent:
         except json.JSONDecodeError as e:
             raise ValueError(f"Invalid JSON in plan: {e}")
     
-    def _load_state(self) -> dict:
-        """Load project state from state.json.
-        
-        Returns:
-            State dictionary
-        """
-        state_file = self.project_path / "state.json"
-        with open(state_file, 'r') as f:
-            return json.load(f)
-    
-    def _save_state(self):
-        """Save project state to state.json."""
-        state_file = self.project_path / "state.json"
-        self.state["last_updated"] = datetime.utcnow().isoformat() + "Z"
-        with open(state_file, 'w') as f:
-            json.dump(self.state, f, indent=2)
-    
-    def _extract_facts_with_retry(self, scene_text: str, scene_context: dict) -> dict:
-        """Extract facts with retry logic for graceful degradation.
-        
-        Args:
-            scene_text: Scene prose
-            scene_context: Scene context
-        
-        Returns:
-            Extracted facts dict, or None if extraction failed
-        """
-        import logging
-        logger = logging.getLogger(__name__)
-        
-        # Check if fact extraction is enabled
-        if not self.config.get('generation.enable_fact_extraction', True):
-            logger.info("Fact extraction disabled in config")
-            return None
-        
-        try:
-            # First attempt
-            facts = self.fact_extractor.extract_facts(scene_text, scene_context)
-            return facts
-            
-        except Exception as e:
-            logger.warning(f"Fact extraction failed (attempt 1): {e}")
-            
-            try:
-                # Retry once
-                logger.info("Retrying fact extraction...")
-                facts = self.fact_extractor.extract_facts(scene_text, scene_context)
-                return facts
-                
-            except Exception as e2:
-                # Second failure - log error and continue without updates
-                logger.error(f"Fact extraction failed (attempt 2): {e2}")
-                logger.error("Continuing without entity updates")
-                return None
-    
-    def _reindex_updated_entities(self, facts: dict):
-        """Re-index entities that were updated.
-        
-        Args:
-            facts: Extracted facts dictionary
-        """
-        import logging
-        logger = logging.getLogger(__name__)
-        
-        try:
-            # Re-index characters
-            for char_update in facts.get("character_updates", []):
-                char_id = char_update["id"]
-                character = self.memory.load_character(char_id)
-                if character:
-                    self.vector.index_character(character)
-                    logger.debug(f"Re-indexed character {char_id}")
-            
-            # Re-index locations
-            for loc_update in facts.get("location_updates", []):
-                loc_id = loc_update["id"]
-                location = self.memory.load_location(loc_id)
-                if location:
-                    self.vector.index_location(location)
-                    logger.debug(f"Re-indexed location {loc_id}")
-                    
-        except Exception as e:
-            logger.error(f"Error re-indexing entities: {e}")
-    
     def _check_goal_promotion(self, tick: int) -> dict:
         """Check if a story goal should be auto-promoted (Phase 7A.2).
         
@@ -941,11 +786,8 @@ class StoryAgent:
         Returns:
             Dictionary with promotion info if promotion occurred, None otherwise
         """
-        import logging
-        logger = logging.getLogger(__name__)
-        
         # Only check during the promotion window
-        if tick < 10 or tick > 15:
+        if tick < GOAL_PROMOTION_WINDOW_START or tick > GOAL_PROMOTION_WINDOW_END:
             return None
         
         # Check if already promoted or user-specified
@@ -972,7 +814,7 @@ class StoryAgent:
         # Find protagonist-related loops
         protagonist_loops = [
             loop for loop in open_loops
-            if protagonist_id in loop.related_characters
+            if protagonist_id in (loop.related_characters or [])
         ]
         
         if not protagonist_loops:
@@ -986,7 +828,7 @@ class StoryAgent:
             default=None
         )
         
-        if not top_loop or top_loop.scenes_mentioned < 5:
+        if not top_loop or top_loop.scenes_mentioned < LOOP_MIN_MENTIONS_FOR_PROMOTION:
             logger.debug(f"Top loop only mentioned {top_loop.scenes_mentioned if top_loop else 0} times, need 5+")
             return None
         
@@ -1004,8 +846,7 @@ class StoryAgent:
         story_goals['promotion_tick'] = tick
         self.state['story_goals'] = story_goals
         
-        logger.info(f"🎯 Story Goal Emerged: {top_loop.description}")
-        print(f"\n🎯 Story Goal Emerged: {top_loop.description}\n")
+        logger.info(" 故事目标已浮现：%s", top_loop.description)
         
         return {
             'loop_id': top_loop.id,
@@ -1013,83 +854,6 @@ class StoryAgent:
             'tick': tick,
             'mentions': top_loop.scenes_mentioned
         }
-    
-    def _extract_lore_with_retry(self, scene_text: str, scene_context: dict, tick: int) -> list:
-        """Extract lore with retry logic for graceful degradation (Phase 7A.4).
-        
-        Args:
-            scene_text: Scene prose text
-            scene_context: Scene context dictionary
-            tick: Current tick number
-        
-        Returns:
-            List of lore items or empty list on failure
-        """
-        import logging
-        logger = logging.getLogger(__name__)
-        
-        try:
-            # First attempt
-            lore_items = self.lore_extractor.extract_lore(scene_text, scene_context, tick)
-            return lore_items
-            
-        except Exception as e:
-            logger.warning(f"Lore extraction failed: {e}")
-            
-            try:
-                # Retry once
-                logger.info("Retrying lore extraction...")
-                lore_items = self.lore_extractor.extract_lore(scene_text, scene_context, tick)
-                return lore_items
-                
-            except Exception as e2:
-                logger.error(f"Lore extraction failed after retry: {e2}")
-                # Return empty list on failure (graceful degradation)
-                return []
-    
-    def _save_lore_items(self, lore_items: list, scene_id: str, tick: int):
-        """Save extracted lore items to memory (Phase 7A.4).
-        
-        Args:
-            lore_items: List of lore item dictionaries
-            scene_id: Scene ID where lore was established
-            tick: Current tick number
-        """
-        from ..memory.entities import Lore
-        import logging
-        logger = logging.getLogger(__name__)
-        
-        for item in lore_items:
-            try:
-                # Generate lore ID
-                lore_id = self.memory.generate_lore_id()
-                
-                # Create Lore object
-                lore = Lore(
-                    id=lore_id,
-                    lore_type=item.get('type', 'fact'),
-                    content=item.get('content', ''),
-                    category=item.get('category', 'other'),
-                    source_scene_id=scene_id,
-                    tick=tick,
-                    importance=item.get('importance', 'normal'),
-                    tags=item.get('tags', [])
-                )
-                
-                # Save to memory
-                self.memory.save_lore(lore)
-                
-                # Index in vector store for semantic search
-                self.vector.index_lore(lore)
-                
-                # Check for contradictions
-                self.lore_detector.update_contradictions(lore_id)
-                
-                logger.info(f"Saved lore {lore_id}: {lore.content[:50]}...")
-                
-            except Exception as e:
-                logger.error(f"Failed to save lore item: {e}")
-                continue
     
     def _needs_beat_regeneration(self) -> bool:
         """Check if we need to generate more plot beats (Phase 5).
@@ -1101,61 +865,6 @@ class StoryAgent:
         outline = self.plot_manager.load_outline()
         pending_count = sum(1 for beat in outline.beats if beat.status == "pending")
         return pending_count < threshold
-    
-    def _verify_beat_execution(self, scene_text: str, beat) -> bool:
-        """Verify that the scene accomplished the plot beat (Phase 5).
-        
-        Args:
-            scene_text: The scene prose text
-            beat: The PlotBeat that was supposed to be executed
-        
-        Returns:
-            True if beat was accomplished, False otherwise
-        """
-        import logging
-        logger = logging.getLogger(__name__)
-        
-        try:
-            prompt = f"""Evaluate if this scene accomplishes the following plot beat.
-
-Plot Beat: {beat.description}
-
-Scene Text:
-{scene_text[:3000]}
-
-IMPORTANT: Focus on SEMANTIC MEANING, not exact wording. The scene may use:
-- Different character names/titles than the beat description
-- Synonyms or alternative phrasings (e.g., "hunter" = "cleaner" = "assassin")
-- Implicit rather than explicit depiction of events
-- Different terminology for the same concepts
-
-The beat is ACCOMPLISHED if the scene depicts the CORE EVENT happening, even if:
-- Character names differ from the beat description
-- The vocabulary/terminology differs
-- It's shown through flashback, memory, or implication
-- It's interwoven with other events
-- The scene continues after the beat event
-
-Answer YES if the essential meaning of the beat occurs in the scene.
-Answer NO only if the core event genuinely does not happen at all.
-
-Brief explanation (1 sentence), then your answer:
-Answer:"""
-            
-            response = self.llm.generate(prompt, max_tokens=200)
-            result = response.strip().upper().startswith("YES")
-            
-            if result:
-                logger.info(f"Beat {beat.id} verified as accomplished")
-            else:
-                logger.warning(f"Beat {beat.id} may not be fully accomplished: {response[:100]}")
-            
-            return result
-            
-        except Exception as e:
-            logger.error(f"Beat verification failed: {e}")
-            # Default to True on error (graceful degradation)
-            return True
     
     def _mark_beat_complete(
         self, 
@@ -1172,9 +881,6 @@ Answer:"""
             verification_score: Optional confidence score (0.0-1.0)
             verification_method: How verification was done (trusted_planner, semantic, llm, manual)
         """
-        import logging
-        logger = logging.getLogger(__name__)
-        
         try:
             outline = self.plot_manager.load_outline()
             for beat in outline.beats:
@@ -1188,7 +894,7 @@ Answer:"""
                         beat.verification_method = verification_method
                     break
             self.plot_manager.save_outline(outline)
-            logger.info(f"Marked beat {beat_id} as completed (score={verification_score}, method={verification_method})")
+            logger.info("Marked beat %s as completed (score=%s, method=%s)", beat_id, verification_score, verification_method)
             
-        except Exception as e:
-            logger.error(f"Failed to mark beat complete: {e}")
+        except (FileNotFoundError, IOError, json.JSONDecodeError) as e:
+            logger.error("Failed to mark beat complete: %s", e)

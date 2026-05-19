@@ -1,0 +1,158 @@
+"""Streaming wrapper for StoryAgent — SSE event stream for tick progress."""
+
+import json
+import logging
+from typing import Any, Generator
+
+logger = logging.getLogger(__name__)
+
+
+class StreamingStoryAgent:
+    """Wrap StoryAgent to emit tick progress as SSE events.
+
+    Each phase of the tick process is reported as a separate event,
+    enabling real-time progress display in API consumers.
+    """
+
+    def __init__(self, agent: Any):
+        self.agent = agent
+
+    def tick_stream(self) -> Generator[str, None, None]:
+        """Execute one tick and yield SSE-formatted event strings."""
+        tick = self.agent.state.get("current_tick", 0)
+        yield self._event("tick_start", {"tick": tick})
+        try:
+            if tick == 0:
+                yield from self._stream_first_tick(tick)
+            else:
+                yield from self._stream_normal_tick(tick)
+        except Exception as exc:
+            logger.exception("Tick %s failed", tick)
+            yield self._event("tick_error", {"tick": tick, "error": str(exc)})
+
+    def _stream_normal_tick(self, tick: int) -> Generator[str, None, None]:
+        """Stream a normal tick (tick 1+)."""
+        current_beat = self.agent._resolve_plot_beat(tick)
+
+        yield self._event("phase", {"name": "context", "tick": tick})
+        context = self.agent.context_builder.build_planner_context(
+            self.agent.state, current_beat=current_beat
+        )
+
+        yield self._event("phase", {"name": "planning", "tick": tick})
+        plan = self.agent._generate_plan(context)
+        from .schemas import validate_plan
+        validate_plan(plan)
+
+        yield self._event("phase", {"name": "execution", "tick": tick})
+        execution_results = self.agent.executor.execute_plan(plan, tick)
+        self.agent._set_active_char(execution_results, plan)
+        self.agent.plan_manager.save_plan(tick, plan, execution_results, context)
+
+        yield self._event("phase", {"name": "writing", "tick": tick})
+        writer_context = self.agent.writer_context_builder.build_writer_context(
+            plan, execution_results, self.agent.state
+        )
+
+        yield self._event("phase", {"name": "generating", "tick": tick})
+        scene_data = self.agent.writer.write_scene(writer_context)
+
+        yield self._event("phase", {"name": "evaluation", "tick": tick})
+        eval_result = self.agent.evaluator.evaluate_scene(
+            scene_data["text"], writer_context
+        )
+        if not eval_result["passed"] and eval_result.get("issues"):
+            raise ValueError(f"Scene evaluation failed: {eval_result['issues']}")
+
+        yield self._event("phase", {"name": "tension", "tick": tick})
+        tension_result = self.agent.tension_evaluator.evaluate_tension(
+            scene_data["text"], writer_context
+        )
+
+        yield self._event("phase", {"name": "committing", "tick": tick})
+        scene_id = self.agent.committer.commit_scene(scene_data, tick, plan)
+
+        yield self._event("phase", {"name": "post_commit", "tick": tick})
+        self.agent._save_qa(scene_id, tick, eval_result, plan)
+        self.agent._verify_beat(scene_id, plan, current_beat, scene_data)
+        self.agent._save_tension(scene_id, tension_result)
+
+        yield self._event("phase", {"name": "memory", "tick": tick})
+        self.agent._update_memory(scene_data["text"], scene_id, tick)
+        self.agent._check_goal_promotion(tick)
+
+        self.agent.state["current_tick"] += 1
+        self.agent._save_state()
+
+        result = self.agent._build_tick_result(
+            tick, scene_id, scene_data, execution_results,
+            eval_result, tension_result,
+        )
+        yield self._event("tick_complete", result)
+
+    def _stream_first_tick(self, tick: int) -> Generator[str, None, None]:
+        """Stream a first tick (tick 0) with two-phase entity generation."""
+        agent = self.agent
+
+        yield self._event("phase", {"name": "context", "tick": tick})
+        context = agent.context_builder.build_planner_context(agent.state)
+
+        yield self._event("phase", {"name": "planning", "tick": tick})
+        plan = agent._generate_plan(context)
+        from .schemas import validate_plan
+        validate_plan(plan)
+
+        # Phase 1: Generate entities only
+        yield self._event("phase", {"name": "entity_generation", "tick": tick})
+        entity_results = agent._execute_entity_generation_only(plan, tick)
+        agent._update_plan_with_entity_ids(plan, entity_results)
+        agent._set_active_char(entity_results, plan)
+
+        # Phase 2: Execute remaining tools + write scene
+        yield self._event("phase", {"name": "execution", "tick": tick})
+        remaining_results = agent._execute_remaining_tools(plan, tick, entity_results)
+        execution_results = agent._merge_execution_results(entity_results, remaining_results)
+        agent.plan_manager.save_plan(tick, plan, execution_results, context)
+
+        yield self._event("phase", {"name": "writing", "tick": tick})
+        writer_context = agent.writer_context_builder.build_writer_context(
+            plan, execution_results, agent.state
+        )
+
+        yield self._event("phase", {"name": "generating", "tick": tick})
+        scene_data = agent.writer.write_scene(writer_context)
+
+        yield self._event("phase", {"name": "evaluation", "tick": tick})
+        eval_result = agent.evaluator.evaluate_scene(
+            scene_data["text"], writer_context
+        )
+        if not eval_result["passed"] and eval_result.get("issues"):
+            raise ValueError(f"Scene evaluation failed: {eval_result['issues']}")
+
+        yield self._event("phase", {"name": "committing", "tick": tick})
+        scene_id = agent.committer.commit_scene(scene_data, tick, plan)
+
+        yield self._event("phase", {"name": "memory", "tick": tick})
+        agent._update_memory(scene_data["text"], scene_id, tick)
+        agent.vector.index_scene(
+            agent.memory.load_scene(
+                agent.memory.list_scenes()[-1]
+            )
+        )
+
+        agent.state["current_tick"] += 1
+        agent._save_state()
+
+        result = {
+            "success": True,
+            "tick": tick,
+            "scene_id": scene_id,
+            "scene_file": f"scenes/scene_{tick:03d}.md",
+            "word_count": scene_data.get("word_count", 0),
+        }
+        yield self._event("tick_complete", result)
+
+    @staticmethod
+    def _event(event_type: str, data: dict) -> str:
+        """Format an SSE event string."""
+        return f"event: {event_type}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"

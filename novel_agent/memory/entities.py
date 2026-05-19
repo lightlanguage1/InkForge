@@ -1,6 +1,8 @@
 """Entity dataclasses for memory system."""
 
+import json
 from dataclasses import dataclass, field, asdict
+from pathlib import Path
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
@@ -103,21 +105,73 @@ class Relationship:
 
 
 @dataclass
+class EmotionState:
+    """Structured emotion with valence / arousal dimensions."""
+    dominant: str = ""   # e.g., 愤怒, 悲伤, 恐惧, 喜悦, 平静
+    valence: float = 0.0  # -1.0 (negative) to 1.0 (positive)
+    arousal: float = 0.0  # 0.0 (calm) to 1.0 (intense)
+    intensity: float = 0.5  # 0.0 to 1.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "EmotionState":
+        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+
+
+# Mapping from Chinese emotion labels to EmotionState values
+EMOTION_MAP: Dict[str, EmotionState] = {
+    "愤怒": EmotionState(dominant="愤怒", valence=-0.8, arousal=0.9, intensity=0.9),
+    "暴怒": EmotionState(dominant="暴怒", valence=-0.9, arousal=1.0, intensity=1.0),
+    "悲伤": EmotionState(dominant="悲伤", valence=-0.7, arousal=0.3, intensity=0.7),
+    "哀恸": EmotionState(dominant="哀恸", valence=-0.9, arousal=0.4, intensity=0.9),
+    "恐惧": EmotionState(dominant="恐惧", valence=-0.6, arousal=0.8, intensity=0.8),
+    "绝望": EmotionState(dominant="绝望", valence=-1.0, arousal=0.2, intensity=1.0),
+    "焦虑": EmotionState(dominant="焦虑", valence=-0.4, arousal=0.7, intensity=0.6),
+    "喜悦": EmotionState(dominant="喜悦", valence=0.8, arousal=0.6, intensity=0.7),
+    "兴奋": EmotionState(dominant="兴奋", valence=0.9, arousal=0.9, intensity=0.9),
+    "平静": EmotionState(dominant="平静", valence=0.3, arousal=0.1, intensity=0.3),
+    "冷静": EmotionState(dominant="冷静", valence=0.2, arousal=0.2, intensity=0.4),
+    "坚定": EmotionState(dominant="坚定", valence=0.5, arousal=0.5, intensity=0.7),
+    "疲惫": EmotionState(dominant="疲惫", valence=-0.1, arousal=0.1, intensity=0.4),
+    "释然": EmotionState(dominant="释然", valence=0.4, arousal=0.1, intensity=0.4),
+    "愧疚": EmotionState(dominant="愧疚", valence=-0.5, arousal=0.4, intensity=0.6),
+    "警惕": EmotionState(dominant="警惕", valence=-0.2, arousal=0.6, intensity=0.6),
+}
+
+
+@dataclass
 class CurrentState:
     """Current state of a character."""
     location_id: Optional[str] = None
     emotional_state: str = ""
+    emotion: EmotionState = field(default_factory=EmotionState)
+    emotion_history: List[Dict[str, Any]] = field(default_factory=list)
     physical_state: str = ""
     inventory: List[str] = field(default_factory=list)
     goals: List[str] = field(default_factory=list)
     beliefs: List[str] = field(default_factory=list)
-    
+
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
-    
+        result = asdict(self)
+        result["emotion"] = self.emotion.to_dict()
+        return result
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "CurrentState":
-        return cls(**data)
+        emotion_data = data.get("emotion", {}) or {}
+        emotion_history = data.get("emotion_history", []) or []
+        return cls(
+            location_id=data.get("location_id"),
+            emotional_state=data.get("emotional_state", ""),
+            emotion=EmotionState.from_dict(emotion_data),
+            emotion_history=emotion_history,
+            physical_state=data.get("physical_state", ""),
+            inventory=data.get("inventory", []) or [],
+            goals=data.get("goals", []) or [],
+            beliefs=data.get("beliefs", []) or [],
+        )
 
 
 @dataclass
@@ -237,7 +291,12 @@ class Character:
     goal_progress: Dict[str, float] = field(default_factory=dict)  # goal -> progress (0.0-1.0)
     goals_completed: List[str] = field(default_factory=list)
     goals_abandoned: List[str] = field(default_factory=list)
-    
+
+    # NEW: Character lifecycle
+    status: str = "active"  # active | sidelined | departed | deceased | returning
+    last_scene_tick: int = -1
+    appearance_ticks: List[int] = field(default_factory=list)
+    off_screen_note: str = ""  # 离场原因 / 当前在做什么
     @property
     def full_name(self) -> str:
         """Get full name with title if present."""
@@ -626,3 +685,20 @@ class PlotOutline:
             current_arc=data.get("current_arc", ""),
             arc_progress=data.get("arc_progress", 0.0),
         )
+
+    def to_json(self, filepath: Path) -> None:
+        """Serialize to JSON file."""
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(self.to_dict(), f, indent=2, ensure_ascii=False)
+
+    @classmethod
+    def from_json(cls, filepath: Path) -> "PlotOutline":
+        """Deserialize from JSON file."""
+        with open(filepath, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return cls.from_dict(data)
+
+    @staticmethod
+    def now_iso() -> str:
+        """Get current timestamp in ISO format."""
+        return datetime.utcnow().isoformat() + "Z"

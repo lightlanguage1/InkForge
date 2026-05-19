@@ -110,10 +110,7 @@ class SceneCommitter:
         
         # Write markdown file with metadata header
         with open(filepath, 'w', encoding='utf-8') as f:
-            f.write(f"# {title}\n\n")
-            f.write(f"*Scene ID: {scene_id}*  \n")
-            f.write(f"*Tick: {tick}*\n\n")
-            f.write("---\n\n")
+            f.write(f"# 第{tick+1}章 {title}\n\n")
             f.write(text)
             f.write("\n")
         

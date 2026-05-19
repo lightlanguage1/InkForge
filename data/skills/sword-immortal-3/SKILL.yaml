@@ -1,0 +1,556 @@
+id: 381bbebb
+name: 仙剑奇侠传3
+slug: sword-immortal-3
+source_novel: 仙剑奇侠传3
+source_file: c:\Users\lightlanguage\Downloads\Compressed\7851.txt
+imported_at: '2026-05-12T19:24:53.531968Z'
+tags:
+- 史诗叙事
+- 神话重构
+- 少年冒险
+- 奇幻史诗
+- 宿命轮回
+- 情烈悲壮
+- 群像刻画
+- 暗黑权谋
+- 情感升华
+- 田园诗话
+- 宿命觉醒
+- 诗意叙事
+- 命运启程
+style_profile:
+  avg_sentence_length: 29.5
+  sentence_length_std: 19.1
+  vocab_richness: 0.3709
+  dialogue_ratio: 0.534
+  paragraph_length_avg: 84.0
+  style_tags:
+  - 史诗叙事
+  - 神话重构
+  - 少年冒险
+  - 奇幻史诗
+  - 宿命轮回
+  - 情烈悲壮
+  - 群像刻画
+  - 暗黑权谋
+  - 情感升华
+  - 田园诗话
+  - 宿命觉醒
+  - 诗意叙事
+  - 命运启程
+patterns:
+- type: tension_arc
+  template: 角色在内心斗争或外在冲突中，从绝望低谷升至决断高潮，再引向转折或爆发。
+  description: 通过角色内心挣扎（如景天与心魔对话）或外在战斗的逐步升级，构建从无力感到愤怒、再到爆发的张力曲线。
+  example: 景天从被心魔蛊惑的迷茫，到拒绝堕落、愤怒斥责，最终借龙葵魂力反弹，完成精神转折；邪剑仙战中从被动挨打到含愤挥出致命一剑。
+  frequency: 0.17
+- type: dialogue_pattern
+  template: 两个存在（如本体与心魔、神魔与凡人）通过对话揭示深层冲突、过去秘密或哲学对立。
+  description: 采用对话形式展开角色内心或世界观冲突，一方常代表压抑的真实或诱惑，另一方代表清醒的抵抗或疑问。
+  example: 景天与心魔小人的对话：心魔控诉命运不公、煽动仇恨，景天以‘我只愿做路边行人’拒绝，最终揭穿心魔非己。
+  frequency: 0.17
+- type: transition
+  template: 通过关键事件（如死亡、觉醒、神器共鸣）触发角色或情节的突然转折，伴随意象变化（如黑暗转光明）。
+  description: 利用重大牺牲、神器苏醒或记忆觉醒等节点，推动角色状态或故事方向突变，常伴随视觉或情感意象的对比。
+  example: 龙葵跳炉后，景天从濒死昏迷中弹身站起，手握照胆神剑，黑暗心海被光点驱散，完成从绝望到力量觉醒的转折。
+  frequency: 0.17
+- type: description
+  template: 通过地理分层（九州-八荒-八殥-八纮-四极）构建世界框架，赋予上古时代神圣性和宏大感
+  description: 详细描绘上古世界的空间层次，从核心九州到外围四极，强化神话时代的完整性和神秘性
+  example: 第十二章对九州、八荒、八殥、八纮、四极的逐层描述
+  frequency: 0.17
+- type: transition
+  template: 通过战败或危机触发角色觉醒或策略转变，伴随情绪从紧张到决断的转折
+  description: 关键战役失败后，角色（如重楼）从困境中寻求新对策，或引发旁观者（如魔尊）的情感波动
+  example: 第十六章重楼中计后召唤女丑；第二十章重楼战败后共工进言
+  frequency: 0.17
+- type: tension_arc
+  template: 角色从绝境低谷（如战败、被追击）上升至策略决断（如召唤援军、示弱诱敌），再引向后续转折
+  description: 通过军事危机构建紧张弧线，角色在压力下展现智慧或情感波动，推动情节发展
+  example: 第十六章重楼面对夸父和后羿夹击时的紧张与召唤女丑；第二十章人族示弱导致兽族六凶崛起
+  frequency: 0.17
+- type: description
+  template: 通过地理分层（如八殥-八荒-九州）和自然异象（如半冷半热、毒瘴雨雾）构建世界框架，赋予上古时代神圣性和宏大感
+  description: 以地理分层和自然异象构建世界框架，赋予上古时代神圣性和宏大感
+  example: 昆仑天墟外险恶的弱水，浇灌出黑鳗藤这样的奇特植物……黑鳗藤田的遗迹之地变得半热半冷……琼华派在此顺势筑造了铸剑道场，取名叫‘承天剑台’。
+  frequency: 0.17
+- type: transition
+  template: 通过关键事件（如死亡、法阵启动、神谕揭示）触发情节突然转折，伴随意象变化（如光明转黑暗、平静转暴风雨）
+  description: 通过关键事件触发情节突然转折，伴随意象变化
+  example: 蚩尤催行的九幽法阵让整个涿鹿上空布满阴霾云雾……轩辕氏从阴云中倏然隐没，又忽然从另一个云团迅疾而出……一剑砍向刑天巨大的脖颈。
+  frequency: 0.17
+- type: tension_arc
+  template: 角色从绝境低谷（如战败、被追击、力量耗尽）上升至决断高潮（如牺牲、背叛、觉醒），再引向转折或爆发
+  description: 角色从绝境低谷上升至决断高潮，再引向转折或爆发
+  example: 蚩尤精疲力竭，被轩辕氏迫近身后一箭之地……内心充满哀痛和后悔……最终镇静下来，召唤三诡器迎战……却在最后一刻被刑天救下。
+  frequency: 0.17
+- type: tension_arc
+  template: 角色从绝望低谷升至决断高潮，再引向转折或爆发
+  description: 角色在内心斗争或外在冲突中，从绝望低谷升至决断高潮，再引向转折或爆发
+  example: 夸父目睹女丑陨落，从愤怒追逐到力竭倒下，临死抛杖化为桃林，完成从复仇到奉献的转折
+  frequency: 0.17
+- type: transition
+  template: 通过关键事件触发情节突然转折，伴随意象变化
+  description: 通过关键事件（如死亡、觉醒、神器共鸣）触发角色或情节的突然转折，伴随意象变化
+  example: 后羿悟出恸天贯日式，金色箭芒划破苍穹，金乌九子陨落化为光雨，大地从灼烤转为春意
+  frequency: 0.17
+- type: dialogue_pattern
+  template: 两个存在通过对话揭示深层冲突或哲学对立
+  description: 两个存在（如本体与心魔、神魔与凡人）通过对话揭示深层冲突、过去秘密或哲学对立
+  example: 重楼与景天争论心魔起源，从市井逻辑推演到神魔历史，揭示心魔可能源自上古怨念
+  frequency: 0.17
+- type: description
+  template: 通过地理分层（如黄山主峰与幽邃青鸾峰）和自然意象（如松泉、石径、桃李、冰洞）构建世界框架，赋予场景出尘静谧或神秘幽深的氛围
+  description: 通过地理分层（如黄山主峰与幽邃青鸾峰）和自然意象（如松泉、石径、桃李、冰洞）构建世界框架，赋予场景出尘静谧或神秘幽深的氛围
+  example: 青鸾峰头，松泉互应，水石融和，白天中为日光一照，则绮变万端，丽态极研。入夜后则又是另一种情致，“明月松间照，清泉石上流”，水行松间，石峙水上，为态为色，为肤为骨，端的是清幽出尘！
+  frequency: 0.17
+- type: tension_arc
+  template: 角色从绝境低谷（如战败、被追击）上升至决断高潮（如拼命一击、仙术觉醒），再引向转折（如灵怪认主、发现墓室）
+  description: 角色从绝境低谷（如战败、被追击）上升至决断高潮（如拼命一击、仙术觉醒），再引向转折（如灵怪认主、发现墓室）
+  example: 望着强大的灵怪，他忽然愤怒起来：“可恶的冰妖，我跟你拼了！”他举起了硬弓，搭起那支修长的怪剑，想作垂死一击……只见少年搭在弓弦上的那柄长剑蓦然通体泛光，初看时好似弦月生光，继而光华大盛……“原来是主人驾临！”
+  frequency: 0.17
+- type: transition
+  template: 通过关键事件（如长剑共鸣、灵怪认主）触发情节突然转折，伴随意象变化（如冰光转烈日光辉、绝望转惊喜）
+  description: 通过关键事件（如长剑共鸣、灵怪认主）触发情节突然转折，伴随意象变化（如冰光转烈日光辉、绝望转惊喜）
+  example: 只见冰光幽幽的密洞中好似突然一道电光闪过……那柄长剑蓦然通体泛光……辉芒耀映……“原来是主人驾临！”……话音未落，刚才死命攻击的灵怪魁召已倏然消失。
+  frequency: 0.17
+- type: scene_structure
+  template: 触发事件→角色互动→关键转折→新方向
+  description: 通过石棺光点异象触发剑器觉醒，进而推动主角下山决定，形成完整的起始章节结构
+  example: 光点从佩剑和石棺涌出→云天河挥剑→墓室崩塌→韩菱纱劝诱→云天河坦白早已决定下山
+  frequency: 0.17
+- type: transition
+  template: 通过异象（光点汇聚/剑器觉醒）触发角色命运转折，伴随意象从神秘到破坏再到新旅程
+  description: 剑器吸收光点后挥出剑气，导致墓室崩塌，迫使角色逃出并开启下山旅程
+  example: 光点没入剑锋→剑光华大盛→挥剑毁石壁→墓室崩塌→逃出后决定下山
+  frequency: 0.17
+- type: tension_arc
+  template: 从懵懂好奇（低张力）上升至误会冲突（中张力），再转向情感缓和与新目标（高张力转折）
+  description: 云天河坦白早已决定下山，引发韩菱纱气急败坏，但随后通过赞美化解冲突，关系升温
+  example: 韩菱纱费力劝诱→云天河说早想下山→韩菱纱生气→云天河夸她声音好听→关系缓和
+  frequency: 0.17
+character_archetypes:
+- name: 葵羽玄女/葵羽天魔女
+  role: supporting
+  traits:
+  - 绝烈刚烈
+  - 深情隐忍
+  - 反抗权威
+  - 重情重义
+  arc_type: fall
+  relationship_patterns:
+  - with: 飞蓬/景天
+    type: 暗恋/感恩
+    dynamic: 单方面守护与牺牲
+  - with: 伏羲
+    type: 上下级/反抗
+    dynamic: 由顺从转为对抗
+  name_type: alias
+  name_confidence: high
+  is_entity: true
+  aliases: []
+- name: 重楼
+  role: mentor
+  traits:
+  - 傲岸
+  - 冷峻
+  - 重义
+  - 洞悉真相
+  arc_type: static
+  relationship_patterns:
+  - with: 景天
+    type: 宿敌兼盟友
+    dynamic: 平等切磋与暗中相助
+  - with: 葵羽天魔女
+    type: 感佩
+    dynamic: 尊重与援手
+  name_type: proper
+  name_confidence: high
+  is_entity: true
+  aliases: []
+- name: 邪剑仙
+  role: antagonist
+  traits:
+  - 阴险
+  - 狂妄
+  - 狡猾
+  - 凶残
+  arc_type: fall
+  relationship_patterns:
+  - with: 蜀山四老
+    type: 操控/寄生
+    dynamic: 利用与吞噬
+  name_type: alias
+  name_confidence: high
+  is_entity: true
+  aliases: []
+- name: 龙葵/蓝衣少女
+  role: love_interest
+  traits:
+  - 温婉
+  - 坚贞
+  - 坚韧
+  - 牺牲奉献
+  - 羞怯
+  - 温柔
+  - 感恩
+  - 深情
+  - 痴情
+  arc_type: tragic
+  relationship_patterns:
+  - with: 景天
+    type: 兄妹/前世羁绊
+    dynamic: 守护与救赎
+  - with: 雪见
+    type: 姐妹情
+    dynamic: 和谐共处
+  name_type: proper
+  name_confidence: high
+  is_entity: true
+  aliases: []
+- name: 女丑/兽族第一女巫
+  role: supporting
+  traits:
+  - 活泼开朗
+  - 善解人意
+  - 勇敢
+  - 风趣
+  - 暗恋重楼
+  arc_type: static
+  relationship_patterns:
+  - with: 重楼
+    type: 单恋/姐弟情
+    dynamic: 女丑主动亲近，重楼迟钝
+  - with: 重楼（青年）
+    type: 盟友/召唤者
+    dynamic: 女丑应召助战
+  name_type: proper
+  name_confidence: high
+  is_entity: true
+  aliases: []
+- name: 夸父/巨人族首领
+  role: antagonist
+  traits:
+  - 顽强
+  - 仁厚
+  - 坚韧
+  - 善战
+  - 有领导力
+  - 冲动
+  - 勇猛
+  - 痴情
+  arc_type: tragic
+  relationship_patterns:
+  - with: 重楼
+    type: 敌对/战场对手
+    dynamic: 夸父军曾败于重楼，后反击
+  - with: 后羿
+    type: 盟友/协同作战
+    dynamic: 联合对抗兽族
+  - with: 女丑
+    type: 单恋
+    dynamic: 暗恋未表
+  name_type: proper
+  name_confidence: high
+  is_entity: true
+  aliases: []
+- name: 后羿/人族第一射师
+  role: supporting
+  traits:
+  - 精准
+  - 天赋异禀
+  - 专注
+  - 坚韧
+  - 果断
+  - 神勇
+  - 悲悯
+  - 忠诚
+  - 隐忍
+  arc_type: growth
+  relationship_patterns:
+  - with: 夸父
+    type: 盟友/协同作战
+    dynamic: 共同对抗重楼
+  - with: 嫦娥
+    type: 恋人
+    dynamic: 两情相悦（提及）
+  - with: 飞蓬
+    type: 师承
+    dynamic: 受其传授月华回真术
+  name_type: proper
+  name_confidence: high
+  is_entity: true
+  aliases: []
+- name: 凿齿/兽族凶将
+  role: antagonist
+  traits:
+  - 凶残
+  - 食人
+  - 残暴
+  - 嗜血
+  arc_type: static
+  relationship_patterns:
+  - with: 大风/九婴/修蛇/封豨/猰貐
+    type: 同僚/六凶之一
+    dynamic: 协同作恶
+  name_type: proper
+  name_confidence: high
+  is_entity: true
+  aliases: []
+- name: 猰貐/烛龙之子
+  role: antagonist
+  traits:
+  - 凶残
+  - 神志混沌
+  - 忠诚（对兽族）
+  - 悲剧性
+  arc_type: tragic
+  relationship_patterns:
+  - with: 烛龙
+    type: 父子
+    dynamic: 猰貐因父亲获救但变异
+  - with: 危/二负
+    type: 仇敌/被杀者
+    dynamic: 被危和二负设计杀死后复活
+  name_type: proper
+  name_confidence: high
+  is_entity: true
+  aliases: []
+- name: 轩辕氏/轩辕大统领
+  role: protagonist
+  traits:
+  - 英明决断
+  - 深谋远虑
+  - 勇武善战
+  - 善于用人
+  - 知错能悔
+  arc_type: growth
+  relationship_patterns:
+  - with: 蚩尤
+    type: 宿敌
+    dynamic: 追杀与被追杀
+  - with: 九天玄女
+    type: 导师
+    dynamic: 受教与信任
+  - with: 颛顼
+    type: 盟友
+    dynamic: 协同作战
+  - with: 刑天
+    type: 敌人
+    dynamic: 斩杀与被阻
+  name_type: proper
+  name_confidence: high
+  is_entity: true
+  aliases: []
+- name: 蚩尤/兽族第一人
+  role: antagonist
+  traits:
+  - 勇悍盖世
+  - 果敢决断
+  - 重情重义
+  - 内心哀痛
+  - 善于反思
+  arc_type: tragic
+  relationship_patterns:
+  - with: 轩辕氏
+    type: 宿敌
+    dynamic: 被追杀与反击
+  - with: 刑天
+    type: 兄弟
+    dynamic: 被拯救与信任
+  - with: 神农氏
+    type: 祖神
+    dynamic: 继承与忏悔
+  - with: 雨师/风伯
+    type: 盟友
+    dynamic: 协同作战
+  name_type: proper
+  name_confidence: high
+  is_entity: true
+  aliases: []
+- name: 刑天
+  role: supporting
+  traits:
+  - 勇猛无畏
+  - 忠诚护主
+  - 力大无穷
+  - 坚韧不拔
+  arc_type: tragic
+  relationship_patterns:
+  - with: 蚩尤
+    type: 兄弟
+    dynamic: 舍命拯救
+  - with: 轩辕氏
+    type: 敌人
+    dynamic: 殊死战斗
+  name_type: proper
+  name_confidence: high
+  is_entity: true
+  aliases: []
+- name: 禺号/东海海神
+  role: supporting
+  traits:
+  - 勇敢坚毅
+  - 善于航海
+  - 忠诚孝义
+  arc_type: static
+  relationship_patterns:
+  - with: 轩辕氏
+    type: 父子
+    dynamic: 奉命行事
+  - with: 禺京
+    type: 父子
+    dynamic: 协同作战
+  name_type: proper
+  name_confidence: high
+  is_entity: true
+  aliases: []
+- name: 禺京/北海海神
+  role: supporting
+  traits:
+  - 勇敢坚毅
+  - 善于战斗
+  - 忠诚服从
+  arc_type: static
+  relationship_patterns:
+  - with: 禺号
+    type: 父子
+    dynamic: 协同作战
+  - with: 轩辕氏
+    type: 祖孙
+    dynamic: 奉命行事
+  name_type: proper
+  name_confidence: high
+  is_entity: true
+  aliases: []
+- name: 羲和/金乌之母
+  role: supporting
+  traits:
+  - 悲恸
+  - 矛盾
+  - 无奈
+  arc_type: tragic
+  relationship_patterns:
+  - with: 金乌九子
+    type: 母子
+    dynamic: 丧子之痛
+  - with: 神族元老
+    type: 被利用
+    dynamic: 怨恨但未复仇
+  name_type: proper
+  name_confidence: high
+  is_entity: true
+  aliases: []
+- name: 花楹/小少女
+  role: supporting
+  traits:
+  - 天真
+  - 可爱
+  - 崇拜景天
+  - 早慧
+  - 活泼
+  arc_type: growth
+  relationship_patterns:
+  - with: 景天
+    type: 师徒/兄妹
+    dynamic: 崇拜与依恋
+  - with: 龙葵
+    type: 姐妹
+    dynamic: 亲密
+  name_type: proper
+  name_confidence: high
+  is_entity: true
+  aliases: []
+- name: 云天河/山顶野人/呆瓜
+  role: protagonist
+  traits:
+  - 懵懂纯真
+  - 勇敢鲁莽
+  - 直率
+  - 固执
+  - 直率真诚
+  - 不谙世事
+  - 坚韧求生
+  - 天真单纯
+  - 好奇心强
+  arc_type: growth
+  relationship_patterns:
+  - with: 云天青
+    type: 父子
+    dynamic: 敬畏与思念
+  - with: 韩菱纱
+    type: 同伴/潜在恋人
+    dynamic: 被引导者与引导者
+  name_type: proper
+  name_confidence: high
+  is_entity: true
+  aliases: []
+- name: 韩菱纱/少女/猪妖
+  role: love_interest
+  traits:
+  - 口才好
+  - 好奇
+  - 善良体贴
+  - 见多识广
+  - 活泼聪慧
+  - 活泼机敏
+  - 倔强不服输
+  - 经验丰富
+  - 撒娇
+  arc_type: growth
+  relationship_patterns:
+  - with: 云天河
+    type: 引导者/同伴
+    dynamic: 主动引导与被动跟随
+  - with: 魁召
+    type: 敌对
+    dynamic: 以弱敌强
+  name_type: proper
+  name_confidence: high
+  is_entity: true
+  aliases: []
+- name: 魁召/灵将/符灵
+  role: antagonist
+  traits:
+  - 冷酷无情
+  - 强大威严
+  - 忠于主人
+  - 精通仙术
+  arc_type: static
+  relationship_patterns:
+  - with: 云天青
+    type: 主人
+    dynamic: 服从
+  - with: 云天河
+    type: 主人（觉醒后）
+    dynamic: 认主
+  name_type: proper
+  name_confidence: high
+  is_entity: true
+  aliases: []
+- name: 云天青/父亲/老爹
+  role: supporting
+  traits:
+  - 严厉
+  - 深谋远虑
+  - 爱护儿子
+  - 神秘
+  arc_type: tragic
+  relationship_patterns:
+  - with: 云天河
+    type: 父子
+    dynamic: 遗训与保护
+  name_type: proper
+  name_confidence: high
+  is_entity: true
+  aliases: []
+genre: 史诗奇幻
+themes:
+- 宿命与反抗
+- 牺牲与救赎
+- 神性与人性
+- 轮回与羁绊
+- 正义与混沌
+word_count: 191946
+chapter_count: 61
+metadata: {}

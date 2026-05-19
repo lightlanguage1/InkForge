@@ -1,11 +1,28 @@
 """Context builder for planner prompts."""
 
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from ..memory.manager import MemoryManager
 from ..memory.vector_store import VectorStore
-from ..memory.plot_outline import PlotOutlineManager
+from ..plot.manager import PlotOutlineManager
+from ..memory.entities import Character, Location, Scene, OpenLoop, PlotBeat
 from ..tools.registry import ToolRegistry
+
+
+@dataclass
+class TickContext:
+    """一次 tick 的全部上下文。一次构建，多处复用。"""
+    tick: int
+    novel_name: str
+    foundation: dict
+    active_char: Optional[Character] = None
+    active_location: Optional[Location] = None
+    recent_scenes: List[Scene] = field(default_factory=list)
+    open_loops: List[OpenLoop] = field(default_factory=list)
+    plot_beat: Optional[PlotBeat] = None
+    tool_results: List[dict] = field(default_factory=list)
+    qa_feedback: str = ""
 
 
 class ContextBuilder:
@@ -38,17 +55,79 @@ class ContextBuilder:
         # Get configurable context settings
         self.recent_scenes_count = config.get('generation.recent_scenes_count', 3)
         self.include_overall_summary = config.get('generation.include_overall_summary', True)
-    
-    def build_planner_context(self, project_state: dict, current_beat=None) -> dict:
+
+    def build_tick_context(
+        self,
+        project_state: dict,
+        current_beat: Optional[PlotBeat] = None,
+    ) -> TickContext:
+        """统一构建一次 tick 的全部上下文。"""
+        tick = project_state.get("current_tick", 0)
+        foundation = project_state.get("story_foundation", {})
+
+        active_char_id = project_state.get("active_character", "")
+        active_char = self.memory.load_character(active_char_id) if active_char_id else None
+        active_loc_id = active_char.current_state.location_id if active_char else None
+        active_loc = self.memory.load_location(active_loc_id) if active_loc_id else None
+
+        return TickContext(
+            tick=tick,
+            novel_name=project_state.get("novel_name", "Untitled"),
+            foundation=foundation,
+            active_char=active_char,
+            active_location=active_loc,
+            recent_scenes=self._load_recent_scenes(tick),
+            open_loops=self.memory.get_open_loops(),
+            plot_beat=current_beat,
+            qa_feedback=self._qa_feedback_text(),
+        )
+
+    def _load_recent_scenes(self, tick: int, count: int = 5) -> List[Scene]:
+        """加载最近 N 个场景，最新的在前。"""
+        scene_ids = self.memory.list_scenes()
+        scenes = []
+        for sid in reversed(scene_ids[-count:]):
+            scene = self.memory.load_scene(sid)
+            if scene:
+                scenes.append(scene)
+        return scenes
+
+    def _qa_feedback_text(self) -> str:
+        """加载最近 QA 反馈。"""
+        try:
+            recent = self.memory.get_recent_scene_qa(count=3)
+        except Exception:
+            return ""
+        if not recent:
+            return ""
+        lines = []
+        for entry in recent:
+            scene_id = entry.get("scene_id", "?")
+            tick_num = entry.get("tick", None)
+            evaluation = entry.get("evaluation", {})
+            achieved = evaluation.get("achieved_change", {})
+            achieved_val = achieved.get("value")
+            prefix = f"Tick {tick_num} ({scene_id})" if tick_num is not None else f"Scene {scene_id}"
+            lines.append(f"- {prefix}: change={'yes' if achieved_val else 'no' if achieved_val is not None else 'unknown'}")
+        return "\n".join(lines)
+
+    def build_planner_context(self, project_state: dict, current_beat=None, notes: str = "", rejection_feedback: str = "") -> dict:
         """Build context dictionary for planner prompt.
-        
+
         Args:
             project_state: Current project state from state.json
             current_beat: Optional PlotBeat to execute in this tick
-        
-        Returns:
-            Dictionary with all context variables for prompt formatting
+            notes: Per-tick direction notes (CLI --notes flag)
+            rejection_feedback: Feedback from a rejected plan for retry
         """
+        foundation = project_state.get("story_foundation", {})
+        foundation_summary = (
+            f"Genre: {foundation.get('genre', '')}\n"
+            f"Premise: {foundation.get('premise', '')}\n"
+            f"Protagonist: {foundation.get('protagonist_archetype', '')}\n"
+            f"Setting: {foundation.get('setting', '')}\n"
+            f"Tone: {foundation.get('tone', '')}"
+        )
         context = {
             "novel_name": project_state.get("novel_name", "Untitled"),
             "current_tick": project_state.get("current_tick", 0),
@@ -56,6 +135,9 @@ class ContextBuilder:
             "active_character_name": "Unknown",
             "active_character_details": "No active character set.",
             "character_relationships": "No relationships yet.",
+            "story_foundation_summary": foundation_summary,
+            "pov_candidates": "",
+            "pov_history": "",
         }
         
         # Load active character
@@ -78,8 +160,10 @@ class ContextBuilder:
             self.recent_scenes_count
         )
         
-        # Get open loops
-        context["open_loops_list"] = self._format_open_loops()
+        # Get open loops (filtered by active character relevance)
+        context["open_loops_list"] = self._format_open_loops(
+            pov_character_id=context["active_character_id"]
+        )
         
         # Get tension history (Phase 7A.3)
         context["tension_history"] = self._get_tension_history()
@@ -87,10 +171,17 @@ class ContextBuilder:
         # Get factions summary (organizations relevant to the story)
         context["factions_summary"] = self._format_factions()
         
+        # Relevant lore (filtered by scene keywords, top 5)
+        context["relevant_lore"] = self._format_relevant_lore()
+
         # Get available tools description
         context["available_tools_description"] = self.tools.get_tools_description()
-        
-        context["qa_feedback"] = self._get_qa_feedback()
+
+        # QA feedback (last tick summary + recent history)
+        context["qa_feedback"] = self._get_qa_summary() + "\n" + self._get_qa_feedback()
+
+        # List all existing characters so planner doesn't recreate them
+        context["existing_characters_summary"] = self._format_all_characters()
 
         # Next plot beat - use passed beat if available, otherwise query
         if current_beat:
@@ -109,7 +200,45 @@ class ContextBuilder:
         # Beat enforcement instructions based on config
         context["beat_enforcement_instructions"] = self._get_beat_enforcement_instructions()
 
+        # Multi-POV support
+        context["pov_candidates"] = self._format_pov_candidates()
+        context["pov_history"] = self._format_pov_history()
+
+        # Character lifecycle
+        context["absent_characters"] = self._format_absent_characters()
+
+        # Per-tick notes override config-level writer_notes
+        context["writer_notes"] = self._format_writer_notes(notes)
+
+        # Plan rejection feedback (retry loop)
+        if rejection_feedback:
+            context["plan_rejection_feedback"] = (
+                f"**上一版计划被拒绝：** {rejection_feedback}\n\n"
+                "请重新制定计划，解决上述问题。"
+            )
+        else:
+            context["plan_rejection_feedback"] = ""
+
         return context
+
+    def _format_writer_notes(self, per_tick_notes: str = "") -> str:
+        """Format direction notes for planner/writer contexts.
+
+        Per-tick notes (from CLI --notes) take precedence over the
+        project-level ``generation.writer_notes`` config value.
+
+        Includes a continuity guard so scene steering doesn't break
+        character consistency or plot coherence.
+        """
+        notes = per_tick_notes.strip() if per_tick_notes else self.config.get('generation.writer_notes', '')
+        if not notes:
+            return ''
+        return (
+            '\n## 场景方向指导\n\n' + notes +
+            '\n\n请在 scene_intention 和 key_change 中体现上述方向。'
+            '**衔接要求：** 转变需自然流畅，角色行为与已有性格一致。'
+            '当方向与故事现状冲突时，优先保持连续性，寻找最自然的切入点。'
+        )
 
     def _get_next_plot_beat_hint(self, project_state: dict) -> str:
         """Get a formatted hint for the next pending plot beat, if available.
@@ -157,13 +286,191 @@ class ContextBuilder:
             parts.append(f"Current Goals: {', '.join(character.current_state.goals)}")
         
         if character.current_state.emotional_state:
-            parts.append(f"Emotional State: {character.current_state.emotional_state}")
+            parts.append(f"情绪状态: {character.current_state.emotional_state}")
+        if character.current_state.emotion and character.current_state.emotion.dominant:
+            parts.append(f"情绪维度: 效价={character.current_state.emotion.valence:.1f}, 唤醒度={character.current_state.emotion.arousal:.1f}")
         
         if character.current_state.location_id:
             parts.append(f"Current Location: {character.current_state.location_id}")
         
         return "\n".join(parts)
-    
+
+    def _format_pov_candidates(self) -> str:
+        """List characters eligible for POV duty."""
+        char_ids = self.memory.list_characters()
+        candidates = []
+        for cid in char_ids:
+            char = self.memory.load_character(cid)
+            if char and char.role in ("protagonist", "supporting"):
+                pov_count = getattr(char, "pov_count", 0)
+                candidates.append(f"  {cid} | {char.display_name} | {char.role} | POV次数={pov_count}")
+        if not candidates:
+            return "暂无可用POV候选角色。"
+        return "\n".join(candidates)
+
+    def _format_pov_history(self) -> str:
+        """Show the POV character for each recent scene."""
+        scene_ids = self.memory.list_scenes()
+        if not scene_ids:
+            return "暂无POV历史。"
+        lines = []
+        for sid in scene_ids[-8:]:  # last 8 scenes
+            scene = self.memory.load_scene(sid)
+            if scene:
+                pov_id = getattr(scene, "pov_character_id", "") or ""
+                tick = getattr(scene, "tick", "?")
+                if pov_id:
+                    char = self.memory.load_character(pov_id)
+                    name = char.display_name if char else pov_id
+                    lines.append(f"  S{tick:03d}: {name} ({pov_id})")
+                else:
+                    lines.append(f"  S{tick:03d}: 未知")
+        if not lines:
+            return "暂无POV历史。"
+        return "\n".join(lines)
+
+    def _format_all_characters(self) -> str:
+        """Character roster — only active/returning + 1 absent suggestion.
+
+        Hides sidelined/departed/deceased to keep the planner focused.
+        """
+        char_ids = self.memory.list_characters()
+        if not char_ids:
+            return "No characters exist yet."
+
+        status_labels = {
+            "active": "活跃", "sidelined": "暂离", "departed": "已离场",
+            "deceased": "已故", "returning": "回归中",
+        }
+
+        shown = []
+        absent_candidates = []
+
+        for cid in char_ids:
+            char = self.memory.load_character(cid)
+            if not char:
+                continue
+            status = getattr(char, "status", "active") or "active"
+            if status in ("active", "returning"):
+                shown.append(char)
+            elif status == "sidelined":
+                absent_candidates.append(char)
+
+        # Pick the most promising absent character (most prior appearances)
+        absent_candidates.sort(key=lambda c: len(getattr(c, "appearance_ticks", []) or []), reverse=True)
+        if absent_candidates:
+            shown.append(absent_candidates[0])
+
+        lines = ["### 角色登场表", ""]
+        for char in shown:
+            name = char.display_name or char.name
+            role = char.role or "?"
+            status = getattr(char, "status", "active") or "active"
+            label = status_labels.get(status, status)
+            last_tick = getattr(char, "last_scene_tick", -1)
+            appearances = getattr(char, "appearance_ticks", []) or []
+            count = len(appearances)
+            note = getattr(char, "off_screen_note", "") or ""
+            parts = [f"**{char.id} {name}** | {role} | {label} | 出场{count}次"]
+            if last_tick >= 0:
+                parts.append(f"| 最后:S{last_tick:03d}")
+            if note:
+                parts.append(f"| {note}")
+            lines.append("  " + " ".join(parts))
+
+        total = len(char_ids)
+        shown_count = len(shown)
+        if total > shown_count:
+            lines.append(f"\n（全量{total}个角色，已隐藏{total - shown_count}个离场/已故/暂离角色）")
+
+        return "\n".join(lines)
+
+    def _format_relevant_lore(self) -> str:
+        """Show top 5 lore items relevant to recent scenes (via ChromaDB).
+
+        Falls back to showing the 5 most recently added lore items if
+        ChromaDB has no results.
+        """
+        try:
+            recent_ids = self.memory.list_scenes()
+            if not recent_ids or len(recent_ids) < 1:
+                return ""
+            last_scene = self.memory.load_scene(recent_ids[-1])
+            if not last_scene or not last_scene.summary:
+                return ""
+            query = " ".join(last_scene.summary) if isinstance(last_scene.summary, list) else str(last_scene.summary)
+            results = self.vector.search_lore(query, n_results=5)
+        except Exception:
+            results = []
+
+        if not results:
+            return ""
+
+        lines = ["### 相关世界观", ""]
+        for r in results:
+            doc = r.get("document", "") or r.get("text", "") or ""
+            if doc:
+                lines.append(f"- {doc[:200]}")
+        return "\n".join(lines) if len(lines) > 2 else ""
+
+    def _get_qa_summary(self) -> str:
+        """Return a one-line summary of the last scene's QA metrics."""
+        try:
+            recent = self.memory.get_recent_scene_qa(count=1)
+        except Exception:
+            return ""
+        if not recent:
+            return ""
+        entry = recent[0]
+        ev = entry.get("evaluation", {}) or {}
+        mode = ev.get("mode_used", "?")
+        dialogue = ev.get("dialogue_count", "?")
+        novelty = ev.get("novelty_score", "?")
+        beat = (ev.get("beat_hint_alignment", {}) or {}).get("label", "?")
+        return (
+            f"**上轮QA:** 模式={mode} 对话={dialogue}轮 "
+            f"新颖度={novelty} 节拍对齐={beat}"
+        )
+
+    def _format_absent_characters(self) -> str:
+        """List characters missing for 5+ chapters — candidates for return."""
+        char_ids = self.memory.list_characters()
+        if not char_ids:
+            return ""
+        max_tick = 0
+        scene_ids = self.memory.list_scenes()
+        if scene_ids:
+            last_scene = self.memory.load_scene(scene_ids[-1])
+            if last_scene:
+                max_tick = getattr(last_scene, "tick", 0)
+        absent = []
+        for cid in char_ids:
+            char = self.memory.load_character(cid)
+            if not char:
+                continue
+            status = getattr(char, "status", "active") or "active"
+            if status in ("deceased", "departed"):
+                continue
+            last_tick = getattr(char, "last_scene_tick", -1)
+            if last_tick < 0 or max_tick - last_tick < 5:
+                continue
+            name = char.display_name or char.name
+            gap = max_tick - last_tick
+            note = getattr(char, "off_screen_note", "") or ""
+            absent.append((gap, cid, name, note))
+        if not absent:
+            return ""
+        absent.sort(key=lambda x: -x[0])
+        lines = ["### 缺席角色（超过5章未出场）", ""]
+        for gap, cid, name, note in absent:
+            line = f"- **{cid} {name}**: {gap}章未出场"
+            if note:
+                line += f"（{note}）"
+            lines.append(line)
+        lines.append("")
+        lines.append("考虑本章是否适合让其中某个角色回归。")
+        return "\n".join(lines)
+
     def _get_overall_summary(self) -> str:
         """Get high-level summary of all scenes so far.
         
@@ -219,31 +526,39 @@ class ContextBuilder:
         
         return "\n\n".join(summaries)
     
-    def _format_open_loops(self) -> str:
-        """Format open story loops for prompt.
-        
-        Returns:
-            Formatted open loops list
+    def _format_open_loops(self, pov_character_id: str = "") -> str:
+        """Format open loops, filtered by POV character relevance first.
+
+        Only the top 10 loops (by relevance + importance) are shown
+        to keep the planner focused on what matters for this scene.
         """
         open_loops = self.memory.get_open_loops()
-        
         if not open_loops:
             return "No open loops."
-        
-        # Sort by importance (descending)
-        sorted_loops = sorted(
-            open_loops,
-            key=lambda x: x.importance,
-            reverse=True
-        )
-        
+
+        importance_weight = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+
+        def relevance_score(loop):
+            score = importance_weight.get(loop.importance, 1)
+            if pov_character_id and pov_character_id in (loop.related_characters or []):
+                score += 3
+            if loop.status == "urgent":
+                score += 2
+            return score
+
+        sorted_loops = sorted(open_loops, key=relevance_score, reverse=True)
+        shown = sorted_loops[:10]
+
         loop_lines = []
-        for loop in sorted_loops:
-            status_marker = "🔴" if loop.status == "urgent" else "🟡" if loop.status == "active" else "⚪"
+        for loop in shown:
+            marker = "[急]" if loop.status == "urgent" else ""
             loop_lines.append(
-                f"{status_marker} **{loop.id}** (Importance: {loop.importance}): {loop.description}"
+                f"{marker} **{loop.id}** ({loop.importance}): {loop.description}"
             )
-        
+
+        if len(open_loops) > 10:
+            loop_lines.append(f"\n（还有 {len(open_loops) - 10} 条线索未显示）")
+
         return "\n".join(loop_lines)
     
     def _format_relationships(self, character_id: str) -> str:
@@ -436,7 +751,7 @@ class ContextBuilder:
         
         if not allow_beat_skip and not fallback_to_reactive:
             # STRICT MODE - Beat is REQUIRED
-            return """**⚠️ CRITICAL REQUIREMENT - STRICT PLOT-FIRST MODE ⚠️**
+            return """**[WARN] CRITICAL REQUIREMENT - STRICT PLOT-FIRST MODE [WARN]**
 
 The plot beat shown above is MANDATORY and MUST be executed in this scene.
 

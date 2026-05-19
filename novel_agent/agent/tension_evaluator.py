@@ -10,25 +10,22 @@ class TensionEvaluator:
     Categories: calm (0-3), rising (4-6), high (7-8), climactic (9-10)
     """
     
-    # Tension indicator keywords with weights
     HIGH_TENSION_KEYWORDS = [
-        'danger', 'threat', 'attack', 'fight', 'battle', 'death', 'dying',
-        'terror', 'panic', 'desperate', 'crisis', 'emergency', 'urgent',
-        'scream', 'blood', 'pain', 'wound', 'injury', 'fear', 'afraid',
-        'horror', 'dread', 'alarm', 'warning', 'explosion', 'collapse'
+        '死亡', '威胁', '攻击', '战斗', '恐惧', '绝望', '毁灭',
+        '尖叫', '鲜血', '逃跑', '颤抖', '窒息', '怒吼', '爆炸', '坍塌',
+        '危机', '紧急', '恐怖', '疼痛', '伤口', '流血', '杀戮',
     ]
-    
+
     MEDIUM_TENSION_KEYWORDS = [
-        'conflict', 'argument', 'disagree', 'tension', 'stress', 'worry',
-        'concern', 'anxious', 'nervous', 'uneasy', 'suspicious', 'doubt',
-        'question', 'challenge', 'confront', 'reveal', 'discover', 'shock',
-        'surprise', 'unexpected', 'strange', 'odd', 'wrong', 'mistake'
+        '紧张', '争执', '沉默', '疑问', '犹豫', '不安', '警惕',
+        '怀疑', '冲突', '躲避', '低语', '握紧', '皱眉', '加快',
+        '意外', '奇怪', '错误', '挑战', '发现', '揭示', '震惊',
     ]
-    
+
     LOW_TENSION_KEYWORDS = [
-        'calm', 'peace', 'quiet', 'rest', 'relax', 'comfort', 'safe',
-        'gentle', 'soft', 'slow', 'easy', 'routine', 'normal', 'ordinary',
-        'familiar', 'warm', 'pleasant', 'smile', 'laugh', 'content'
+        '平静', '安静', '日常', '温暖', '微笑', '轻松', '悠闲',
+        '习惯', '缓缓', '温和', '呼吸', '灯光', '安全', '舒适',
+        '熟悉', '寻常', '普通', '柔和', '缓慢', '从容',
     ]
     
     def __init__(self, config: dict):
@@ -197,9 +194,9 @@ class TensionEvaluator:
         
         # Emotional action verbs
         action_verbs = [
-            'gasped', 'shouted', 'yelled', 'screamed', 'cried', 'sobbed',
-            'lunged', 'grabbed', 'seized', 'jerked', 'flinched', 'recoiled',
-            'rushed', 'raced', 'sprinted', 'fled', 'escaped', 'chased'
+            '倒吸', '喊道', '大叫', '尖叫', '哭', '哽咽',
+            '扑向', '抓住', '攥紧', '猛地', '退缩', '后退',
+            '冲过去', '奔跑', '狂奔', '逃离', '逃脱', '追赶',
         ]
         action_count = sum(1 for verb in action_verbs if verb in text_lower)
         

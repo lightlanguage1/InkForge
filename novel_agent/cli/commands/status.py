@@ -12,13 +12,21 @@ def count_files_in_dir(directory: Path, pattern: str = "*.json") -> int:
     return len(list(directory.glob(pattern)))
 
 
+def count_cjk(text: str) -> int:
+    """Count CJK characters in text."""
+    return sum(1 for c in text if '一' <= c <= '鿿' or '㐀' <= c <= '䶿')
+
+
 def get_file_word_count(filepath: Path) -> int:
-    """Count words in a text file."""
+    """Count words in a text file (CJK-aware)."""
     if not filepath.exists():
         return 0
     try:
         with open(filepath, 'r', encoding='utf-8') as f:
             content = f.read()
+            cjk = count_cjk(content)
+            if cjk > len(content) * 0.3:
+                return cjk
             return len(content.split())
     except Exception:
         return 0
@@ -56,7 +64,7 @@ def get_status_info(project_dir: Path, state: dict) -> dict:
     loop_count = 0
     if loops_file.exists():
         import json
-        with open(loops_file, 'r') as f:
+        with open(loops_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
             loops = data.get('loops', [])
             loop_count = len([l for l in loops if l.get('status') == 'open'])
@@ -125,16 +133,16 @@ def display_status(info: dict, use_color: bool = True):
         return f"\033[1m{text}\033[0m" if use_color else text
     
     print()
-    print(f"📖 {bold('Novel:')} {info['novel_name']}")
-    print(f"📍 {bold('Location:')} {info['project_dir']}")
-    print(f"🎬 {bold('Current Tick:')} {info['current_tick']}")
-    print(f"👤 {bold('Active POV:')} {info['active_character']}")
+    print(f" {bold('Novel:')} {info['novel_name']}")
+    print(f" {bold('Location:')} {info['project_dir']}")
+    print(f" {bold('Current Tick:')} {info['current_tick']}")
+    print(f" {bold('Active POV:')} {info['active_character']}")
     
     # Display story foundation if present
     foundation = info.get('story_foundation')
     if foundation:
         print()
-        print(f"📚 {bold('Story Foundation:')}")
+        print(f" {bold('Story Foundation:')}")
         print(f"   Genre: {foundation.get('genre', 'N/A')}")
         print(f"   Setting: {foundation.get('setting', 'N/A')}")
         print(f"   Tone: {foundation.get('tone', 'N/A')}")
@@ -142,10 +150,10 @@ def display_status(info: dict, use_color: bool = True):
             print(f"   Themes: {', '.join(foundation['themes'])}")
     
     print()
-    print(f"📝 {bold('Scenes Written:')} {info['scenes_written']}")
-    print(f"👥 {bold('Characters:')} {info['characters']}")
-    print(f"🗺️  {bold('Locations:')} {info['locations']}")
-    print(f"🔗 {bold('Open Loops:')} {info['open_loops']}")
+    print(f" {bold('Scenes Written:')} {info['scenes_written']}")
+    print(f" {bold('Characters:')} {info['characters']}")
+    print(f"  {bold('Locations:')} {info['locations']}")
+    print(f" {bold('Open Loops:')} {info['open_loops']}")
     
     if info['last_scene_file']:
         print()
@@ -156,7 +164,7 @@ def display_status(info: dict, use_color: bool = True):
     tension_history = info.get('tension_history', [])
     if tension_history:
         print()
-        print(f"⚡ {bold('Tension Pattern:')}")
+        print(f" {bold('Tension Pattern:')}")
         
         # Create a simple sparkline-style visualization
         levels = [t['level'] for t in tension_history]
