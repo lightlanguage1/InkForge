@@ -1,0 +1,54 @@
+# StoryDaemon 全局配置
+# 复制此文件到 ~/.storydaemon/config.yaml
+# 首次启动时会自动使用默认值，不复制也可运行
+
+# ---- LLM 后端 ----
+llm:
+  # 后端类型: api (推荐) | codex | gemini-cli | claude-cli | ollama
+  backend: api
+
+  # 模型名: deepseek-chat | gpt-5.1 | claude-4.5 | gemini-2.5-pro | qwen3:8b
+  model: deepseek-chat
+
+  # 采样参数
+  temperature: 0.7
+  top_p: 0.8
+  enable_thinking: false   # Qwen3 等推理模型的思考模式
+
+# ---- 按任务路由模型 (可选，节省成本) ----
+router:
+  enabled: false            # 关闭时所有任务共用一个模型
+  writer_model: deepseek-chat
+  writer_backend: api
+  planner_model: deepseek-chat
+  planner_backend: api
+  extractor_model: local-llama
+  extractor_backend: api
+
+# ---- 故事生成参数 ----
+generation:
+  # Plot-First 模式: 开启后 LLM 先生成节拍再写场景，保持推进力
+  use_plot_first: false
+  beat_mode: soft_hint       # soft_hint(提示) | guided(引导) | strict(强制)
+
+  # 写作参数
+  content_safety_fallback: true   # API 拒止时自动切换到回落模型
+  prefer_local_writer: false      # 始终用本地模型写作
+
+  # 质量检查
+  enable_tension_tracking: true   # 每幕张力 0-10 评分
+  enable_lore_tracking: true      # 世界观规则追踪
+  enable_fact_extraction: true    # 从场景提取事实更新实体
+  auto_detect_characters: true    # 自动检测新角色名
+
+# ---- 路径 ----
+paths:
+  novels_dir: ./work/novels   # 小说项目存储目录
+
+# ---- 技能库 ----
+skill:
+  store_path: ./data/skills
+
+# ---- Web 服务 ----
+daemon:
+  max_concurrent_projects: 10

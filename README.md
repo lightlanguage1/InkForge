@@ -31,33 +31,44 @@ StoryDaemon 通过自治 Agent 逐幕规划、写作、评估、提交，让叙�
 
 ## 快速开始
 
-### 环境要求
-
-- Python 3.11+
-- 至少一种 LLM 后端可用：
-  - **Codex CLI**（默认）：
-    ```bash
-    npm install -g @openai/codex-cli
-    codex auth
-    ```
-  - **API 后端**（OpenAI / Claude / Gemini / DeepSeek）：需对应 API Key
-  - **Gemini CLI**：https://github.com/google-gemini/gemini-cli
-  - **Claude Code CLI**：https://github.com/anthropics/claude-code
-  - **Ollama**：本地运行，默认 `http://localhost:11434`
-
-### 安装
+### 零配置启动（推荐）
 
 ```bash
-# 克隆仓库
+# Windows: 双击 start.bat
+# macOS/Linux:
+chmod +x start.sh && ./start.sh
+```
+
+脚本自动完成：检查 Python → 创建虚拟环境 → 安装依赖 → 启动。选择一个后端即可开始。
+
+### 手动安装
+
+```bash
 git clone https://github.com/lightlanguage1/InkForge.git
 cd InkForge
 
-# （推荐）创建虚拟环境
-python3 -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-
 # 安装
 pip install -e .
+
+# 启动 Web 界面
+novel serve
+
+# 或直接用 CLI
+novel new 我的故事
+novel tick
+```
+
+### 配置 LLM 后端
+
+至少配置一个 API Key（复制 `.env.example` 为 `.env` 填入），或使用本地 Ollama：
+
+```bash
+# DeepSeek（推荐，性价比最高）
+export DEEPSEEK_API_KEY=sk-your-key
+
+# 或 Ollama 本地模型（免费，无需 API Key）
+ollama pull qwen3:8b
+novel tick --llm-backend ollama --llm-model qwen3:8b
 ```
 
 ### 创建第一部小说
