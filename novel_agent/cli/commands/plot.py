@@ -32,8 +32,8 @@ def get_plot_status(project_dir: Path) -> Dict[str, Any]:
         "arc_progress": outline.arc_progress,
         "created_at": outline.created_at,
         "last_updated": outline.last_updated,
-        "duplicate_ids": issues.get("duplicate_ids", []),
-        "missing_prerequisites": issues.get("missing_prerequisites", []),
+        "duplicate_ids": [] if isinstance(issues, list) else issues.get("duplicate_ids", []),
+        "missing_prerequisites": [] if isinstance(issues, list) else issues.get("missing_prerequisites", []),
     }
 
 

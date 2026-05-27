@@ -30,7 +30,7 @@ class PlotOutlineManager:
     Stores beats in project_root/plot_outline.json
     """
 
-    def __init__(self, project_dir: Path, llm_interface):
+    def __init__(self, project_dir: Path, llm_interface=None):
         self.project_dir = Path(project_dir)
         self.llm = llm_interface
         self.outline_file = self.project_dir / "plot_outline.json"
