@@ -1,0 +1,84 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Theme tokens ────────────────────────────────────────
+   Night mode is default (:root). Day mode adds .day to <html>.
+   All themed components reference var(--xxx) — no JS prop drilling.
+   ──────────────────────────────────────────────────────── */
+:root {
+  --bg-base:    #0e0c09;
+  --bg-surface: #161410;
+  --bg-raised:  #1c1a16;
+  --text-1:     #f0ece2;
+  --text-2:     #7a7468;
+  --text-3:     #3c3830;
+  --accent:     #c8975a;
+  --accent-lit: #e5ad6a;
+  --border:     rgba(240,236,226,0.07);
+  --shadow:     0 2px 12px rgba(0,0,0,0.30);
+  --pre-bg:     #1c1a16;
+  --header-bg:  rgba(14,12,9,0.88);
+  --dashed-border: rgba(240,236,226,0.12);
+  --dashed-text:   rgba(240,236,226,0.22);
+}
+
+:root.day {
+  --bg-base:    #f5f0e8;
+  --bg-surface: #ede8df;
+  --bg-raised:  #e4ddd2;
+  --text-1:     #1a1714;
+  --text-2:     #7a6e62;
+  --text-3:     #b5aca0;
+  --accent:     #9e6a2e;
+  --accent-lit: #c8975a;
+  --border:     rgba(26,23,20,0.10);
+  --shadow:     0 2px 12px rgba(100,80,50,0.10);
+  --pre-bg:     #ede8df;
+  --header-bg:  rgba(245,240,232,0.92);
+  --dashed-border: rgba(26,23,20,0.18);
+  --dashed-text:   rgba(26,23,20,0.35);
+}
+
+@layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  body, #root {
+    font-family: 'DM Sans', system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg-base);
+    color: var(--text-1);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    letter-spacing: -0.01em;
+    line-height: 1.5;
+    transition: background 0.3s ease, color 0.3s ease;
+  }
+
+  h1, h2, h3, h4 {
+    letter-spacing: -0.025em;
+    line-height: 1.2;
+  }
+
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 99px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--text-3);
+  }
+}
