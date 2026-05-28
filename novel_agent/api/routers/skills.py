@@ -1,24 +1,31 @@
 """技能管理路由。"""
 
+import logging
+
 from fastapi import APIRouter, HTTPException
 
 from ..deps import get_engine
 from ..models import SkillImportRequest, SkillApplyRequest
 from ...skill.importer import SkillImporter
 from ...skill.injector import SkillInjector
-from ...skill.store import SkillStore
-from ...configs.config import Config
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["技能"])
 
 
 @router.post("/skills/import")
 def skill_import(req: SkillImportRequest):
     engine = get_engine()
-    store = engine.skill_store
-    backend = engine.config.get("llm.backend", "codex")
-    importer = SkillImporter(engine.llm_pool.get_connection(backend=backend), store)
-    skill = importer.import_novel(file_path=req.file_path, name=req.name)
+    backend = engine.config.get("llm.backend", "api")
+    importer = SkillImporter(
+        engine.llm_pool.get_connection(backend=backend),
+        engine.skill_store,
+    )
+    try:
+        skill = importer.import_novel(file_path=req.file_path, name=req.name)
+    except Exception:
+        logger.exception("技能导入失败: %s", req.file_path)
+        raise HTTPException(status_code=500, detail="技能导入失败")
     return {
         "skill_id": skill.id, "slug": skill.slug, "name": skill.name,
         "style_tags": skill.tags,
@@ -47,7 +54,11 @@ def skill_list():
 def skill_apply(req: SkillApplyRequest):
     engine = get_engine()
     store = engine.skill_store
-    skills = [s for sid in req.skill_ids if (s := store.load_skill(sid))]
+    skills = []
+    for sid in req.skill_ids:
+        s = store.load_skill(sid)
+        if s is not None:
+            skills.append(s)
     if not skills:
         raise HTTPException(status_code=404, detail="未找到匹配的技能")
     injector = SkillInjector(project_path=req.project_path, config=engine.config)
@@ -57,8 +68,8 @@ def skill_apply(req: SkillApplyRequest):
 
 @router.delete("/skills/{slug}")
 def skill_delete(slug: str):
-    cfg = Config()
-    store = SkillStore(cfg.get("skill.store_path", ""))
+    engine = get_engine()
+    store = engine.skill_store
     skill = store.load_skill(slug)
     if skill is None:
         raise HTTPException(status_code=404, detail=f"未找到技能: {slug}")

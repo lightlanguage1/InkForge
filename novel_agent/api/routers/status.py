@@ -1,6 +1,5 @@
 """项目信息路由 — status / goals / lore。"""
 
-from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Query
@@ -17,16 +16,10 @@ router = APIRouter(prefix="/api/v1", tags=["信息"])
 @router.get("/project/{project_id}/status")
 def get_status(project_id: str):
     project_dir = resolve_project(project_id)
-    state = load_project_state(project_dir)
+    state = load_project_state(str(project_dir))
     memory = MemoryManager(project_dir)
 
     scenes = memory.list_scenes()
-    chars = memory.list_characters()
-    locs = memory.list_locations()
-    factions = memory.list_factions()
-    loops = memory.load_open_loops()
-    lore = memory.load_all_lore()
-
     total = 0
     tensions = []
     for sid in scenes:
@@ -41,11 +34,11 @@ def get_status(project_id: str):
         "current_tick": state.get("current_tick", 0),
         "novel_name": state.get("novel_name", "Untitled"),
         "scene_count": len(scenes),
-        "character_count": len(chars),
-        "location_count": len(locs),
-        "faction_count": len(factions),
-        "open_loops_count": len(loops),
-        "lore_count": len(lore),
+        "character_count": len(memory.list_characters()),
+        "location_count": len(memory.list_locations()),
+        "faction_count": len(memory.list_factions()),
+        "open_loops_count": len(memory.load_open_loops()),
+        "lore_count": len(memory.load_all_lore()),
         "word_count": total,
         "avg_tension": sum(tensions) / len(tensions) if tensions else 0,
     }
@@ -54,7 +47,7 @@ def get_status(project_id: str):
 @router.get("/project/{project_id}/goals")
 def get_goals(project_id: str):
     project_dir = resolve_project(project_id)
-    state = load_project_state(project_dir)
+    state = load_project_state(str(project_dir))
     return get_goals_info(project_dir, state)
 
 

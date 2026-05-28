@@ -16,6 +16,7 @@ class ProjectCreateRequest(BaseModel):
     tone: Optional[str] = None
     themes: Optional[str] = None
     use_plot_first: bool = False
+    skill_ids: List[str] = []
 
 
 class TickRequest(BaseModel):

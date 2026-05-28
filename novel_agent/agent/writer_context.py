@@ -110,6 +110,7 @@ class WriterContextBuilder:
             "scene_length_guidance": scene_length_guidance,
             "skill_context": _format_skill_context(project_state),
             "reference_context": self._search_references(plan, project_state),
+            "world_rules": self._format_world_rules(),
             "writer_notes": self._format_writer_notes(notes),
         }
 
@@ -515,3 +516,22 @@ class WriterContextBuilder:
         )
 
         return "\n".join(sections)
+
+    def _format_world_rules(self) -> str:
+        """Format world lore rules for the Writer prompt.
+
+        Collects critical and important lore entries so the Writer is
+        aware of established world constraints.
+        """
+        lore_entries = self.memory.load_all_lore()
+        if not lore_entries:
+            return ""
+        important = [l for l in lore_entries if l.importance in ("critical", "important")]
+        if not important:
+            important = lore_entries[:3]
+        lines = ["\n## 世界观规则（请遵守）\n"]
+        for l in important[:5]:
+            cat = l.category or "其他"
+            tag = "规则" if l.lore_type == "rule" else "约束" if l.lore_type == "constraint" else "事实"
+            lines.append(f"- [{cat}·{tag}] {l.content}")
+        return "\n".join(lines)

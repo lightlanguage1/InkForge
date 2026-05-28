@@ -99,27 +99,25 @@ class NameGenerator:
             f"Used names: {len(self.used_names)}"
         )
 
-    def generate_chinese_name(self) -> Dict[str, str]:
-        """Pick a Chinese surname from the Hundred Family Surnames list.
+    def generate_chinese_name(self, given_name: str = "") -> Dict[str, str]:
+        """生成中文姓名：百家姓随机取姓 + 可选指定名字。
 
-        The given name is expected to be provided by the LLM based on story
-        context; this method supplies only the surname as a fallback when
-        the LLM hasn't provided a complete name.
+        如果 given_name 为空，返回仅含姓氏的结果，由调用方（通常是 LLM）补充名字。
         """
         surname = random.choice(self.chinese_surnames)
         for _ in range(50):
             if surname not in self.used_names:
                 self.used_names.add(surname)
                 return {
-                    "full_name": surname,
-                    "first_name": "",
+                    "full_name": surname + given_name if given_name else surname,
+                    "first_name": given_name,
                     "family_name": surname,
                     "title": "",
                 }
             surname = random.choice(self.chinese_surnames)
         return {
-            "full_name": surname,
-            "first_name": "",
+            "full_name": surname + given_name if given_name else surname,
+            "first_name": given_name,
             "family_name": surname,
             "title": "",
         }

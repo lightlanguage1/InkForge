@@ -457,19 +457,58 @@ class StoryAgent:
         return result
 
     def _first_tick(self) -> Dict[str, Any]:
-        """Execute first tick with two-phase entity generation.
-        
+        """Execute first tick with world baseline + two-phase entity generation.
+
+        Phase 0: Generate world rules from foundation (lore baseline)
         Phase 1: Generate entities (character, location)
         Phase 2: Write scene with established entities
-        
-        Returns:
-            Result dictionary with tick info and success status
         """
         tick = 0
-        
-        logger.info("     执行第0幕（两阶段初始化）...")
-        
+
+        logger.info("     执行第0幕（三阶段初始化）...")
+
         try:
+            # PHASE 0: World Baseline
+            logger.info("   阶段零：生成世界观基线...")
+            foundation = self.state.get("story_foundation", {})
+            genre = foundation.get("genre", "")
+            premise = foundation.get("premise", "")
+            setting = foundation.get("setting", "")
+            tone = foundation.get("tone", "")
+
+            lore_prompt = (
+                f"为以下故事设定生成初始世界观规则。\n\n"
+                f"类型：{genre}\n前提：{premise}\n背景：{setting}\n基调：{tone}\n\n"
+                f"请生成 3-5 条核心世界观规则，每条包含：\n"
+                f"- 类别（magic/technology/society/physics/biology/other）\n"
+                f"- 类型（rule/fact/constraint/capability/limitation）\n"
+                f"- 内容（一句话描述，中文）\n"
+                f"- 重要性（critical/important/normal）\n\n"
+                f"返回JSON：{{\"lore\":[{{\"type\":\"rule\",\"category\":\"...\",\"content\":\"...\",\"importance\":\"normal\"}},...]}}\n"
+                f"只返回JSON。"
+            )
+            try:
+                from ..memory.entities import Lore
+                lore_resp = self.llm.generate(lore_prompt, max_tokens=500)
+                lore_data = self._parse_plan_response(lore_resp)
+                for item in lore_data.get("lore", []):
+                    lid = f"L{len(self.memory.load_all_lore()):03d}"
+                    lore_obj = Lore(
+                        id=lid,
+                        lore_type=item.get("type", "rule"),
+                        content=item.get("content", ""),
+                        category=item.get("category", "other"),
+                        importance=item.get("importance", "normal"),
+                        source_scene_id="world_baseline",
+                        tick=0,
+                    )
+                    self.memory.save_lore(lore_obj)
+                count = len(lore_data.get("lore", []))
+                if count:
+                    logger.info("   → 已生成 %d 条世界观基线", count)
+            except Exception as e:
+                logger.warning("   世界观基线生成失败: %s", e)
+
             # PHASE 1: Entity Generation
             logger.info("   阶段一：生成实体...")
 

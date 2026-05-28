@@ -62,6 +62,30 @@ POV角色：{character_name}
 只输出JSON：{{"is_contradiction": true/false, "reason": "一句话理由(中文)"}}"""
 
 
+_LOGIC_QA_PROMPT = """你是小说逻辑审核专家。请通读以下场景，找出其中的时间矛盾、年龄冲突和逻辑谬误。
+
+审核标准：
+1. 时间连续性：场景中提到的时间跨度是否合理？有没有"第1章在报名路上，第2章突然三天后"之类缺少过渡的问题？
+2. 年龄一致性：角色年龄与其行为/经历是否匹配？例如"16岁少女20年前救了人"就是明显的年龄矛盾。
+3. 逻辑一致性：场景中的事件、对话、设定是否与故事已建立的事实冲突？
+
+场景上下文：
+- 故事名：{novel_name}
+- 当前第 {current_tick} 幕
+- POV角色：{pov_name}（年龄：{pov_age}岁）
+- 场景意图：{scene_intention}
+- 世界观规则：{lore_rules}
+
+场景全文：
+```
+{scene_text}
+```
+
+只输出JSON：
+{{"issues": [{{"type": "time|age|logic", "description": "问题描述", "severity": "error|warning"}}], "passed": true/false}}
+如果没有问题，返回空issues数组和passed=true。只返回JSON。"""
+
+
 class SceneEvaluator:
     """Evaluates scene quality and consistency.
 
@@ -89,6 +113,17 @@ class SceneEvaluator:
         checks["continuity"] = self._check_continuity(scene_text, scene_context)
         if not checks["continuity"]:
             issues.append("连续性错误：场景与角色状态矛盾")
+
+        # LLM 时间/逻辑一致性评审（非致命，记入 warnings）
+        logic_result = self._check_logic(scene_text, scene_context)
+        if logic_result:
+            checks["logic"] = logic_result.get("passed", True)
+            for issue in logic_result.get("issues", []):
+                msg = f"[{issue.get('type', '?')}] {issue.get('description', '')}"
+                if issue.get("severity") == "error":
+                    issues.append(msg)
+                else:
+                    warnings.append(msg)
 
         continuity_flags: List[str] = []
         if not checks["continuity"]:
@@ -206,6 +241,54 @@ class SceneEvaluator:
         except Exception:
             logger.warning("LLM continuity check failed, falling back to keyword result")
         return False
+
+    # ---- logic QA (LLM 时间/年龄/逻辑一致性评审) --------------------------
+
+    def _check_logic(self, text: str, context: Dict[str, Any]) -> dict | None:
+        """LLM 评审场景的时间连续性、年龄一致性和逻辑矛盾。
+
+        总是调用 LLM（不像 POV 有快速路径），因为逻辑评审需要理解
+        故事上下文，无法用关键词判断。
+        """
+        if not self.llm:
+            return None
+
+        tick = context.get("current_tick", 0)
+        # 每 5 幕做一次完整评审，节省成本但不遗漏
+        if tick > 0 and tick % 5 != 0 and not self.config.get("generation", {}).get("eval_always_llm", False):
+            return None
+
+        pov_id = context.get("pov_character_id", "")
+        char_name = context.get("pov_character_name", "未知")
+        char_age = ""
+        if pov_id:
+            char = self.memory.load_character(pov_id)
+            if char:
+                char_name = char.display_name or char_name
+                char_age = str(char.physical_traits.age) if char.physical_traits and char.physical_traits.age else "未知"
+
+        # 收集世界观规则
+        lore_items = self.memory.load_all_lore()
+        lore_text = "; ".join(l.content[:80] for l in lore_items[-5:]) if lore_items else "暂无"
+
+        prompt = _LOGIC_QA_PROMPT.format(
+            novel_name=context.get("novel_name", ""),
+            current_tick=context.get("current_tick", 0),
+            pov_name=char_name,
+            pov_age=char_age,
+            scene_intention=context.get("scene_intention", ""),
+            lore_rules=lore_text,
+            scene_text=text[:3000],
+        )
+
+        try:
+            response = self.llm.generate(prompt, max_tokens=400)
+            data = self._extract_json(response)
+            if data is None:
+                return None
+            return data
+        except Exception:
+            return None
 
     # ---- JSON extraction -------------------------------------------------
 

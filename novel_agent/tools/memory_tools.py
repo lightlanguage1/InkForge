@@ -12,6 +12,23 @@ from ..memory.entities import (
 from .base import Tool
 
 
+def _llm_generate_given_name(role: str, description: str) -> str:
+    """让 LLM 根据角色背景生成 1-2 个中文字作为名字。"""
+    try:
+        from .llm_interface import send_prompt
+        prompt = (
+            f"为一个{role}角色生成中文名字（仅名字部分，不含姓氏，1-2个字）。\n"
+            f"角色描述：{description}\n"
+            f"只返回名字，不要解释。"
+        )
+        name = send_prompt(prompt, max_tokens=20).strip()
+        # 只取中文字符
+        name = "".join(c for c in name if "一" <= c <= "鿿")[:2]
+        return name if name else "无名"
+    except Exception:
+        return ""
+
+
 class MemorySearchTool(Tool):
     """Semantic search across stored entities."""
     
@@ -151,7 +168,9 @@ class CharacterGenerateTool(Tool):
         force_generate = self.beat_mode == "strict"
 
         if (not name or is_placeholder or force_generate) and self.name_generator:
-            result = self.name_generator.generate_chinese_name()
+            # LLM 根据角色背景生成名字，百家姓随机取姓
+            given = _llm_generate_given_name(role, description)
+            result = self.name_generator.generate_chinese_name(given_name=given)
             first_name = result["first_name"]
             family_name = result["family_name"]
         elif name and not is_placeholder:

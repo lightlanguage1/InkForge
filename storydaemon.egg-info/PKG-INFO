@@ -1,24 +1,39 @@
 Metadata-Version: 2.4
 Name: storydaemon
-Version: 0.1.0
-Summary: Agentic novel generation system with emergent narrative
-Home-page: https://github.com/EdwardAThomson/StoryDaemon
+Version: 1.0.0
+Summary: LLM 驱动的中文长篇小说涌现式生成系统
+Home-page: https://github.com/lightlanguage1/InkForge
 Author: Edward A. Thomson
-Classifier: Development Status :: 3 - Alpha
-Classifier: Intended Audience :: Developers
-Classifier: Topic :: Software Development :: Libraries :: Application Frameworks
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: End Users/Desktop
+Classifier: Topic :: Text Processing :: Linguistic
 Classifier: License :: OSI Approved :: MIT License
 Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
 Classifier: Programming Language :: Python :: 3.11
-Requires-Python: >=3.11
+Classifier: Programming Language :: Python :: 3.12
+Requires-Python: >=3.10
 Description-Content-Type: text/markdown
 Requires-Dist: typer>=0.9.0
 Requires-Dist: pyyaml>=6.0.0
 Requires-Dist: jsonschema>=4.0.0
 Requires-Dist: openai>=1.0.0
+Requires-Dist: chromadb>=0.4.0
+Requires-Dist: fastapi>=0.100.0
+Requires-Dist: uvicorn[standard]>=0.20.0
+Requires-Dist: pydantic>=2.0.0
+Requires-Dist: sse-starlette>=1.0.0
+Provides-Extra: gemini
+Requires-Dist: google-generativeai>=0.3.0; extra == "gemini"
+Provides-Extra: claude
+Requires-Dist: anthropic>=0.20.0; extra == "claude"
+Provides-Extra: all
+Requires-Dist: google-generativeai>=0.3.0; extra == "all"
+Requires-Dist: anthropic>=0.20.0; extra == "all"
 Provides-Extra: dev
 Requires-Dist: pytest>=7.0.0; extra == "dev"
 Requires-Dist: pytest-cov>=4.0.0; extra == "dev"
+Requires-Dist: httpx>=0.24.0; extra == "dev"
 Dynamic: author
 Dynamic: classifier
 Dynamic: description
@@ -31,516 +46,444 @@ Dynamic: summary
 
 # StoryDaemon
 
-**Agentic Novel Generation System with Emergent Narrative**
+**LLM 驱动的中文长篇小说涌现式生成系统**
 
-StoryDaemon is a Python-based system that generates long-form fiction through an autonomous agent that plans, writes, and evolves stories organically. Unlike traditional story generators, StoryDaemon emphasizes emergence over pre-planning, allowing narrative structure to develop naturally through iterative "story ticks."
+StoryDaemon 通过自治 Agent 逐幕规划、写作、评估、提交，让叙事结构在迭代中自然涌现，而非预设大纲。灵感源自作者此前的 [NovelWriter](https://github.com/EdwardAThomson/NovelWriter) 项目，但 StoryDaemon 强调涌现优于规划。
 
-## Features
+## 视频介绍
 
-- 🤖 **Agentic Architecture** - LLM-driven agent makes autonomous decisions using structured tools
-- 📖 **Deep POV Writing** - Strict point-of-view discipline for immersive narrative
-- 🧠 **Evolving Memory** - Characters, locations, and story elements dynamically update
-- 🎯 **Emergent Structure** - No pre-outlining; story develops organically
-- 📚 **Story Foundation** - Optional genre, premise, setting, tone to guide emergence
-- 🎯 **Goal Hierarchy** - Protagonist goals emerge naturally or can be user-specified
-- ⚡ **Tension Tracking** - Automatic scene tension scoring (0-10) for pacing awareness
-- 💰 **Zero Additional Cost** - Uses Codex CLI for GPT-5 access (included in subscription)
-- 🔧 **Tool-Based System** - Extensible tool registry for character generation, memory search, etc.
-- 🔍 **Rich Inspection Tools** - Status, list, inspect, goals commands for full project visibility
-- 💾 **Automatic Checkpointing** - Snapshot and restore project state at any point
-- 📝 **Manuscript Compilation** - Export to Markdown or HTML with scene filtering
-- 🎲 **Unique Name Generation** - Syllable-based name generator with 4M+ combinations
-- 🔄 **Resume Workflow** - Easily continue recent projects with `novel resume`
-- 🆔 **UUID Safety** - Automatic project IDs prevent accidental overwrites
+- [StoryDaemon: The Future of Story Generation?](https://youtu.be/vIBRLavyxbs)
 
-## Quick Start
+## 功能特性
 
-### Prerequisites
+- 🤖 **Agent 自治架构** — LLM 驱动的 Agent 通过结构化工具自主决策
+- 📖 **深度 POV 写作** — 严格的视点规范，沉浸式叙事
+- 🧠 **演化记忆系统** — 角色、地点、线索、世界观随故事推进动态更新
+- 🎯 **涌现式结构** — 无预置大纲，故事在逐幕迭代中自然成型
+- 📚 **故事基础设定** — 可选类型、背景、主角设定、基调引导涌现方向
+- 🎯 **目标层级** — 主角目标（即时/弧线/故事）自动浮现或手动指定
+- 📋 **Plot-First 模式** — 可选涌现式情节节拍引导场景生成，保持推进力
+- ⚡ **张力追踪** — 自动评估每幕张力（0-10 分），感知故事节奏
+- 💰 **多后端混跑** — 五种 LLM 后端：Codex CLI、API（OpenAI/Gemini/Claude/DeepSeek）、Gemini CLI、Claude Code CLI、Ollama
+- 🔧 **可扩展工具系统** — 10 个注册工具：角色/地点/势力生成、记忆搜索、关系管理
+- 🔍 **丰富检查命令** — status、list、inspect、goals、lore 全面了解项目状态
+- 💾 **自动存档** — 项目快照与恢复，支持按需存档
+- 📝 **手稿编译** — 导出 Markdown / HTML / 纯文本格式，支持场景范围筛选
+- 🎲 **随机名字生成** — 音节式中文名生成器
+- 🔄 **恢复工作流** — `novel resume` 一键回到最近项目
+- 🆔 **UUID 安全** — 项目自动分配唯一 ID，防止误操作
+- 📊 **写作技能系统** — 从已有小说提取风格/模式/角色原型，注入到新项目
+- 🌐 **HTTP 服务模式** — `novel serve` 启动 REST API
+
+## 快速开始
+
+### 环境要求
 
 - Python 3.11+
-- Codex CLI installed and authenticated
-  ```bash
-  npm install -g @openai/codex-cli
-  codex auth
-  ```
+- 至少一种 LLM 后端可用：
+  - **Codex CLI**（默认）：
+    ```bash
+    npm install -g @openai/codex-cli
+    codex auth
+    ```
+  - **API 后端**（OpenAI / Claude / Gemini / DeepSeek）：需对应 API Key
+  - **Gemini CLI**：https://github.com/google-gemini/gemini-cli
+  - **Claude Code CLI**：https://github.com/anthropics/claude-code
+  - **Ollama**：本地运行，默认 `http://localhost:11434`
 
-### Installation
+### 安装
 
 ```bash
-# Clone the repository
-git clone https://github.com/EdwardAThomson/StoryDaemon.git
-cd StoryDaemon
+# 克隆仓库
+git clone https://github.com/lightlanguage1/InkForge.git
+cd InkForge
 
-# Install dependencies
+# （推荐）创建虚拟环境
+python3 -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+
+# 安装
 pip install -e .
-
-# Or install with development dependencies
-pip install -e ".[dev]"
 ```
 
-### Create Your First Novel
+### 创建第一部小说
 
 ```bash
-# Create a new novel project (gets unique UUID automatically)
-novel new my-story --dir work/novels
-# → Creates: work/novels/my-story_a1b2c3d4/
+# 推荐：交互式创建（引导填写类型/背景/主角/基调等）
+novel new 我的故事 --dir work/novels
 
-# Create with story foundation (interactive mode)
-novel new my-story --interactive
+# 跳过向导，创建空项目
+novel new 我的故事 --dir work/novels --no-interactive
 
-# Or from a YAML file
-novel new my-story --foundation foundation.yaml
+# 从 YAML 文件加载设定
+novel new 我的故事 --foundation foundation.yaml
 
-# Or via command-line arguments
-novel new my-story \
-  --genre "science fiction" \
-  --premise "A lone engineer discovers an alien signal" \
-  --protagonist "Curious, isolated technical expert" \
-  --setting "Near-future Mars colony" \
-  --tone "Contemplative, mysterious"
+# 命令行参数直接指定
+novel new 我的故事 \
+  --genre "科幻" \
+  --premise "一名孤独的工程师发现了一个外星信号" \
+  --protagonist "好奇心强、技术精湛但孤僻" \
+  --setting "近未来火星殖民地" \
+  --tone "沉思、神秘"
 
-# Generate your first scene
-cd work/novels/my-story_a1b2c3d4
+# 生成第一幕
+cd work/novels/我的故事_*
 novel tick
 
-# Or generate from anywhere
-novel tick --project work/novels/my-story_a1b2c3d4
+# 从任意位置指定项目生成
+novel tick --project work/novels/我的故事_a1b2c3d4
 
-# Check project status (includes story foundation)
+# 查看项目状态
 novel status
 
-# View goal hierarchy
+# 查看目标层级
 novel goals
 
-# Generate multiple scenes with automatic checkpointing
+# 连续生成多幕（自动存档）
 novel run --n 10 --checkpoint-interval 10
 
-# See recent projects (shows UUIDs)
-novel recent
-
-# Resume most recent project (no need to type full path!)
+# 回到最近项目
 novel resume
 
-# Resume specific project by UUID
-novel resume --uuid a1b2
-
-# Resume and run multiple ticks
-novel resume --n 5
-
-# List what was created (includes tension levels!)
+# 查看创建的内容
 novel list characters
 novel list locations
-novel list scenes  # Shows tension: 6/10 (rising), 5/10 (rising), etc.
+novel list scenes
+novel list loops
 
-# Inspect a character
+# 深入查看角色
 novel inspect --id C0
 
-# Compile a manuscript
+# 编译手稿
 novel compile --output draft.md
 
-# Save prompts for inspection (Phase 7A.5)
-novel tick --save-prompts  # Saves to prompts/ directory
+# 指定 LLM 后端
+novel tick --llm-backend api --llm-model deepseek-chat
+novel tick --llm-backend api --llm-model gpt-5.1
+novel tick --llm-backend api --llm-model claude-4.5
+novel tick --llm-backend gemini-cli --llm-model gemini-2.5-pro
+novel tick --llm-backend claude-cli
+novel tick --llm-backend ollama --llm-model qwen3:8b
 
-# View lore items (Phase 7A.4)
-novel lore list
-novel lore list --category world_rules
-novel lore list --importance high
+# 保存发送给 LLM 的 prompt（调试用）
+novel tick --save-prompts
+
+# 注入场景方向指导
+novel tick --notes "本幕描写两位主角在月光下的温泉中互诉衷肠"
 ```
 
-## How It Works
+## 工作原理
 
-StoryDaemon uses a **story tick loop** where each tick produces one scene passage:
+每次 Tick 生成一幕场景，完整流程：
 
-1. **Summarize State** - Collect context from previous passages and memory
-2. **Plan** - Planner LLM decides which tools to use, scene intention, and optional length guidance
-3. **Execute Tools** - Run character generation, memory search, etc.
-4. **Write** - Writer LLM generates prose in deep POV (flexible length based on scene needs)
-5. **Evaluate** - Check continuity and POV integrity
-6. **Evaluate Tension** - Analyze scene tension (0-10 scale) for pacing awareness
-7. **Commit** - Save scene and update memory
-8. **Extract Facts** - Update character/location state from scene content
-9. **Extract Lore** - Identify world rules, constraints, and capabilities
-10. **Check Goals** - Promote story goals when conditions are met
+```
+第 0 幕（两阶段初始化）
+├── 阶段一：先生成实体（角色、地点）→ 确保实体先于场景存在
+└── 阶段二：实体 ID 写入 Plan → 写场景正文
 
-### Real-World Example
+第 N 幕（四阶段标准循环）
+├── Plan   — ContextBuilder 收集 25+ 上下文字段 → LLM 生成 Plan JSON
+│            → 校验 → 节拍/节奏约束 → PlanExecutor 执行工具
+├── Write  — WriterContextBuilder 构建上下文 → SceneWriter 生成正文
+│            → 拒止检测自动回落 → 段落润色
+├── Eval   — POV 检测（快速路径+LLM确认）→ 连续性检查 → QA 指标
+│            未通过则带反馈重写（最多 N 次）
+├── Commit — 持久化场景 → 张力评估 0-10 → 节拍验证（语义相似度）
+└── Update — 事实提取+实体更新 → 世界观提取+冲突检测 → 新角色检测
+```
 
-Here's what tension tracking looks like in a generated story:
+### 记忆系统
+
+每个项目的 `memory/` 目录维护：
+
+| 实体 | 存储位置 | 内容 |
+|------|---------|------|
+| 角色 | `memory/characters/C*.json` | 名字/性格/身体特征/当前状态(情绪/位置/目标)/关系/出场记录 |
+| 地点 | `memory/locations/L*.json` | 名称/类型/氛围/感官细节/特征/当前状态 |
+| 场景 | `memory/scenes/S*.json` | 标题/摘要/字数/张力/POV角色/关键事件 |
+| 开放线索 | `memory/open_loops.json` | 描述/重要性/状态/关联角色/提及次数 |
+| 世界观 | `memory/lore.json` | 规则/事实/约束/类型/来源场景/冲突检测 |
+| 势力 | `memory/factions/F*.json` | 名称/组织类型/目标/影响力/立场 |
+| 向量索引 | ChromaDB | 场景摘要 + 世界观语义搜索 |
+
+## 项目结构
+
+```
+InkForge/
+├── novel_agent/              # 核心代码包
+│   ├── agent/                # 核心引擎（Tick 循环 + 写作 + 评估）
+│   │   ├── agent.py                  # StoryAgent 主编排器
+│   │   ├── context.py                # ContextBuilder — Planner 上下文（~25字段）
+│   │   ├── writer_context.py         # WriterContextBuilder — Writer 上下文
+│   │   ├── writer.py                 # SceneWriter — 写作+拒止回落+润色
+│   │   ├── evaluator.py              # SceneEvaluator — POV/连续性+QA指标
+│   │   ├── prompts.py                # System Prompt + 模板加载
+│   │   ├── schemas.py                # Plan JSON 校验
+│   │   ├── runtime.py                # PlanExecutor — 工具调用执行
+│   │   ├── scene_committer.py        # 场景提交
+│   │   ├── tension_evaluator.py      # 张力评估
+│   │   ├── plan_manager.py           # 计划持久化
+│   │   ├── streaming_agent.py        # SSE 流式 Agent
+│   │   ├── fact_extractor.py         # 事实提取
+│   │   ├── entity_updater.py         # 事实→实体变更
+│   │   ├── lore_extractor.py         # 世界观提取
+│   │   ├── lore_contradiction_detector.py  # 设定冲突检测
+│   │   └── character_detector.py     # 新角色检测
+│   ├── memory/                # 持久化与向量检索
+│   │   ├── manager.py                 # MemoryManager — JSON CRUD
+│   │   ├── entities.py                # 数据类定义（9个实体）
+│   │   ├── vector_store.py            # ChromaDB 向量索引
+│   │   ├── update.py                  # 场景后处理管道总入口
+│   │   ├── summarizer.py             # 摘要生成
+│   │   └── checkpoint.py             # 项目存档
+│   ├── plot/                  # 情节节拍管理
+│   │   └── manager.py                 # PlotOutlineManager — 节拍CRUD+LLM生成
+│   ├── tools/                 # LLM 后端 + 工具注册
+│   │   ├── llm_interface.py           # 5种后端统一入口
+│   │   ├── multi_provider_llm.py      # 多供应商API注册表
+│   │   ├── provider.py                # LLMProvider — generate/chat封装
+│   │   ├── router.py                  # ModelRouter — 按任务路由模型
+│   │   ├── registry.py                # ToolRegistry — 工具注册表
+│   │   ├── memory_tools.py            # 10个工具实现
+│   │   ├── name_generator.py          # 随机中文名
+│   │   ├── codex_interface.py         # Codex CLI 后端
+│   │   ├── gemini_cli_interface.py    # Gemini CLI 后端
+│   │   ├── claude_cli_interface.py    # Claude Code CLI 后端
+│   │   ├── ollama_stream.py           # Ollama 流式
+│   │   └── llm_pool.py                # LLM 连接池
+│   ├── skill/                 # 写作技能系统
+│   │   ├── importer.py                # 小说→SKILL.yaml（分层采样+角色去重）
+│   │   ├── injector.py                # SKILL→写作上下文注入
+│   │   ├── models.py                  # Skill/StyleProfile等数据类
+│   │   └── store.py                   # YAML 持久化
+│   ├── engine/                # 常驻进程引擎
+│   │   ├── core.py                    # EngineCore — LLMPool+ProjectManager
+│   │   └── project_manager.py         # 项目管理器
+│   ├── api/                   # REST API
+│   │   └── server.py                  # FastAPI 服务（12个端点+SSE）
+│   ├── reference/             # 外部参考小说索引
+│   │   └── indexer.py                 # 分块+向量搜索
+│   ├── cli/                   # 命令行界面
+│   │   ├── main.py                    # 全部命令注册
+│   │   ├── project.py                 # 项目创建/查找
+│   │   ├── foundation.py              # 故事设定向导
+│   │   ├── recent_projects.py         # 最近项目追踪
+│   │   └── commands/                  # 各命令实现
+│   │       ├── skill.py               # 技能管理
+│   │       ├── plot.py                # 情节节拍管理
+│   │       ├── checkpoint.py          # 存档管理
+│   │       ├── compile.py             # 手稿编译
+│   │       ├── summarize.py           # 摘要生成
+│   │       ├── status.py              # 状态查看
+│   │       ├── list.py                # 实体列表
+│   │       ├── inspect.py             # 实体详情
+│   │       ├── goals.py               # 目标层级
+│   │       ├── lore.py                # 世界观浏览
+│   │       ├── plan.py                # 计划预览
+│   │       └── titles.py              # 标题生成
+│   ├── configs/               # 配置
+│   │   ├── config.py                  # 全局配置管理
+│   │   ├── constants.py               # 所有魔法数字
+│   │   └── api_keys.py                # API Key 统一解析
+│   ├── data/                  # 静态数据
+│   │   ├── names/                     # 中文姓名库
+│   │   ├── templates/                 # Prompt 模板（可热更新）
+│   │   └── skills/                    # 已导入的写作技能
+│   └── utils/                 # 工具函数
+├── examples/                 # 示例小说项目
+├── docs/                     # 设计文档
+│   ├── ARCHITECTURE.md                # 架构设计（最新）
+│   ├── ARCHITECTURE_DEEP_ANALYSIS.md  # 架构改进方案
+│   ├── IMPLEMENTATION_PLAN.md         # 实施计划
+│   ├── IMPLEMENTATION_ISSUES.md       # 技术债清单
+│   ├── IMPROVEMENT_PLAN.md            # 优化方案
+│   ├── API_REFERENCE.md               # API 参考
+│   ├── PLOT_FIRST_MODE_GUIDE.md       # Plot-First 用户指南
+│   └── spec.md                        # 原始规格文档
+└── scripts/                  # 辅助脚本
+```
+
+## CLI 命令参考
+
+### 项目生命周期
 
 ```bash
-$ novel list scenes
-
-📝 Scenes (5 total)
-
-  file          word_count  pov_character  tension_level
-  ------------  ----------  -------------  -----------------
-  scene_000.md  451         Jynyn          None
-  scene_001.md  281         Jynyn          6/10 (rising)
-  scene_002.md  340         Jynyn          5/10 (rising)
-  scene_003.md  863         Jynyn          6/10 (rising)
-  scene_004.md  518         Jynyn          5/10 (rising)
+novel new <名称>                              # 创建新项目（交互式向导）
+novel new <名称> --no-interactive             # 创建空项目
+novel new <名称> --foundation <yaml文件>       # 从YAML加载设定
+novel recent                                  # 列出最近项目
+novel resume                                  # 恢复最近项目
+novel resume --uuid <uuid>                    # 按UUID恢复
 ```
 
-**Scene 1 (6/10 - rising):** Discovery of mysterious conduit under ice shelf  
-**Scene 2 (5/10 - rising):** Descending into the structure  
-**Scene 3 (6/10 - rising):** Examining ancient machinery  
-**Scene 4 (5/10 - rising):** Uncovering hidden messages  
-
-The tension naturally oscillates between 5-6/10, maintaining engagement without exhaustion - perfect for a mystery/investigation narrative!
-
-### Memory System
-
-Each novel maintains its own working directory with:
-
-- **Story Foundation** - Optional immutable constraints (genre, premise, protagonist, setting, tone, themes, primary goal)
-- **Characters** - Dynamic character data with goals, relationships, emotional state
-- **Locations** - Evolving location descriptions with sensory details
-- **Scenes** - Scene metadata and summaries
-- **Open Loops** - Unresolved narrative threads with mention tracking
-- **Goal Hierarchy** - Protagonist immediate/arc/story goals with progress tracking
-- **Lore** - World rules, constraints, and capabilities with contradiction detection
-- **Vector Index** - Semantic search for context retrieval
-
-## Project Structure
-
-```
-StoryDaemon/
-├── novel_agent/          # Python package (code)
-│   ├── agent/           # Agent runtime and orchestration
-│   │   ├── agent.py            # StoryAgent orchestrator
-│   │   ├── context.py          # Context builder
-│   │   ├── writer_context.py   # Writer context builder
-│   │   ├── writer.py           # Scene prose generator
-│   │   ├── evaluator.py        # Scene quality evaluator
-│   │   ├── scene_committer.py  # Scene persistence
-│   │   └── prompts.py          # LLM prompt templates
-│   ├── tools/           # LLM interface and tools
-│   │   ├── name_generator.py   # Syllable-based name generation
-│   │   └── ...
-│   ├── memory/          # Memory management
-│   │   ├── manager.py          # MemoryManager
-│   │   ├── entities.py         # Entity dataclasses
-│   │   ├── vector_store.py     # ChromaDB integration
-│   │   └── checkpoint.py       # Checkpoint system
-│   ├── cli/             # Command-line interface
-│   │   ├── main.py             # CLI entry point
-│   │   ├── project.py          # Project management
-│   │   ├── foundation.py       # Story foundation setup
-│   │   ├── recent_projects.py  # Recent projects tracker
-│   │   └── commands/           # CLI commands
-│   │       ├── status.py       # Status command
-│   │       ├── goals.py        # Goals command
-│   │       ├── lore.py         # Lore command
-│   │       ├── list.py         # List commands
-│   │       ├── inspect.py      # Inspect command
-│   │       ├── plan.py         # Plan preview
-│   │       ├── compile.py      # Manuscript compilation
-│   │       └── checkpoint.py   # Checkpoint management
-│   ├── configs/         # Configuration
-│   ├── data/            # Static data files
-│   │   └── names/       # Name generation syllables and titles
-│   └── utils/           # Utilities
-├── work/                # Development working directory (gitignored)
-│   ├── recent_projects.json  # Recent projects tracker
-│   ├── novels/          # Test novels with UUID suffixes
-│   │   └── my-story_a1b2c3d4/
-│   │       ├── memory/      # Entity storage
-│   │       ├── scenes/      # Generated scene markdown files
-│   │       ├── plans/       # Plan JSON files
-│   │       ├── checkpoints/ # Project snapshots
-│   │       └── errors/      # Error logs
-│   ├── experiments/     # Quick experiments
-│   └── scratch/         # Temporary files
-├── tests/               # Test suite
-└── docs/                # Documentation
-    ├── spec.md         # Technical specification
-    ├── plan.md         # Implementation plan
-    ├── name_generator_implementation_plan.md  # Name generator design
-    ├── project_safety_improvements.md         # UUID and title improvements
-    ├── resume_workflow.md                     # Resume command workflow
-    └── phase*_*.md     # Phase-specific documentation
-```
-
-## CLI Commands
-
-### Core Generation Commands
+### 故事生成
 
 ```bash
-# Create new novel project (automatically gets UUID suffix)
-novel new <name> [--dir <path>]
-# Example: novel new my-story → creates my-story_a1b2c3d4/
-
-# Create with story foundation
-novel new <name> --interactive                    # Interactive prompts
-novel new <name> --foundation <yaml_file>         # From YAML file
-novel new <name> --genre <genre> --premise <text> # Command-line args
-
-# Generate one scene
-novel tick [--project <path>]
-
-# Generate multiple scenes with automatic checkpointing
-novel run --n <count> [--checkpoint-interval 10] [--project <path>]
-
-# Compile scene summaries
-novel summarize [--project <path>]
+novel tick                                    # 运行一幕
+novel tick --notes "场景方向指导"             # 注入方向指导
+novel tick --save-prompts                     # 保存prompt到文件
+novel run --n 10                              # 连续运行10幕
+novel run --n 10 --checkpoint-interval 5      # 每5幕存档
+novel plan                                    # 预览下一次计划（不执行）
 ```
 
-### Project Management Commands
+### 状态查看
 
 ```bash
-# Show recently accessed projects with UUIDs
-novel recent [--limit 10]
-
-# Resume most recent project
-novel resume [--n 1]
-
-# Resume specific project by UUID (supports partial match)
-novel resume --uuid <uuid> [--n 1]
-# Example: novel resume --uuid a1b2
+novel status                                  # 项目仪表盘
+novel list characters                         # 列出角色（-v 详细信息）
+novel list locations                          # 列出地点
+novel list scenes                             # 列出场景（含张力）
+novel list loops                              # 列出开放线索
+novel list factions                           # 列出势力
+novel inspect --id C0                         # 查看角色详情（--raw 原始JSON）
+novel inspect --id L0                         # 查看地点详情
+novel goals                                   # 目标层级+进度条
+novel lore                                    # 世界观规则浏览
+novel lore --group-by type                    # 按类型分组
+novel lore --category magic --importance critical  # 过滤
+novel lore --stats                            # 统计概览
 ```
 
-### Inspection & Management Commands
+### 情节管理
 
 ```bash
-# Show project overview (includes story foundation)
-novel status [--json] [--project <path>]
-
-# Show goal hierarchy and protagonist goals
-novel goals [--json] [--project <path>]
-
-# Show world lore and rules
-novel lore [--group-by category|type|none] [--category <cat>] [--type <type>] [--importance <level>] [--stats] [--json] [--project <path>]
-
-# List entities
-novel list characters [-v] [--json] [--project <path>]
-novel list locations [-v] [--json] [--project <path>]
-novel list loops [-v] [--json] [--project <path>]
-novel list scenes [-v] [--json] [--project <path>]
-
-# Inspect entity details
-novel inspect --id <ID> [--history-limit 5] [--raw] [--project <path>]
-novel inspect --file <path> [--raw]
-
-# Preview next plan without executing
-novel plan [--save <file>] [-v] [--project <path>]
-
-# Compile scenes into manuscript
-novel compile [--output <file>] [--format markdown|html] [--scenes <range>] [--project <path>]
-
-# Manage checkpoints
-novel checkpoint create [--message <msg>] [--project <path>]
-novel checkpoint list [--project <path>]
-novel checkpoint restore --id <checkpoint_id> [--project <path>]
-novel checkpoint delete --id <checkpoint_id> [--project <path>]
+novel plot status                             # 节拍状态总览
+novel plot status --detailed                  # 节拍详情列表
+novel plot next                               # 下一待执行节拍
+novel plot generate --count 5                 # LLM生成5个新节拍
+novel plot clear                              # 清空所有节拍
 ```
 
-## Configuration
+### 编译输出
 
-Global configuration in `~/.storydaemon/config.yaml`:
+```bash
+novel compile --output draft.md               # 编译Markdown手稿
+novel compile --format html --output manuscript.html  # HTML格式
+novel compile --format prose --output story.txt      # 纯文本
+novel compile --scenes 1-10                   # 场景范围筛选
+novel summarize                               # 生成全文摘要
+novel titles --count 15                       # LLM生成书名建议
+```
+
+### 存档管理
+
+```bash
+novel checkpoint create -m "大转折前"         # 创建存档
+novel checkpoint list                         # 列出所有存档
+novel checkpoint restore --id checkpoint_tick_010  # 恢复存档
+novel checkpoint delete --id checkpoint_tick_005    # 删除存档
+```
+
+### 技能管理
+
+```bash
+novel skill import <小说文件> --name "名称"   # 导入小说提取写作技能
+novel skill list                               # 列出已导入技能
+novel skill apply <slug> --mode reference      # 注入技能到项目
+novel skill apply <slug> --mode full           # 完整模式（含例句）
+novel skill delete <slug>                      # 删除技能
+```
+
+### LLM 后端切换
+
+```bash
+novel tick --llm-backend codex                           # Codex CLI（默认）
+novel tick --llm-backend api --llm-model deepseek-chat   # DeepSeek
+novel tick --llm-backend api --llm-model gpt-5.1         # OpenAI
+novel tick --llm-backend api --llm-model claude-4.5      # Claude
+novel tick --llm-backend gemini-cli --llm-model gemini-2.5-pro  # Gemini CLI
+novel tick --llm-backend claude-cli                      # Claude Code CLI
+novel tick --llm-backend ollama --llm-model qwen3:8b     # Ollama本地
+```
+
+### 服务与其它
+
+```bash
+novel serve                                    # 启动HTTP服务（默认8221端口）
+novel serve --port 9000                        # 指定端口
+```
+
+## 配置
+
+### 全局配置
+
+`~/.storydaemon/config.yaml`：
 
 ```yaml
 llm:
-  codex_bin_path: codex
-  planner_max_tokens: 1000
-  writer_max_tokens: 3000
+  backend: api                   # codex | api | gemini-cli | claude-cli | ollama
+  model: deepseek-chat           # 模型名
+  temperature: 0.7
 
-paths:
-  novels_dir: ~/novels
+router:
+  enabled: true                  # 按任务路由模型（默认开启）
+  writer_model: deepseek-chat    # 写作模型
+  writer_backend: api
+  planner_model: deepseek-chat   # 规划模型
+  planner_backend: api
+  extractor_model: local-llama   # 抽取模型（可走本地）
+  extractor_backend: api
 
 generation:
-  max_tools_per_tick: 3
-  recent_scenes_count: 3           # Context for planner
-  include_overall_summary: true    # Include story-wide summary
-  # Scene length is flexible - planner can optionally suggest "brief", "short", "long", or "extended"
+  use_plot_first: false          # Plot-First 模式（默认关闭）
+  beat_mode: soft_hint           # off | soft_hint | guided | strict
+  enable_tension_tracking: true
+  enable_lore_tracking: true
+  enable_fact_extraction: true
+  auto_detect_characters: true
+  content_safety_fallback: true  # API拒止自动回落
 ```
 
-Project-specific configuration in `<project>/config.yaml`.
+### 项目级配置
 
-## Development Status
+每个项目目录下有 `config.yaml`，覆盖全局配置。
 
-**Phase 1: Core Framework** ✅ Complete
-- [x] Project structure
-- [x] File I/O utilities
-- [x] Codex CLI interface
-- [x] Configuration management
-- [x] Basic CLI commands
-- [x] Tool base classes
+### API 环境变量
 
-**Phase 2: Memory System** ✅ Complete
-- [x] Character/Location/Scene/OpenLoop dataclasses
-- [x] Relationship graph with bidirectional perspectives
-- [x] Memory manager with CRUD operations
-- [x] ChromaDB vector database integration
-- [x] Memory tools (search, character.generate, location.generate)
-- [x] Relationship tools (create, update, query)
-- [x] Scene summarization
-- [x] 39 tests passing
-
-**Phase 3: Planner and Execution Loop** ✅ Complete
-- [x] Tool base class and ToolRegistry
-- [x] Planner LLM prompt template
-- [x] Plan JSON schema validation
-- [x] Context builder for story state
-- [x] Plan executor with error handling
-- [x] Plan storage and error logging
-- [x] StoryAgent orchestrator
-- [x] CLI integration
-- [x] 52 tests passing
-
-**Phase 4: Writer and Evaluator** ✅ Complete
-- [x] Writer LLM prompt template with deep POV instructions
-- [x] WriterContextBuilder for gathering scene context
-- [x] SceneWriter for generating 500-900 word prose
-- [x] SceneEvaluator for quality checks (word count, POV, continuity)
-- [x] SceneCommitter for persisting scenes to disk and memory
-- [x] Full integration into StoryAgent tick cycle
-- [x] Enhanced CLI output with scene generation steps
-- [x] Complete end-to-end scene generation pipeline
-
-**Phase 5: Dynamic Memory Updates** ✅ Complete
-- [x] Fact extraction from scene prose
-- [x] Character emotional state updates
-- [x] Character inventory, goals, and beliefs tracking
-- [x] Location state changes
-- [x] Open loop creation/resolution from text
-- [x] Relationship tracking and updates
-- [x] Entity history tracking
-- [x] Enhanced continuity checking
-- [x] Graceful error handling with retry logic
-
-**Phase 6: CLI Enhancements and Workflow** ✅ Complete
-- [x] Enhanced status command with statistics
-- [x] List commands (characters, locations, loops, scenes)
-- [x] Inspect command for deep entity examination
-- [x] Plan preview command (non-destructive)
-- [x] Compile command (Markdown/HTML export)
-- [x] Checkpoint system (create, list, restore, delete)
-- [x] Automatic checkpointing in `novel run`
-- [x] JSON output support for all commands
-- [x] 10 tests passing
-
-**Phase 7A: Bounded Emergence Framework** 🚧 In Progress
-- [x] **7A.1: Story Foundation** - Optional immutable constraints (genre, premise, protagonist, setting, tone, themes, primary goal)
-  - [x] Interactive/file/CLI input modes
-  - [x] Foundation display in `novel status`
-  - [x] Tests for foundation functionality
-- [x] **7A.2: Goal Hierarchy** - Protagonist goals and auto-promotion
-  - [x] Character goal fields (immediate, arc, story goals)
-  - [x] OpenLoop tracking fields (scenes_mentioned, is_story_goal)
-  - [x] Auto-promotion logic (ticks 10-15, 5+ mentions)
-  - [x] User-specified primary goal support
-  - [x] `novel goals` command to view hierarchy
-  - [x] Tests for goal promotion logic
-- [x] **7A.3: Tension Tracking** - Scene-level tension scoring (0-10 scale) ✅ **TESTED IN PRODUCTION**
-  - [x] TensionEvaluator with keyword/structure/emotion analysis
-  - [x] Configurable on/off via `enable_tension_tracking`
-  - [x] Tension history in planner context with gentle pacing guidance
-  - [x] Adaptive suggestions (steady/high/low tension patterns)
-  - [x] Visualization in `novel status` and `novel list scenes`
-  - [x] Tests for tension evaluation and guidance
-  - [x] Real-world story generation test (5 scenes, accurate scoring)
-- [x] **7A.4: Lore Consistency** - World rules and constraint checking ✅ **COMPLETE**
-  - [x] Lore dataclass with comprehensive fields
-  - [x] LLM-based extraction (rules, constraints, facts, capabilities, limitations)
-  - [x] VectorStore integration for semantic search
-  - [x] Contradiction detection using similarity threshold
-  - [x] `novel lore` command with filtering and grouping
-  - [x] 12 unit tests covering all operations
-  - [x] Configurable via `enable_lore_tracking`
-- [x] **7A.5: Multi-Stage Prompts** - Semantic context selection with 3-stage planning ✅ **COMPLETE**
-  - [x] Stage 1: Strategic planning (~200 tokens, high-level intention)
-  - [x] Stage 2: Semantic context gathering (vector search, no LLM)
-  - [x] Stage 3: Tactical planning (~1,000 tokens, detailed plan)
-  - [x] 50-70% token reduction vs single-stage
-  - [x] Prompt logging with `--save-prompts` flag
-  - [x] Performance statistics display
-  - [x] Story stats summary after each tick
-  - [x] Configurable via `use_multi_stage_planner`
-
-**Phase 7A Status:** ✅ Production ready with comprehensive test coverage
-
-**Phase 7B+:** See [docs/phase7a_bounded_emergence.md](docs/phase7a_bounded_emergence.md) for full roadmap.
-
-## Testing
-
-```bash
-# Run all tests
-pytest
-
-# Run with coverage
-pytest --cov=novel_agent
-
-# Run specific test file
-pytest tests/unit/test_file_ops.py
-
-# Run tension tracking tests
-pytest tests/unit/test_tension_evaluator.py -v
-pytest tests/integration/test_tension_integration.py -v
-
-# Run lore tracking tests
-pytest tests/unit/test_lore_tracking.py -v
-
-# Run manual test suite (comprehensive verification)
-python tests/manual_tension_test.py
+```text
+OPENAI_API_KEY      # OpenAI GPT-5/5.1
+CLAUDE_API_KEY      # Anthropic Claude 4.5
+GEMINI_API_KEY      # Google Gemini 2.5 Pro
+DEEPSEEK_API_KEY    # DeepSeek
+STORYDAEMON_API_KEY # 通用 Key（所有供应商共享）
+OLLAMA_BASE_URL     # Ollama 地址（默认 http://localhost:11434）
+LOCAL_LLM_URL       # 本地 llama-server 地址（默认 http://127.0.0.1:8080/v1）
 ```
 
-### Test Coverage
+## 开发状态
 
-- **Unit Tests:** 34 total tests
-  - 22 tests for tension evaluation and guidance
-  - 12 tests for lore tracking (dataclass, persistence, vector search, contradictions)
-- **Integration Tests:** 10 tests for end-to-end tension tracking in story generation
-- **Manual Tests:** 4 comprehensive test suites with real scene generation
-- **Production Test:** Successfully generated 5-scene story with accurate tension scoring
+目前是一个成熟可用的端到端系统：
 
-All Phase 7A.1-7A.4 features have comprehensive test coverage and are production-ready.
+- **Agent 层**：四阶段 Tick 循环，两阶段初始化，双模型混跑
+- **记忆层**：9 种实体类型，JSON 持久化 + ChromaDB 向量索引
+- **评估层**：POV 检测（快速路径 + LLM）、连续性检查、QA 指标
+- **Plot 层**：涌现式节拍生成，三种执行模式（提示/引导/强制）
+- **Skill 层**：小说→风格提取→注入，6 层角色去重防线
+- **API 层**：FastAPI 服务，12 端点 + SSE 流式
+- **CLI 层**：25+ 命令覆盖完整写作工作流
 
-## Documentation
+详细设计文档见 `docs/ARCHITECTURE.md`。
 
-### Core Documentation
-- [Technical Specification](docs/spec.md) - Detailed system design
-- [Implementation Plan](docs/plan.md) - Phase-by-phase roadmap
+## 设计哲学
 
-### Phase Documentation
-- [Phase 1 Guide](docs/phase1_implementation.md) - Core framework implementation
-- [Phase 2 Detailed Plan](docs/phase2_detailed.md) - Memory system design
-- [Phase 2 Completion](docs/phase2_completion.md) - Implementation summary
-- [Phase 3 Detailed Plan](docs/phase3_detailed.md) - Planner and execution loop design
-- [Phase 3 Completion](docs/phase3_completion.md) - Implementation summary
-- [Phase 4 Detailed Plan](docs/phase4_detailed.md) - Writer and evaluator design
-- [Phase 4 Implementation Summary](docs/phase4_implementation_summary.md) - Implementation summary
-- [Phase 5 Detailed Plan](docs/phase5_detailed.md) - Dynamic entity updates design
-- [Phase 6 Detailed Plan](docs/phase6_detailed_plan.md) - CLI enhancements design
-- [Phase 6 Implementation Summary](docs/phase6_implementation_summary.md) - Implementation summary
-- [Phase 6 Quick Reference](docs/phase6_quick_reference.md) - Command reference guide
-- [Phase 6 Complete](docs/PHASE6_COMPLETE.md) - Completion summary
+- **涌现优于规划** — 发现式写作 + 结构化推理驱动
+- **深度 POV 真实感** — 一切通过角色感知过滤
+- **记忆演化** — 实体随故事推进自然生长变化
+- **工具自治** — LLM 根据故事需求自主决定使用哪些工具
+- **确定性兜底** — 所有关键决策点都尽量用确定性逻辑（角色去重、POV 快速路径、拒止检测），LLM 只负责需要创造力的环节
 
-### Feature Documentation
-- [Phase 7A: Bounded Emergence Framework](docs/phase7a_bounded_emergence.md) - Story foundation and goal hierarchy
-- [Name Generator Implementation](docs/name_generator_implementation_plan.md) - Syllable-based name generation
-- [Project Safety Improvements](docs/project_safety_improvements.md) - UUID system and scene titles
-- [Resume Workflow](docs/resume_workflow.md) - Recent projects and resume commands
-- [Agent vs CLI Tools](docs/agent_vs_cli_tools.md) - Understanding tool layers
+## 开源协议
 
-## Philosophy
+MIT License — 详见 [LICENSE](LICENSE) 文件。
 
-StoryDaemon emphasizes:
+## 致谢
 
-- **Emergence over planning** - Discovery writing powered by structured reasoning
-- **Deep POV realism** - Narrative written through character perception
-- **Memory evolution** - Entities grow and change organically
-- **Tool autonomy** - LLM decides which tools to use based on story needs
-
-## License
-
-MIT License - See [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- Inspired by my own [NovelWriter](https://github.com/EdwardAThomson/NovelWriter)
-- Built with Codex CLI for GPT-5 access
-- Uses Typer for CLI, Chroma for vector storage
+- 灵感源自作者此前的 [NovelWriter](https://github.com/EdwardAThomson/NovelWriter) 项目
+- 后端支持：Codex CLI、OpenAI、Anthropic Claude、Google Gemini、DeepSeek、Ollama
+- 使用 Typer（CLI）、ChromaDB（向量存储）、FastAPI（HTTP 服务）
 
 ---
 
-**Created by Edward A. Thomson**  
-[GitHub](https://github.com/EdwardAThomson/StoryDaemon)
+**作者：Edward A. Thomson**  
+[GitHub](https://github.com/lightlanguage1/InkForge)
