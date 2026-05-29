@@ -29,7 +29,14 @@ class StreamingStoryAgent:
                 yield from self._stream_normal_tick(tick)
         except Exception as exc:
             logger.exception("Tick %s failed", tick)
-            yield self._event("tick_error", {"tick": tick, "error": str(exc)})
+            msg = str(exc)
+            # Keep only the last meaningful line for display
+            if "\n" in msg:
+                lines = [l.strip() for l in msg.split("\n") if l.strip()]
+                msg = lines[-1] if lines else msg.split("\n")[0]
+            if len(msg) > 300:
+                msg = msg[:300] + "..."
+            yield self._event("tick_error", {"tick": tick, "error": msg})
 
     def _stream_normal_tick(self, tick: int) -> Generator[str, None, None]:
         """Stream a normal tick (tick 1+)."""
