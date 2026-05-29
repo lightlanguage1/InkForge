@@ -2,21 +2,27 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install only what's needed
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Pip mirror — override via build-arg for constrained networks
+ARG PIP_INDEX=https://pypi.org/simple/
+ARG PIP_TRUSTED_HOST=""
 
-# Copy source
-COPY setup.py .
+# Install Python dependencies
+COPY requirements.txt .
+RUN if [ -n "$PIP_TRUSTED_HOST" ]; then \
+        pip install --no-cache-dir -r requirements.txt \
+            -i "$PIP_INDEX" --trusted-host "$PIP_TRUSTED_HOST"; \
+    else \
+        pip install --no-cache-dir -r requirements.txt; \
+    fi
+
+# Copy application
 COPY novel_agent/ novel_agent/
 
-# Install as editable (auto-pickup code)
-RUN pip install -e . --no-deps
-
-# Create data volume mount points
-RUN mkdir -p /app/work
-
+# Allow Python to find the package without pip install
+ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
+
+RUN mkdir -p /app/work
 
 EXPOSE 8000
 

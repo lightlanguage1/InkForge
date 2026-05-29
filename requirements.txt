@@ -3,14 +3,14 @@ typer>=0.9.0
 pyyaml>=6.0.0
 jsonschema>=4.0.0
 openai>=1.0.0
+fastapi>=0.100.0
+uvicorn[standard]>=0.20.0
+pydantic>=2.0.0
+sse-starlette>=1.0.0
 
-# Vector DB (Phase 2)
+# Vector DB
 chromadb>=0.4.0
 
-# CLI enhancements (Phase 6)
-# Note: rich is optional for enhanced formatting
-# colorama>=0.4.6
-
-# Development dependencies
+# Development
 pytest>=7.0.0
 pytest-cov>=4.0.0

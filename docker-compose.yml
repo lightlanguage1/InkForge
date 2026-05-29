@@ -3,6 +3,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.backend
+      args:
+        PIP_INDEX: ${PIP_INDEX:-https://pypi.org/simple/}
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
     ports:
       - "8000:8000"
     environment:

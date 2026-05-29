@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS invite_codes (
     code       TEXT PRIMARY KEY,
     max_uses   INTEGER NOT NULL DEFAULT 1,
     used       INTEGER NOT NULL DEFAULT 0,
+    is_admin   INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     expires_at TEXT
 );
@@ -18,6 +19,7 @@ CREATE TABLE IF NOT EXISTS users (
     user_id      TEXT PRIMARY KEY,
     invite_code  TEXT NOT NULL,
     display_name TEXT NOT NULL,
+    is_admin     INTEGER NOT NULL DEFAULT 0,
     created_at   TEXT NOT NULL,
     last_seen    TEXT NOT NULL,
     FOREIGN KEY (invite_code) REFERENCES invite_codes(code)
@@ -109,11 +111,17 @@ class Database:
         """Create a user from a valid invite code. Returns user_id."""
         now = datetime.utcnow().isoformat()
         user_id = secrets.token_hex(6)  # 12-char hex
+        code = invite_code.strip().upper()
         with self._connect() as conn:
+            # Check if this invite code is an admin code
+            row = conn.execute(
+                "SELECT is_admin FROM invite_codes WHERE code = ?", (code,)
+            ).fetchone()
+            is_admin = row["is_admin"] if row else 0
             conn.execute(
-                "INSERT INTO users (user_id, invite_code, display_name, created_at, last_seen) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (user_id, invite_code.strip().upper(), display_name.strip(), now, now)
+                "INSERT INTO users (user_id, invite_code, display_name, created_at, last_seen, is_admin) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (user_id, code, display_name.strip(), now, now, is_admin)
             )
             conn.commit()
         return user_id
@@ -130,7 +138,7 @@ class Database:
     def get_user(self, user_id: str) -> Optional[dict]:
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT user_id, invite_code, display_name, created_at, last_seen "
+                "SELECT user_id, invite_code, display_name, is_admin, created_at, last_seen "
                 "FROM users WHERE user_id = ?", (user_id,)
             ).fetchone()
         return dict(row) if row else None
