@@ -5,12 +5,23 @@ import { Spinner } from "../components/ui/Spinner";
 import { compile } from "../api/compile";
 
 function splitScenes(md: string): { title: string; body: string[] }[] {
-  return md.split(/(?=^#{1,3}\s)/m).map(scene => {
-    const lines = scene.trim().split("\n");
-    const title = (lines[0] || "").replace(/^#{1,3}\s+/, "");
-    const body = lines.slice(1).join("\n").trim().split("\n\n").filter(Boolean).map(p => p.trim());
-    return { title, body };
-  }).filter(s => s.body.length > 0 || s.title);
+  // Only split at chapter markers like "## 第 N 幕"; scene content may contain
+  // sub-headings which must not create extra blank pages.
+  const parts = md.split(/^(?=## 第\s*\d)/m);
+  return parts
+    .map(part => {
+      const lines = part.trim().split("\n");
+      const firstLine = lines[0] || "";
+      if (!firstLine.startsWith("## ")) return null;
+      const title = firstLine.replace(/^##\s+/, "");
+      const bodyText = lines.slice(1).join("\n")
+        .replace(/^---$/gm, "")
+        .replace(/^#{1,6}\s+.+$/gm, "")
+        .trim();
+      const body = bodyText.split("\n\n").filter(Boolean).map(p => p.trim()).filter(Boolean);
+      return { title, body };
+    })
+    .filter((s): s is { title: string; body: string[] } => s !== null && s.body.length > 0);
 }
 
 export function ReadPage() {
@@ -47,8 +58,8 @@ export function ReadPage() {
   return (
     <div className="h-full flex flex-col" style={{ fontFamily: "Georgia, 'Noto Serif SC', 'Source Han Serif SC', serif" }}>
       {/* page area */}
-      <div className="flex-1 flex items-center justify-center px-8 overflow-auto">
-        <div className="max-w-xl w-full">
+      <div className="flex-1 overflow-auto px-8">
+        <div className="max-w-xl w-full mx-auto py-10">
           {s.title && (
             <h2 className="text-xl font-bold mb-8 text-center tracking-wide"
               style={{ color: "var(--accent)", letterSpacing: "0.06em" }}>

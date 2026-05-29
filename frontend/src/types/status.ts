@@ -11,6 +11,7 @@ export interface StatusInfo {
   word_count: number;
   avg_tension: number;
   generating?: boolean;
+  genre?: string;
 }
 
 export interface GoalsInfo {

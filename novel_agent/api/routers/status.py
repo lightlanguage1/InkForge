@@ -43,6 +43,7 @@ def get_status(project_id: str):
         "word_count": total,
         "avg_tension": sum(tensions) / len(tensions) if tensions else 0,
         "generating": project_id in _running,
+        "genre": (state.get("story_foundation") or {}).get("genre", ""),
     }
 
 

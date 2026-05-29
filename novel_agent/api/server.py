@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 
 from .routers import (
     health, projects, generation, entities, status,
-    compile, plot, checkpoints, skills, references, log, threads,
+    compile, plot, checkpoints, skills, references, log, threads, portrait,
 )
 
 logger = logging.getLogger(__name__)
@@ -51,3 +51,4 @@ app.include_router(skills.router)
 app.include_router(references.router)
 app.include_router(log.router)
 app.include_router(threads.router)
+app.include_router(portrait.router)

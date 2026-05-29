@@ -2,6 +2,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Spinner } from "../components/ui/Spinner";
 import { getStatus } from "../api/status";
+import { ProtagonistPortrait } from "../components/ProtagonistPortrait";
 
 const STATS = [
   { key: "ticks",   label: "总幕数",   accent: "#8b7fd4" },
@@ -173,6 +174,25 @@ export function OverviewPage() {
           ))}
         </div>
 
+        {/* ── 点阵画像 ── */}
+        {data.current_tick > 0 && (
+          <div
+            className="ov-in relative z-10 overflow-hidden rounded-xl"
+            style={{
+              animationDelay: "420ms",
+              marginTop: "24px",
+              height: "320px",
+              background: "var(--bg-surface)",
+              border: "1px solid var(--border)",
+            }}
+          >
+            <ProtagonistPortrait
+              projectId={id!}
+              currentTick={data.current_tick}
+            />
+          </div>
+        )}
+
         {/* Tip banners */}
         {data.current_tick === 0 && (
           <div
@@ -216,6 +236,7 @@ export function OverviewPage() {
             </p>
           </div>
         )}
+
       </div>
     </>
   );

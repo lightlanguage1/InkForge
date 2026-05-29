@@ -22,8 +22,8 @@ export interface SkillImportResult {
   archetypes: number;
 }
 
-export interface SkillApplyReq {
-  project_path: string;
-  skill_ids: string[];
-  mode: string; // "reference" | "style_only" | "full"
+export interface ActiveSkillRef {
+  id: string;
+  name: string;
+  mode: string;
 }

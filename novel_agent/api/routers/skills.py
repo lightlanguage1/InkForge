@@ -3,6 +3,7 @@
 import logging
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from ..deps import get_engine, resolve_project
 from ..models import SkillImportRequest, SkillApplyRequest
@@ -64,6 +65,41 @@ def skill_apply(req: SkillApplyRequest):
         s = store.load_skill(sid)
         if s is not None:
             skills.append(s)
+    if not skills:
+        raise HTTPException(status_code=404, detail="未找到匹配的技能")
+    injector = SkillInjector(project_path=project_dir, config=engine.config)
+    injector.inject(skills, mode=req.mode)
+    return {"applied": len(skills), "skills": [s.name for s in skills]}
+
+
+@router.get("/project/{project_id}/skills/active")
+def project_active_skills(project_id: str):
+    """Return skill IDs currently active for this project."""
+    import json
+    project_dir = resolve_project(project_id)
+    state_file = project_dir / "state.json"
+    if not state_file.exists():
+        return {"active": []}
+    state = json.loads(state_file.read_text(encoding="utf-8"))
+    return {"active": state.get("active_skills", [])}
+
+
+class ProjectSkillApplyRequest(BaseModel):
+    skill_ids: list[str]
+    mode: str = "reference"
+
+
+@router.post("/project/{project_id}/skills/apply")
+def project_apply_skills(project_id: str, req: ProjectSkillApplyRequest):
+    """Apply (or clear) skills for a project by project_id."""
+    engine = get_engine()
+    project_dir = str(resolve_project(project_id))
+    store = engine.skill_store
+    if not req.skill_ids:
+        injector = SkillInjector(project_path=project_dir, config=engine.config)
+        injector.clear_skills()
+        return {"applied": 0, "skills": []}
+    skills = [s for sid in req.skill_ids if (s := store.load_skill(sid)) is not None]
     if not skills:
         raise HTTPException(status_code=404, detail="未找到匹配的技能")
     injector = SkillInjector(project_path=project_dir, config=engine.config)

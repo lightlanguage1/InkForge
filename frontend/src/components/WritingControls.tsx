@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Button } from "./ui/Button";
 import { Badge } from "./ui/Badge";
 import { ThemedSelect } from "./ui/ThemedSelect";
@@ -39,7 +40,8 @@ interface Props {
   onModelChange: (v: string) => void;
   onSkillToggle: (skillId: string) => void;
   onTick: () => void;
-  onRun5: () => void;
+  onRunN: (n: number) => void;
+  onFinale: () => void;
   onStartStream: () => void;
   onStopStream: () => void;
 }
@@ -49,8 +51,9 @@ export function WritingControls({
   tickPending, runPending, theme: t,
   skills, activeSkills, skillPending,
   onNotesChange, onBackendChange, onModelChange, onSkillToggle,
-  onTick, onRun5, onStartStream, onStopStream,
+  onTick, onRunN, onFinale, onStartStream, onStopStream,
 }: Props) {
+  const [runCount, setRunCount] = useState(5);
   return (
     <div className="w-64 flex-shrink-0 flex flex-col gap-3">
 
@@ -119,9 +122,36 @@ export function WritingControls({
               <Button onClick={onTick} className="w-full justify-center">
                 生成一幕
               </Button>
-              <Button variant="ghost" onClick={onRun5} className="w-full justify-center">
-                连续 5 幕
-              </Button>
+
+              {/* 连续N幕 */}
+              <div className="flex gap-1.5 items-center">
+                <Button variant="ghost" onClick={() => onRunN(runCount)} className="flex-1 justify-center">
+                  连续
+                </Button>
+                <input
+                  type="number" min={1} max={999} value={runCount}
+                  onChange={e => setRunCount(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="w-14 text-center rounded-lg text-sm px-1 py-1.5"
+                  style={{ background: "var(--bg-raised)", border: `1px solid ${t.cardBorder}`, color: t.text, outline: "none" }}
+                />
+                <span className="text-xs flex-shrink-0" style={{ color: t.text3 }}>幕</span>
+              </div>
+
+              {/* 结尾完结 */}
+              <button
+                onClick={onFinale}
+                className="w-full py-1.5 rounded-lg text-xs font-medium transition-colors"
+                style={{
+                  background: "transparent",
+                  border: `1px dashed ${t.cardBorder}`,
+                  color: t.text3,
+                  cursor: "pointer",
+                }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "var(--accent)"; (e.currentTarget as HTMLElement).style.color = "var(--accent)"; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = t.cardBorder; (e.currentTarget as HTMLElement).style.color = t.text3; }}
+              >
+                ✦ 结尾完结
+              </button>
             </>
           )}
         </div>

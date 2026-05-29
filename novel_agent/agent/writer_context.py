@@ -10,7 +10,7 @@ try:
 except ImportError:
     _HAS_REFERENCE = False
 
-from novel_agent.skill.injector import build_skill_context as _format_skill_context
+from novel_agent.skill.injector import build_skill_context as _build_skill_context
 
 
 class WriterContextBuilder:
@@ -108,7 +108,10 @@ class WriterContextBuilder:
             "recent_context": recent_context,
             "tool_results_summary": tool_results_summary,
             "scene_length_guidance": scene_length_guidance,
-            "skill_context": _format_skill_context(project_state),
+            "skill_context": _build_skill_context(
+                project_state,
+                store_path=(self.config.get("skill") or {}).get("store_path"),
+            ),
             "reference_context": self._search_references(plan, project_state),
             "world_rules": self._format_world_rules(),
             "writer_notes": self._format_writer_notes(notes),
