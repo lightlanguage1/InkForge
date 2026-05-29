@@ -31,29 +31,37 @@ def get_novels_dir() -> Path:
     return novels
 
 
-def resolve_project(project_id: str) -> Path:
-    """将 project_id（完整路径/目录名/UUID）解析为项目路径。
+def _scan_dir_for_project(base: Path, project_id: str) -> Path | None:
+    """Scan *base* for a subdirectory whose name contains *project_id*."""
+    if not base.exists():
+        return None
+    direct = base / project_id
+    if direct.is_dir() and (direct / "state.json").exists():
+        return direct.resolve()
+    for entry in base.iterdir():
+        if entry.is_dir() and project_id in entry.name:
+            state = entry / "state.json"
+            if state.exists():
+                return entry.resolve()
+    return None
 
-    查找顺序：完整路径 → work/novels/{id} → 扫描目录名匹配
-    """
-    # 1. 完整路径直接匹配
+
+def resolve_project(project_id: str) -> Path:
+    """Resolve project_id to a project directory with state.json."""
+    # 1. Absolute path
     as_path = Path(project_id)
-    if as_path.exists() and (as_path / "state.json").exists():
+    if as_path.is_absolute() and (as_path / "state.json").exists():
         return as_path.resolve()
 
-    # 2. 标准位置 work/novels/{id}
-    novels = get_novels_dir()
-    direct = novels / project_id
-    if direct.exists() and (direct / "state.json").exists():
-        return direct.resolve()
+    # 2. User-scoped directory
+    found = _scan_dir_for_project(get_novels_dir(), project_id)
+    if found:
+        return found
 
-    # 3. 扫描目录名模糊匹配
-    if novels.exists():
-        for entry in novels.iterdir():
-            if entry.is_dir() and project_id in entry.name:
-                state = entry / "state.json"
-                if state.exists():
-                    return entry.resolve()
+    # 3. Legacy shared directory (backward compatibility)
+    legacy = _scan_dir_for_project(Path("work/novels"), project_id)
+    if legacy:
+        return legacy
 
     raise ValueError(f"未找到项目: {project_id}")
 
