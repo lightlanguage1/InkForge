@@ -25,7 +25,7 @@ ENV PYTHONUNBUFFERED=1
 RUN mkdir -p /app/work
 
 # Pre-download ChromaDB embedding model (avoids 80s first-gen delay)
-RUN python3 -c "import chromadb; chromadb.Client().get_or_create_collection('_warmup')"
+RUN python3 -c "import chromadb; chromadb.Client().get_or_create_collection('warmup')"
 
 EXPOSE 8000
 
