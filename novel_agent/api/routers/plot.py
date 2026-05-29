@@ -1,5 +1,6 @@
 """情节节拍路由。"""
 
+import logging
 from fastapi import APIRouter, HTTPException
 
 from ..deps import resolve_project
@@ -7,7 +8,10 @@ from ..models import BeatGenerateRequest
 from ...cli.commands.plot import (
     get_plot_status, generate_and_append_beats_cli, clear_plot_outline,
 )
+from ...cli.project import get_project_config
+from ...tools.llm_interface import initialize_llm
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["节拍"])
 
 
@@ -18,7 +22,14 @@ def plot_status(project_id: str):
 
 @router.post("/project/{project_id}/plot/generate")
 def plot_generate(project_id: str, req: BeatGenerateRequest = BeatGenerateRequest()):
-    result = generate_and_append_beats_cli(resolve_project(project_id), count=req.count)
+    project_dir = resolve_project(project_id)
+    config = get_project_config(project_dir)
+    backend = config.get("llm.backend", "api")
+    model = config.get("llm.model") or config.get("llm.openai_model") or "deepseek-chat"
+    codex_bin = config.get("llm.codex_bin_path")
+    initialize_llm(backend=backend, model=model, codex_bin=codex_bin)
+
+    result = generate_and_append_beats_cli(project_dir, count=req.count)
     return {
         "generated": len(result.get("beats", [])),
         "beats": [

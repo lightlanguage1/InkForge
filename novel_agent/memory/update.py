@@ -27,7 +27,7 @@ def update_from_scene(
     """
     _extract_and_update(scene_text, scene_id, tick, state, memory, llm, config)
     _extract_lore(scene_text, scene_id, tick, memory, llm, config)
-    _detect_characters(scene_text, memory, config)
+    _detect_characters(scene_text, memory, config, llm=llm)
 
 
 def _extract_and_update(scene_text, scene_id, tick, state, memory, llm, config):
@@ -88,14 +88,14 @@ def _extract_lore(scene_text, scene_id, tick, memory, llm, config):
             logger.warning("保存 lore 失败: %s", e)
 
 
-def _detect_characters(scene_text, memory, config):
+def _detect_characters(scene_text, memory, config, llm=None):
     """从场景文本中发现新角色名。"""
     if not config.get('generation.auto_detect_characters', True):
         return
 
     from ..agent.character_detector import CharacterDetector
 
-    detector = CharacterDetector(memory, config)
+    detector = CharacterDetector(memory, config, llm=llm)
 
     try:
         new_names = detector.find_new_characters(scene_text)

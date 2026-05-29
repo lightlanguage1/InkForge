@@ -1,3 +1,12 @@
+export interface BeatInfo {
+  id: string;
+  description: string;
+  characters_involved: string[];
+  location: string | null;
+  tension_target: number | null;
+  status: string;
+}
+
 export interface PlotStatus {
   total_beats: number;
   pending: number;
@@ -10,19 +19,11 @@ export interface PlotStatus {
   last_updated: string;
   duplicate_ids: string[];
   missing_prerequisites: { beat_id: string; prerequisite: string }[];
+  beats: BeatInfo[];
 }
 
 export interface BeatGenReq {
   count?: number;
-}
-
-export interface BeatInfo {
-  id: string;
-  description: string;
-  characters_involved: string[];
-  location: string | null;
-  tension_target: number | null;
-  status: string;
 }
 
 export interface BeatGenResult {

@@ -1,3 +1,5 @@
+import { logError } from "../utils/logger";
+
 const BASE = "/api"; // proxied by vite to localhost:8221
 
 export class ApiError extends Error {
@@ -9,10 +11,19 @@ export class ApiError extends Error {
   }
 }
 
+async function handleResponse<T>(res: Response, path: string): Promise<T> {
+  if (!res.ok) {
+    const text = await res.text();
+    const err = new ApiError(res.status, text);
+    logError("api", err, { path, status: res.status });
+    throw err;
+  }
+  return res.json();
+}
+
 export async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`);
-  if (!res.ok) throw new ApiError(res.status, await res.text());
-  return res.json();
+  return handleResponse<T>(res, path);
 }
 
 export async function post<T>(path: string, body?: unknown): Promise<T> {
@@ -21,12 +32,10 @@ export async function post<T>(path: string, body?: unknown): Promise<T> {
     headers: { "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) throw new ApiError(res.status, await res.text());
-  return res.json();
+  return handleResponse<T>(res, path);
 }
 
 export async function del<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`, { method: "DELETE" });
-  if (!res.ok) throw new ApiError(res.status, await res.text());
-  return res.json();
+  return handleResponse<T>(res, path);
 }

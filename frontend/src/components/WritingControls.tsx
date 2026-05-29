@@ -5,6 +5,7 @@ import { ThemedTextarea } from "./ui/ThemedTextarea";
 import type { StatusInfo } from "../types/status";
 import type { TickResponse } from "../types/generation";
 import type { WritingTheme } from "../types/theme";
+import type { SkillInfo } from "../types/skill";
 
 const BACKENDS = [
   { value: "api",    label: "API" },
@@ -30,9 +31,13 @@ interface Props {
   tickPending: boolean;
   runPending: boolean;
   theme: WritingTheme;
+  skills: SkillInfo[];
+  activeSkills: string[];
+  skillPending: boolean;
   onNotesChange: (v: string) => void;
   onBackendChange: (v: string) => void;
   onModelChange: (v: string) => void;
+  onSkillToggle: (skillId: string) => void;
   onTick: () => void;
   onRun5: () => void;
   onStartStream: () => void;
@@ -42,7 +47,8 @@ interface Props {
 export function WritingControls({
   status, result, notes, backend, model, streamMode, running,
   tickPending, runPending, theme: t,
-  onNotesChange, onBackendChange, onModelChange,
+  skills, activeSkills, skillPending,
+  onNotesChange, onBackendChange, onModelChange, onSkillToggle,
   onTick, onRun5, onStartStream, onStopStream,
 }: Props) {
   return (
@@ -65,6 +71,34 @@ export function WritingControls({
         <div className="px-4 pt-3.5 pb-3 space-y-3">
           <ThemedSelect label="LLM 后端" value={backend} onChange={onBackendChange} options={BACKENDS} theme={t} />
           <ThemedSelect label="模型"     value={model}   onChange={onModelChange}   options={MODELS}   theme={t} />
+
+          {skills && skills.length > 0 && (
+            <div>
+              <label className="block text-xs font-medium mb-1.5" style={{ color: t.text3 }}>写作技能</label>
+              <div className="flex flex-wrap gap-1">
+                {skills.map(s => {
+                  const active = activeSkills?.includes(s.id);
+                  return (
+                    <button
+                      key={s.id}
+                      disabled={skillPending}
+                      onClick={() => onSkillToggle(s.id)}
+                      className="text-[11px] px-2 py-0.5 rounded-full border transition-colors"
+                      style={{
+                        background: active ? "var(--accent)" : "transparent",
+                        color: active ? "var(--bg-base)" : t.text3,
+                        borderColor: active ? "var(--accent)" : t.cardBorder,
+                        opacity: skillPending ? 0.5 : 1,
+                      }}
+                    >
+                      {s.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <ThemedTextarea
             label="场景指导（可选）"
             value={notes}
@@ -76,23 +110,20 @@ export function WritingControls({
         </div>
 
         <div className="px-4 pb-4 pt-3 space-y-2 flex-shrink-0" style={{ borderTop: `1px solid ${t.cardBorder}` }}>
-          <Button onClick={onTick} loading={tickPending} disabled={running} className="w-full justify-center">
-            生成一幕
-          </Button>
-          <Button variant="ghost" onClick={onRun5} loading={runPending} disabled={running} className="w-full justify-center">
-            连续 5 幕
-          </Button>
-          <div className="pt-1">
-            {!streamMode ? (
-              <Button variant="ghost" onClick={onStartStream} disabled={running} className="w-full justify-center text-xs">
-                SSE 流式输出
+          {running ? (
+            <Button variant="danger" onClick={onStopStream} className="w-full justify-center">
+              ⏹ 停止生成
+            </Button>
+          ) : (
+            <>
+              <Button onClick={onTick} className="w-full justify-center">
+                生成一幕
               </Button>
-            ) : (
-              <Button variant="danger" onClick={onStopStream} disabled={!running} className="w-full justify-center text-xs">
-                停止流式
+              <Button variant="ghost" onClick={onRun5} className="w-full justify-center">
+                连续 5 幕
               </Button>
-            )}
-          </div>
+            </>
+          )}
         </div>
       </div>
 

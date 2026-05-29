@@ -108,6 +108,8 @@ class StoryAgent:
         # Initialize components
         self.memory = MemoryManager(self.project_path)
         self.vector = VectorStore(self.project_path)
+        from ..memory.thread_manager import ThreadManager
+        self.thread_manager = ThreadManager(self.memory, self.agent_llm, config)
         self.context_builder = ContextBuilder(
             self.memory, self.vector, self.tools, config,
         )
@@ -141,11 +143,9 @@ class StoryAgent:
             return json.load(f)
 
     def _save_state(self):
-        """Save project state to state.json."""
-        state_file = self.project_path / "state.json"
         self.state["last_updated"] = datetime.utcnow().isoformat() + "Z"
-        with open(state_file, 'w', encoding='utf-8') as f:
-            json.dump(self.state, f, indent=2)
+        from ..utils.file_ops import write_json
+        write_json(str(self.project_path / "state.json"), self.state)
 
     def tick(self, notes: str = "") -> Dict[str, Any]:
         """Execute one story generation tick.
@@ -183,6 +183,7 @@ class StoryAgent:
                     validate_plan(plan)
                     self._enforce_beat_target(plan, current_beat)
                     self._enforce_pacing(plan, tick)
+                    self._enforce_threads(plan, tick)
                     break
                 except ValueError as e:
                     if plan_attempt < 2:
@@ -228,6 +229,7 @@ class StoryAgent:
             # Phase 4: Memory update
             self._update_memory(scene_data["text"], scene_id, tick)
             promotion_result = self._check_goal_promotion(tick)
+            self._maybe_audit_threads(tick)
 
             self.state["current_tick"] += 1
             self._save_state()
@@ -315,11 +317,41 @@ class StoryAgent:
                 f"建议使用 '{suggestion}'。给故事喘息空间。"
             )
 
+    def _enforce_threads(self, plan: dict, tick: int) -> None:
+        forced_ids = self.thread_manager.get_forced_ids(tick)
+        if not forced_ids:
+            return
+        addressed = set(plan.get("threads_addressed", []) or [])
+        for tid in forced_ids:
+            if tid in addressed:
+                continue
+            thread = self.memory.load_thread(tid)
+            name = thread.name if thread else tid
+            stall = tick - (thread.last_advanced_tick or thread.introduced_tick) if thread else 0
+            raise ValueError(
+                f"支线 {tid}「{name}」已停滞 {stall} 章，必须在本章推进。"
+                f"请在计划 JSON 的 threads_addressed 字段中列出 {tid}。"
+            )
+
+    def _maybe_audit_threads(self, tick: int) -> None:
+        from ..configs.constants import THREAD_AUDIT_INTERVAL
+        if tick <= 0 or tick % THREAD_AUDIT_INTERVAL != 0:
+            return
+        try:
+            suggestions = self.thread_manager.run_audit(tick, self.state.get("novel_name", ""))
+            if suggestions:
+                logger.info("支线审计发现 %d 条新建议（pending），等待用户确认", len(suggestions))
+        except Exception as exc:
+            logger.warning("支线审计失败 (tick %d): %s", tick, exc)
+
     def _resolve_plot_beat(self, tick: int):
         """Manage plot-first beat lifecycle: regenerate if needed, return current beat."""
-        use_plot_first = self.config.get('generation.use_plot_first', False)
         start_tick = self.config.get('generation.plot_first_start_tick', 2)
-        if not use_plot_first or tick < start_tick:
+        if tick < start_tick:
+            return None
+        # 有待执行节拍时自动启用；config 可显式覆盖为 False 关闭
+        use_plot_first = self.config.get('generation.use_plot_first', True)
+        if not use_plot_first:
             return None
 
         if self._needs_beat_regeneration():

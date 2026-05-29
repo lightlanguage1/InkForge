@@ -37,7 +37,7 @@ def list_characters(project_dir: Path, verbose: bool = False) -> List[Dict[str, 
             first_name = data.get('first_name', '')
             family_name = data.get('family_name', '')
             if first_name and family_name:
-                name = f"{first_name} {family_name}"
+                name = f"{family_name}{first_name}"
             elif first_name:
                 name = first_name
             elif family_name:
@@ -77,10 +77,11 @@ def list_locations(project_dir: Path, verbose: bool = False) -> List[Dict[str, A
     for loc_file in sorted(locs_dir.glob("*.json")):
         data = load_entity_file(loc_file)
         if data:
+            desc = data.get('description') or ''
             loc_info = {
                 'id': data.get('id', loc_file.stem),
                 'name': data.get('name', 'Unknown'),
-                'type': data.get('type', ''),
+                'description': desc[:60] + ('…' if len(desc) > 60 else ''),
                 'atmosphere': data.get('atmosphere', ''),
             }
             if verbose:
@@ -130,54 +131,56 @@ def list_open_loops(project_dir: Path, verbose: bool = False) -> List[Dict[str, 
 
 
 def list_scenes(project_dir: Path, verbose: bool = False) -> List[Dict[str, Any]]:
-    """List all scenes in the project.
-    
-    Args:
-        project_dir: Path to project directory
-        verbose: Include detailed information
-        
-    Returns:
-        List of scene info dictionaries
-    """
+    """List all scenes in the project."""
     scenes_dir = project_dir / "scenes"
     memory_scenes_dir = project_dir / "memory" / "scenes"
-    
+    char_dir = project_dir / "memory" / "characters"
+
     if not scenes_dir.exists():
         return []
-    
+
+    # 构建角色 ID → 显示名映射
+    char_names: Dict[str, str] = {}
+    if char_dir.exists():
+        for cf in char_dir.glob("*.json"):
+            try:
+                cd = load_entity_file(cf) or {}
+                name = (cd.get('family_name', '') or '') + (cd.get('first_name', '') or '')
+                char_names[cf.stem] = name or cf.stem
+            except Exception:
+                pass
+
     scenes = []
     for scene_file in sorted(scenes_dir.glob("scene_*.md")):
-        # Extract scene number from filename
         scene_num = scene_file.stem.replace('scene_', '')
-        
-        # Try to load metadata from memory
         metadata_file = memory_scenes_dir / f"S{scene_num}.json"
         metadata = load_entity_file(metadata_file) if metadata_file.exists() else {}
-        
-        # Count words
+
         try:
             with open(scene_file, 'r', encoding='utf-8') as f:
-                content = f.read()
-                word_count = len(content.split())
+                word_count = len(f.read().split())
         except Exception:
             word_count = 0
-        
+
+        pov_id = metadata.get('pov_character_id') or metadata.get('pov_character') or ''
+        pov_display = char_names.get(pov_id, pov_id) if pov_id else 'Unknown'
+
         scene_info = {
             'file': scene_file.name,
             'number': scene_num,
             'word_count': word_count,
-            'pov_character': metadata.get('pov_character', 'Unknown'),
+            'pov_character': pov_display,
             'tension_level': metadata.get('tension_level'),
             'tension_category': metadata.get('tension_category'),
         }
-        
+
         if verbose:
             scene_info['summary'] = metadata.get('summary', '')
-            scene_info['location'] = metadata.get('location', '')
+            scene_info['location'] = metadata.get('location_id', '')
             scene_info['tick'] = metadata.get('tick', '')
-        
+
         scenes.append(scene_info)
-    
+
     return scenes
 
 

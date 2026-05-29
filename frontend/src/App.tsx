@@ -14,6 +14,8 @@ import { PlotPage } from "./pages/Plot";
 import { CheckpointsPage } from "./pages/Checkpoints";
 import { SkillsPage } from "./pages/Skills";
 import { ReferencesPage } from "./pages/References";
+import { RelationshipsPage } from "./pages/Relationships";
+import { ReadPage } from "./pages/Read";
 import { CompilePage } from "./pages/Compile";
 
 export function App() {
@@ -22,12 +24,14 @@ export function App() {
       <Route path="/" element={<DashboardPage />} />
       <Route path="/project/:id" element={<ProjectLayout />}>
         <Route index element={<OverviewPage />} />
+        <Route path="read" element={<ReadPage />} />
         <Route path="writing" element={<WritingPage />} />
         <Route path="characters" element={<CharactersPage />} />
         <Route path="locations" element={<LocationsPage />} />
         <Route path="scenes" element={<ScenesPage />} />
         <Route path="loops" element={<LoopsPage />} />
         <Route path="factions" element={<FactionsPage />} />
+        <Route path="relationships" element={<RelationshipsPage />} />
         <Route path="goals" element={<GoalsPage />} />
         <Route path="lore" element={<LorePage />} />
         <Route path="plot" element={<PlotPage />} />

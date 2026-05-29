@@ -28,3 +28,6 @@ Thumbs.db
 # Reference material
 reference/
 reference_analysis.md
+
+logs/
+*.log

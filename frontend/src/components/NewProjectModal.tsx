@@ -268,7 +268,7 @@ function StepWorld({ form, setForm, onBack, onNext }: StepWorldProps) {
         onClick={() => setForm({ ...form, use_plot_first: !form.use_plot_first })}
       >
         <div className="flex-1 mr-4">
-          <p className="text-[13px] font-semibold" style={{ color: "var(--text-1)" }}>Plot-First 模式</p>
+          <p className="text-[13px] font-semibold" style={{ color: "var(--text-1)" }}>情节优先模式</p>
           <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: "var(--text-3)" }}>
             AI 先生成情节节拍，再按照节拍写作，叙事推进力更强
           </p>

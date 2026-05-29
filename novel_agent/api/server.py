@@ -8,10 +8,14 @@ from fastapi.responses import JSONResponse
 
 from .routers import (
     health, projects, generation, entities, status,
-    compile, plot, checkpoints, skills, references,
+    compile, plot, checkpoints, skills, references, log, threads,
 )
 
 logger = logging.getLogger(__name__)
+
+# 启动时初始化文件日志
+from ..utils.log_manager import setup_logging as _setup_logging
+_setup_logging()
 
 app = FastAPI(title="StoryDaemon API", version="1.0.0")
 
@@ -45,3 +49,5 @@ app.include_router(plot.router)
 app.include_router(checkpoints.router)
 app.include_router(skills.router)
 app.include_router(references.router)
+app.include_router(log.router)
+app.include_router(threads.router)

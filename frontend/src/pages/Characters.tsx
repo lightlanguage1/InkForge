@@ -22,7 +22,7 @@ export function CharactersPage() {
   return (
     <div className="flex gap-6 h-full">
       <EntityList title="角色" columns={columns} data={list?.characters ?? []} loading={isLoading} onRowClick={(c: CharacterItem) => setSelected(c.id)} />
-      {detail && <EntityDetail data={detail as unknown as Record<string,unknown>} onClose={() => setSelected(null)} title={detail.first_name || detail.id} />}
+      {detail && <EntityDetail data={detail as unknown as Record<string,unknown>} onClose={() => setSelected(null)} title={(detail.family_name || "") + (detail.first_name || "") || detail.id} />}
     </div>
   );
 }

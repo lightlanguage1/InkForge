@@ -4,6 +4,7 @@ Adapted from NovelWriter's helper_fns.py with improvements for StoryDaemon's nee
 """
 import os
 import json
+import tempfile
 import jsonschema
 from typing import Any, Dict
 from datetime import datetime
@@ -84,25 +85,19 @@ def read_json(full_path: str) -> Dict[str, Any]:
 
 
 def write_json(full_path: str, data: Dict[str, Any]) -> bool:
-    """Write dictionary to JSON file with pretty-print.
-    
-    Args:
-        full_path: Absolute path to JSON file
-        data: Dictionary to write
-        
-    Returns:
-        True if successful
-        
-    Raises:
-        IOError: If file cannot be written
-    """
+    """原子写入 JSON — 先写临时文件再 rename，避免并发读取到半截文件。"""
     try:
         dir_name = os.path.dirname(full_path)
         if dir_name:
             os.makedirs(dir_name, exist_ok=True)
-        
-        with open(full_path, "w", encoding="utf-8") as file:
-            json.dump(data, file, indent=2, ensure_ascii=False)
+        fd, tmp_path = tempfile.mkstemp(dir=dir_name or ".", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            os.replace(tmp_path, full_path)
+        except Exception:
+            os.unlink(tmp_path)
+            raise
         return True
     except Exception as e:
         raise IOError(f"Error writing {full_path}: {e}")

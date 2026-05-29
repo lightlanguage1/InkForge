@@ -7,6 +7,7 @@ const GROUPS = [
     label: "核心",
     items: [
       { label: "概览", path: ".", icon: "◈" },
+      { label: "阅读", path: "read", icon: "▶" },
       { label: "写作", path: "writing", icon: "✦" },
     ],
   },
@@ -18,6 +19,7 @@ const GROUPS = [
       { label: "场景", path: "scenes", icon: "▣" },
       { label: "线索", path: "loops", icon: "◇" },
       { label: "势力", path: "factions", icon: "⬡" },
+      { label: "关系图", path: "relationships", icon: "⬢" },
     ],
   },
   {

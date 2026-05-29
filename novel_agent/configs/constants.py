@@ -80,6 +80,12 @@ LOOP_MIN_MENTIONS_FOR_PROMOTION = 5
 TOP_CHARACTERS_FOR_TITLES = 5
 TOP_CHARACTER_IDS_FOR_TITLES = 10
 
+# ---- Thread audit ----------------------------------------------------------
+
+THREAD_AUDIT_INTERVAL = 5       # 每 N 章触发 LLM 支线审计
+THREAD_STALE_WARN = 4           # 停滞提醒阈值（章）
+THREAD_STALE_FORCE = 8          # 强制推进阈值（章）
+
 # ---- Text sampling --------------------------------------------------------
 
 TEXT_SAMPLE_CHARS = 3000

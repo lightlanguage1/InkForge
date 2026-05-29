@@ -124,10 +124,9 @@ class WriterContextBuilder:
         if not notes:
             return ''
         return (
-            '\n\n## 场景方向指导\n\n' + notes +
-            '\n\n**衔接要求：** 转变必须自然流畅。角色行为需与已有性格一致，'
-            '情节过渡不能突兀。当指导方向与故事现状冲突时，'
-            '优先保持故事连续性和角色一致性，寻找最自然的切入点。'
+            '\n\n## 场景方向指导（必须执行）\n\n' + notes +
+            '\n\n以上是用户指定的写作方向，请严格据此撰写本章场景。'
+            '在满足用户方向的前提下，保持故事连续性和角色性格一致。'
         )
     
     def _get_character_details(self, character_id: str) -> tuple[str, str]:

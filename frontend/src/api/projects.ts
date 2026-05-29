@@ -1,4 +1,4 @@
-import { get, post } from "./client";
+import { get, post, del } from "./client";
 import type { CreateProjectReq, ProjectInfo, ResumeResult } from "../types/project";
 
 export function createProject(req: CreateProjectReq) {
@@ -11,4 +11,8 @@ export function listProjects() {
 
 export function resume() {
   return post<ResumeResult>("/v1/resume");
+}
+
+export function deleteProject(projectId: string) {
+  return del<{ deleted: string }>(`/v1/project/${encodeURIComponent(projectId)}`);
 }

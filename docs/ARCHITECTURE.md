@@ -1,6 +1,6 @@
 # StoryDaemon 架构设计文档
 
-> 基于代码实际探索，非旧文档推断。日期：2026-05-19。
+> 基于代码实际探索，非旧文档推断。日期：2026-05-28。
 
 ---
 
@@ -8,11 +8,15 @@
 
 StoryDaemon 是一个 **LLM 驱动的中文长篇小说涌现式生成系统**。核心理念：不预设大纲，让叙事结构在逐幕（Tick）迭代中自行涌现。
 
-**技术栈：** Python 3.11+, Typer CLI, ChromaDB 向量存储, JSON 文件持久化
+**技术栈：** Python 3.11+, Typer CLI, FastAPI REST API, ChromaDB 向量存储, JSON 文件持久化
+
+**前端：** React 18 + TypeScript + Vite 6 + Tailwind CSS 3 + TanStack Query 5 + React Router 6
 
 **关键数字：**
 - 5 种 LLM 后端（codex / api / gemini-cli / claude-cli / ollama）
 - 每 Tick 4 阶段（Plan → Write+Eval → Commit → Update）
+- 13 个 API 路由模块，35+ 个 REST 端点
+- 18 个前端页面路由，覆盖全部后端端点
 - 10 个注册工具（角色/地点/势力生成、记忆搜索、关系 CRUD）
 - 3 层评估（POV 检测、连续性检查、QA 指标）
 
@@ -21,74 +25,104 @@ StoryDaemon 是一个 **LLM 驱动的中文长篇小说涌现式生成系统**�
 ## 二、顶层目录结构
 
 ```
-novel_agent/
-├── cli/                 CLI 入口 + 17 个子命令
-│   ├── main.py          所有命令注册 (new/tick/run/status/plot/skill/...)
-│   ├── project.py       项目创建/查找/状态读写
-│   ├── foundation.py    故事基础设定交互向导
-│   └── commands/        各命令实现 (plot/skill/checkpoint/compile/...)
-├── agent/               核心引擎 (Tick 循环 + 写作 + 评估)
-│   ├── agent.py         StoryAgent — 主编排器
-│   ├── context.py       ContextBuilder — Planner 上下文构建
-│   ├── writer_context.py WriterContextBuilder — Writer 上下文构建
-│   ├── writer.py        SceneWriter — 场景写作 + 拒止回落
-│   ├── evaluator.py     SceneEvaluator — POV/连续性 + QA 指标
-│   ├── prompts.py       System Prompt + 模板加载
-│   ├── schemas.py       Plan JSON 校验
-│   ├── runtime.py       PlanExecutor — 工具调用执行
-│   ├── plan_manager.py  计划持久化 (plans/ 目录)
-│   ├── scene_committer.py 场景提交 + Q&A 保存
-│   ├── tension_evaluator.py 张力评估 0-10
-│   ├── character_detector.py 从正文自动检测新角色
-│   ├── fact_extractor.py     从正文提取事实
-│   ├── entity_updater.py     事实 → 实体更新
-│   ├── lore_extractor.py     世界观规则提取
-│   └── lore_contradiction_detector.py 设定冲突检测
-├── memory/              持久化与向量检索
-│   ├── manager.py       MemoryManager — JSON 文件 CRUD
-│   ├── entities.py      数据类 (Character/Location/Scene/OpenLoop/Lore/Faction/...)
-│   ├── vector_store.py  ChromaDB 向量索引
-│   ├── update.py        场景后处理总入口
-│   ├── summarizer.py    场景摘要生成
-│   └── checkpoint.py    项目存档 (快照 + 回滚)
-├── plot/                情节节拍管理
-│   └── manager.py       PlotOutlineManager — beat 生成/持久化/状态
-├── tools/               LLM 后端 + 工具注册
-│   ├── llm_interface.py     后端初始化 + 全局接口
-│   ├── multi_provider_llm.py 多供应商 API (OpenAI/Gemini/Claude/DeepSeek/Ollama/本地)
-│   ├── provider.py          LLMProvider — generate/chat 统一封装
-│   ├── router.py            ModelRouter — 按任务路由模型
-│   ├── registry.py          ToolRegistry — 工具注册表
-│   ├── memory_tools.py      角色/地点/势力/关系生成工具
-│   ├── name_generator.py    随机中文名生成器
-│   ├── codex_interface.py   Codex CLI 后端
-│   ├── gemini_cli_interface.py Gemini CLI 后端
-│   ├── claude_cli_interface.py Claude Code CLI 后端
-│   ├── ollama_stream.py     Ollama 流式输出
-│   └── llm_pool.py          LLM 连接池 (Engine 用)
-├── skill/               写作技能导入/注入
-│   ├── importer.py      小说 → SKILL.yaml (分层采样 + 角色去重)
-│   ├── injector.py      SKILL → Writer/Planner 上下文注入
-│   ├── models.py        Skill/StyleProfile/NarrativePattern/CharacterArchetype 数据类
-│   └── store.py         SkillStore — YAML 持久化
-├── engine/              常驻进程引擎
-│   ├── core.py          EngineCore — LLMPool + ProjectManager + SkillStore
-│   └── project_manager.py 项目管理
-├── configs/             配置与常量
-│   ├── config.py        全局配置加载
-│   ├── constants.py     所有魔法数字 + 默认值
-│   └── api_keys.py      API Key 统一解析
-├── reference/           外部参考小说索引
-│   └── indexer.py       ReferenceIndexer — 分块 + 向量搜索
-├── api/                 REST API 服务
-│   ├── __init__.py
-│   └── server.py        FastAPI/Flask 服务端
-├── data/
-│   ├── names/           中文姓名库 (JSON)
-│   ├── templates/       Prompt 模板 (Markdown)
-│   └── skills/          已导入的写作技能 (YAML)
-└── utils/               工具函数
-    └── file_ops.py
+StoryDaemon/
+├── novel_agent/              Python 后端包（~99 个源文件）
+│   ├── agent/                核心引擎（17 个文件）
+│   │   ├── agent.py          StoryAgent — Tick 循环主编排器
+│   │   ├── factory.py        基础设施组装工厂（CLI/API 共用）
+│   │   ├── streaming_agent.py SSE 流式包装器
+│   │   ├── context.py        ContextBuilder — Planner 上下文
+│   │   ├── writer_context.py WriterContextBuilder — Writer 上下文
+│   │   ├── writer.py         SceneWriter — 写作 + 拒止回落
+│   │   ├── evaluator.py      SceneEvaluator — POV/连续性 + QA 指标
+│   │   ├── prompts.py        System Prompt + 模板加载
+│   │   ├── schemas.py        Plan JSON 校验
+│   │   ├── runtime.py        PlanExecutor — 工具调用执行
+│   │   ├── plan_manager.py   Plan 持久化 + 错误日志
+│   │   ├── scene_committer.py 场景提交 + Q&A 保存
+│   │   ├── tension_evaluator.py 张力 0-10 评分
+│   │   ├── character_detector.py 从正文自动检测新角色
+│   │   ├── fact_extractor.py     从正文提取结构化事实
+│   │   ├── entity_updater.py     事实 → 实体更新
+│   │   ├── lore_extractor.py     世界观规则提取
+│   │   └── lore_contradiction_detector.py 设定冲突检测
+│   ├── cli/                 CLI 层（20 个文件）
+│   │   ├── main.py          17 个 Typer 命令注册
+│   │   ├── project.py       项目管理
+│   │   ├── foundation.py    故事基础设定向导
+│   │   ├── server.py        API 服务器启动
+│   │   ├── recent_projects.py 最近项目追踪
+│   │   └── commands/        各命令实现
+│   │       ├── compile.py / summarize.py / goals.py / inspect.py
+│   │       ├── titles.py / checkpoint.py / lore.py / plan.py
+│   │       ├── status.py / list.py / plot.py / skill.py
+│   ├── api/                 REST API 服务（16 个文件）
+│   │   ├── server.py        FastAPI 应用 + CORS + 13 个路由注册
+│   │   ├── models.py        Pydantic 请求/响应模型
+│   │   ├── deps.py          共享依赖（Engine 单例 + Agent 创建）
+│   │   └── routers/         13 个路由模块
+│   │       ├── health.py / projects.py / generation.py / entities.py
+│   │       ├── status.py / compile.py / plot.py / checkpoints.py
+│   │       ├── skills.py / references.py / log.py / threads.py
+│   ├── memory/              持久化与向量检索（10 个文件）
+│   │   ├── manager.py       MemoryManager — JSON 文件 CRUD
+│   │   ├── entities.py      数据类 (Character/Location/Scene/OpenLoop/Lore/Faction/StoryThread/...)
+│   │   ├── vector_store.py  ChromaDB 向量索引
+│   │   ├── update.py        场景后处理总入口
+│   │   ├── summarizer.py    场景摘要生成
+│   │   ├── checkpoint.py    项目存档（快照 + 回滚）
+│   │   └── thread_manager.py 叙事支线生命周期管理
+│   ├── tools/               LLM 后端 + 工具系统（15 个文件）
+│   │   ├── llm_interface.py     后端初始化 + 全局接口
+│   │   ├── multi_provider_llm.py 多供应商 API 注册表
+│   │   ├── provider.py          LLMProvider — generate/chat 统一封装
+│   │   ├── router.py            ModelRouter — 按任务路由模型
+│   │   ├── registry.py          ToolRegistry — 工具注册表
+│   │   ├── memory_tools.py      10 个工具的实现
+│   │   ├── name_generator.py    随机中文名生成器
+│   │   ├── codex_interface.py   Codex CLI 后端
+│   │   ├── gemini_cli_interface.py Gemini CLI 后端
+│   │   ├── claude_cli_interface.py Claude Code CLI 后端
+│   │   ├── ollama_stream.py     Ollama 流式输出
+│   │   └── llm_pool.py          LLM 连接池（Engine 用）
+│   ├── skill/               写作技能导入/注入（4 个文件）
+│   │   ├── importer.py      小说 → SKILL.yaml（6层角色去重）
+│   │   ├── injector.py      SKILL → Writer/Planner 上下文注入
+│   │   ├── models.py        Skill/StyleProfile/NarrativePattern
+│   │   └── store.py         SkillStore — YAML 持久化
+│   ├── engine/              常驻进程引擎（2 个文件）
+│   │   ├── core.py          EngineCore — LLMPool + ProjectManager + SkillStore
+│   │   └── project_manager.py 项目实例管理
+│   ├── plot/                情节节拍管理
+│   │   └── manager.py       PlotOutlineManager
+│   ├── reference/           外部参考小说索引
+│   │   └── indexer.py       ReferenceIndexer — 分块 + 向量搜索
+│   ├── configs/             配置与常量
+│   │   ├── config.py        全局配置加载
+│   │   ├── constants.py     所有魔法数字 + 默认值
+│   │   └── api_keys.py      API Key 统一解析
+│   ├── utils/               工具函数
+│   │   ├── file_ops.py      文件 I/O
+│   │   └── log_manager.py   统一日志管理
+│   └── data/
+│       ├── names/           中文姓名库 (JSON)
+│       ├── templates/       Prompt 模板 (Markdown)
+│       └── skills/          已导入的写作技能 (YAML)
+├── frontend/                 React 前端（~65 个源文件）
+│   └── src/
+│       ├── api/             10 个域 + client.ts
+│       ├── types/           10 个域类型文件
+│       ├── components/      17 个组件（12 个 UI 原子 + 5 个复合组件）
+│       ├── pages/           18 个页面
+│       ├── utils/           logger.ts（前端日志 → 后端）
+│       └── styles/          tokens.css（CSS 主题变量）
+├── docs/                    项目文档（8 个 .md）
+├── example/                 示例小说
+├── scripts/                 辅助脚本
+├── start.bat / start.sh     一键启动器
+├── requirements.txt
+├── setup.py
+└── config.example.yaml
 ```
 
 ---
@@ -148,21 +182,36 @@ router:
 
 **设计逻辑：** 默认关闭 (`enabled: false`)，所有任务共用一个模型。开启后规划/写作/抽取走不同后端。成本优化：小模型做规划和抽取，大模型专注写作。
 
-### 3.5 Agent 中的双模型 (`agent/agent.py:89-106`)
+### 3.5 Agent 中的双模型 (`agent/agent.py`)
 
 ```python
-self.llm = LLMProvider(llm_interface, backend_type)       # 主模型（Planner + Writer）
-self.agent_llm = LLMProvider(agent_raw, "api")            # 辅助模型（Evaluator + Extractor）
+self.llm = LLMProvider(...)       # 主模型（Planner + Writer）
+self.agent_llm = LLMProvider(...) # 辅助模型（Evaluator + Extractor）
 ```
 
 - `self.llm` → 从 CLI 的 `--llm-backend` / `--llm-model` 来，或从项目 config.yaml
 - `self.agent_llm` → 仅在 `router.enabled=true` 时启用，走 `extractor` 任务配置；否则等于 `self.llm`
 
-**设计逻辑：** Evaluator 和 Extractor 是辅助任务，不需要写作级模型。如果配置了 Router，它们可以跑在小模型上节省成本。
+---
+
+## 四、基础设施组装工厂 (`agent/factory.py`)
+
+CLI 和 API 共用的唯一入口点。消除 `cli/main.py` 和 `api/deps.py` 中的重复初始化逻辑。
+
+```python
+def create_agent(project_dir, config, llm_backend=None, llm_model=None, ...) -> StoryAgent:
+    # 1. 解析 LLM 后端和模型 (CLI 参数 > config > 默认)
+    # 2. initialize_llm() → LLMProvider
+    # 3. 创建 ToolRegistry + MemoryManager + VectorStore
+    # 4. 注册 10 个工具
+    # 5. 返回 StoryAgent 实例
+```
+
+每次调用创建全新的 agent 实例（读取最新 state.json），支持 CLI `run()` 中每幕重建。
 
 ---
 
-## 四、CLI 层 (`cli/main.py`)
+## 五、CLI 层 (`cli/main.py`)
 
 17 个命令，基于 Typer：
 
@@ -197,16 +246,16 @@ novel skill delete  删除技能
 
 ---
 
-## 五、Tick 循环 — 核心引擎
+## 六、Tick 循环 — 核心引擎
 
-### 5.1 StoryAgent (`agent/agent.py`)
+### 6.1 StoryAgent (`agent/agent.py`)
 
 主编排器，管理整个 Tick 生命周期。
 
 **初始化：**
 1. 从 `state.json` 加载项目状态
 2. 建立双模型（主 + Router 辅助）
-3. 实例化所有组件：Memory, Vector, ContextBuilder, PlanExecutor, Writer, Evaluator, Committer, PlotManager
+3. 实例化所有组件：Memory, Vector, ContextBuilder, WriterContextBuilder, PlanExecutor, Writer, Evaluator, Committer, PlotManager, ThreadManager
 
 **第 0 幕 (`_first_tick`) — 两阶段初始化：**
 
@@ -240,8 +289,8 @@ Phase 1 — Plan (规划)
   │    否则 → generate()
   ├── validate_plan()           JSON Schema 校验
   ├── _enforce_beat_target()    Plot-First 严格模式：Plan 必须指定当前 beat
+  ├── _enforce_threads()        叙事支线审计：确保支线被推进
   ├── _enforce_pacing()         节奏约束：连续3幕不能相同 progress_step
-  │     备选建议：revelation→decision/setup, complication→decision/resolution ...
   └── PlanExecutor.execute_plan()
         遍历 plan.actions → 调用 ToolRegistry 中对应工具
 
@@ -260,7 +309,6 @@ Phase 2 — Write + Evaluate (写作+评估，可重试)
   │    ├── _check_pov()      快速关键词跳过 → LLM 全场景扫描 (前2500字)
   │    ├── _check_continuity()  身体状态 vs 动作矛盾检测 → LLM 确认
   │    └── _compute_qa_metrics() 非致命质量信号
-  │          key_change 关键词命中率 / 对话轮数 / 模式多样性 / 新颖度 / 节拍对齐
   └── 未通过 + 未达最大重试次数 → eval_feedback写回 → 重写
 
 Phase 3 — Commit (提交)
@@ -275,28 +323,47 @@ Phase 4 — Update (记忆更新)
   │    ├── FactExtractor + EntityUpdater     事实 → 实体状态更新
   │    ├── LoreExtractor + ContradictionDetector  世界观 + 冲突检测
   │    └── CharacterDetector                 从正文检测新角色
+  ├── ThreadManager.audit()                  支线审计 + 陈旧度警告
   ├── _check_goal_promotion()  第10-15幕之间，最活跃线索 → 自动提升为故事目标
   ├── state["current_tick"] += 1
   └── _save_state()
 ```
 
-### 5.2 为什么这样设计
+### 6.2 Streaming Wrapper (`agent/streaming_agent.py`)
+
+为 API 的 SSE 端点提供流式 Tick 进度：
+
+```python
+class StreamingStoryAgent:
+    def tick_stream(self) -> Generator[str]:
+        yield "tick_start"      # Tick 开始
+        yield "phase: context"  # 上下文构建
+        yield "phase: planning" # Plan 生成
+        yield "phase: execution"# 工具执行
+        yield "phase: writing"  # 写作中
+        yield "phase: generating" # LLM 生成中
+        yield "scene_text"      # 流式场景文本
+        yield "phase: eval"     # 评估中
+        yield "phase: commit"   # 提交中
+        yield "tick_complete"   # 完成
+        yield "tick_error"      # 异常
+```
+
+### 6.3 为什么这样设计
 
 **两阶段初始化（Tick 0）：** 角色和地点必须先于场景存在。如果 LLM 在同一个 Plan 里既生成角色又写场景，可能出现"场景中引用了一个还没生成的角色"。分离实体生成和场景写作消除了这个竞态。
 
-**Plan 重试（最多 3 次）：** `_enforce_beat_target` 和 `_enforce_pacing` 会 raise ValueError 拒绝不合格的 Plan。LLM 收到 rejection_feedback 后重新生成。这比事后修补更可靠——LLM 看到"上一版被拒原因"后能自我修正。
+**Plan 重试（最多 3 次）：** `_enforce_beat_target`、`_enforce_threads` 和 `_enforce_pacing` 会 raise ValueError 拒绝不合格的 Plan。LLM 收到 rejection_feedback 后重新生成。
 
-**写后评估（可重试）：** 写作和评估分离。评估不通过 → 反馈写回 Writer Prompt → 重写。避免了"生成后再修修补补"的复杂性——直接让 LLM 重新来，带着明确的修正方向。
+**写后评估（可重试）：** 写作和评估分离。评估不通过 → 反馈写回 Writer Prompt → 重写。
 
-**POV 检测快速路径：** 前 2 幕 + 包含全知关键词（"殊不知"/"他不知道的是"/...）的场景走 LLM 检测，其他场景直接跳过。因为 LLM 检测有 token 成本，而大多数场景不会出现 POV 违规。
-
-**记忆更新在 Commit 之后：** 确保场景已持久化再更新实体状态。如果更新过程中出现异常，场景不会被回滚（它已经写入了），但实体状态会保持旧值——下次 Tick 的 ContextBuilder 会从旧状态出发，不会产生"实体已变但场景丢失"的不一致。
+**记忆更新在 Commit 之后：** 确保场景已持久化再更新实体状态。防止"实体已变但场景丢失"的不一致。
 
 ---
 
-## 六、上下文系统
+## 七、上下文系统
 
-### 6.1 TickContext (`agent/context.py`)
+### 7.1 TickContext (`agent/context.py`)
 
 一次 Tick 需要的数据，集中构建，避免多处重复查询：
 
@@ -314,7 +381,7 @@ class TickContext:
     qa_feedback: str              # 最近的 Q&A 反馈
 ```
 
-### 6.2 ContextBuilder — Planner 专用
+### 7.2 ContextBuilder — Planner 专用
 
 `build_planner_context()` 返回一个字典（不是 TickContext），包含约 25 个字段：
 
@@ -336,15 +403,11 @@ class TickContext:
 | `qa_feedback` | memory | 最近 3 幕 Q&A（change/mode/dialogue/novelty/beat_align） |
 | `next_plot_beat` | plot_outline.json | 下一待执行节拍 |
 | `beat_enforcement_instructions` | config | 严格/标准/宽松模式的提示词指令 |
+| `story_threads` | thread_manager | 当前活跃的所有叙事支线状态 |
 | `writer_notes` | CLI --notes or config | 场景方向指导 |
 | `plan_rejection_feedback` | 上轮被拒原因 | Plan 重试时使用 |
 
-**设计逻辑：**
-- 角色登场表只显示 active + returning + 1 个最可能回归的 sidelined 角色，隐藏离场/已故角色。Planner 不需要看到全部 30 个角色——它只需要知道谁在活跃。
-- 开放线索按 `POV关联度权重 + 紧急状态` 排序，top 10。避免 prompt 被几十条线索淹没。
-- 缺席角色提示 Planner "这个角色 10 章没出现了，是否该让他回归？"——鼓励叙事多样性。
-
-### 6.3 WriterContextBuilder — Writer 专用
+### 7.3 WriterContextBuilder — Writer 专用
 
 `build_writer_context()` 返回一个包含约 18 个字段的字典：
 
@@ -361,13 +424,9 @@ class TickContext:
 | `eval_feedback` | SceneEvaluator | 上一版场景的修正要求（重试轮） |
 | `writer_notes` | CLI --notes or config | 场景方向指导 |
 
-**过渡尾巴 (`_format_transition_tail`)：** 上一章最后 ~500 字符，保证场景衔接自然。不是摘要，而是原文——Writer 看到上一章的结尾句，可以直接接续。
-
-**状态快照 (`_build_state_snapshot`)：** 所有角色的当前位置/身体状态/情绪/目标 + 关系 + 最近 3 个地点 + top 8 紧迫线索。Writer 不需要查 memory，所有信息都在 prompt 里。
-
 ---
 
-## 七、Writer 系统 (`agent/writer.py`)
+## 八、Writer 系统 (`agent/writer.py`)
 
 ### SceneWriter
 
@@ -380,16 +439,14 @@ write_scene(writer_context) → {text, word_count, title, model_used}
 2. 尝试主模型生成
 3. `_detect_refusal()` 检查是否拒止（前 400 字符匹配中英文拒止关键词 + 响应过短）
 4. 拒止 → 切换回落模型重试
-5. `_strip_llm_header()` 去掉 LLM 自生成的标题/元数据（避免与 Committer 的标准头重复）
+5. `_strip_llm_header()` 去掉 LLM 自生成的标题/元数据
 6. `_polish_scene_text()` 段落间距标准化（单空行→双空行）+ 重复句子检测（≥20字出现≥3次）
 
-**拒止检测：** 同时匹配中英文模式（"sorry"、"对不起"、"无法生成"、"违反"、"内容政策"...），且只在首次触发的 2 个匹配或头部匹配+过短（<500字）时才判定为拒止。避免误判角色对话中的"对不起"。
-
-**设计逻辑：** 回落机制让 API 内容审核不影响写作流程。如果 DeepSeek 拒止了一段武侠打斗，会自动切换到另一个后端重写。`model_used` 记录实际使用的模型，方便后续回溯。
+**拒止检测：** 同时匹配中英文模式，且只在首次触发的 2 个匹配或头部匹配+过短（<500字）时才判定为拒止。避免误判角色对话中的"对不起"。
 
 ---
 
-## 八、Evaluator 系统 (`agent/evaluator.py`)
+## 九、Evaluator 系统 (`agent/evaluator.py`)
 
 ### SceneEvaluator
 
@@ -410,13 +467,11 @@ write_scene(writer_context) → {text, word_count, title, model_used}
 - `novelty_score`：与上一幕的模式/对话多样性差异打分（1.0-9.0）
 - `beat_hint_alignment`：场景文本与当前情节节拍的关键词重叠率
 
-**设计逻辑：** POV 和连续性才是硬伤（会阻塞重试），QA 指标是质量信号（只记 warnings）。快速关键词路径避免了大多数场景的 LLM 调用——没有"殊不知"类关键词的场景直接通过 POV 检查。
-
 ---
 
-## 九、记忆系统
+## 十、记忆系统
 
-### 9.1 数据实体 (`memory/entities.py`)
+### 10.1 数据实体 (`memory/entities.py`)
 
 | 实体 | 核心字段 | 存储 |
 |------|---------|------|
@@ -426,6 +481,7 @@ write_scene(writer_context) → {text, word_count, title, model_used}
 | `OpenLoop` | description, importance, status, related_characters, scenes_mentioned, is_story_goal | `memory/loops.json` |
 | `Lore` | statement, category, lore_type(rule/fact/constraint/capability/limitation), importance | `memory/lore.json` |
 | `Faction` | name, org_type, summary, objectives, influence, assets, stance_by_character, relationships | `memory/factions/F{id:03d}.json` |
+| `StoryThread` | name, description, category, importance, status, character_ids, scene_ids, confidence | `memory/threads.json` |
 
 **Character.current_state** 是嵌套结构：
 ```
@@ -438,9 +494,9 @@ CharacterState
 └── inventory: List[str]      持有物品
 ```
 
-**设计逻辑：** `current_state` 是随着每幕更新的"可变层"，而 `personality`/`backstory`/`physical_traits` 是"不可变层"。这样记忆更新只动可变部分，不改人物基本设定。
+**设计逻辑：** `current_state` 是随着每幕更新的"可变层"，而 `personality`/`backstory`/`physical_traits` 是"不可变层"。
 
-### 9.2 MemoryManager (`memory/manager.py`)
+### 10.2 MemoryManager (`memory/manager.py`)
 
 JSON 文件 CRUD 操作。按 ID 前缀路由：
 - `C...` → `memory/characters/`
@@ -450,7 +506,7 @@ JSON 文件 CRUD 操作。按 ID 前缀路由：
 
 提供：`load_character()`, `save_character()`, `list_characters()`, `get_character_relationships()`, `get_open_loops()`, `get_recent_scene_qa()`, `load_all_lore()`, 等。
 
-### 9.3 VectorStore (`memory/vector_store.py`)
+### 10.3 VectorStore (`memory/vector_store.py`)
 
 基于 ChromaDB 的向量索引：
 - `index_scene(scene)` — 将场景摘要向量化存入
@@ -458,9 +514,24 @@ JSON 文件 CRUD 操作。按 ID 前缀路由：
 - `compute_semantic_similarity(a, b)` — 两个文本的余弦相似度（用于节拍验证）
 - `search_memory(query, n_results)` — 通用记忆搜索
 
-**设计逻辑：** 向量存储是"软索引"——不依赖精确关键词匹配。节拍验证用语义相似度而非关键词匹配，因为同样的情节可以用完全不同的词表达。
+### 10.4 ThreadManager (`memory/thread_manager.py`)
 
-### 9.4 场景后处理 (`memory/update.py`)
+叙事支线全生命周期管理：
+
+```
+ThreadManager
+├── audit()              LLM 审计场景序列，识别新形成的叙事支线
+├── list_threads()       列出所有支线（按状态筛选）
+├── update_thread()      更新支线状态/进度
+├── get_stale_warnings() 陈旧度检查：
+│   ├── 超过 THREAD_STALE_WARN 幕未推进 → 警告
+│   └── 超过 THREAD_STALE_FORCE 幕未推进 → 强制关闭
+└── _enforce_threads()   Tick 中调用，确保活跃支线被推进
+```
+
+**设计逻辑：** 长篇小说的叙事支线会自然形成和消亡。ThreadManager 定期审计场景序列，自动识别"第3章开始的那个复仇线"之类的分支叙事，避免支线被遗忘或无限挂起。
+
+### 10.5 场景后处理 (`memory/update.py`)
 
 `update_from_scene()` — 每幕 Commit 后调用：
 
@@ -478,11 +549,9 @@ JSON 文件 CRUD 操作。按 ID 前缀路由：
    → 创建 stub 角色 or 提示用户手动注册
 ```
 
-**设计逻辑：** 整个后处理流程是一个简单的顺序管道。三个步骤相互独立（事实提取不需要等世界观提取完成），但各自都可能调用 LLM。用 `config` 中的 `enable_*` 开关可以逐项关闭。
-
 ---
 
-## 十、Plot 系统 (`plot/manager.py`)
+## 十一、Plot 系统 (`plot/manager.py`)
 
 ### PlotOutlineManager
 
@@ -503,7 +572,7 @@ PlotBeat:
     executed_in_scene: str     # 执行场景 ID
 ```
 
-**节拍生成：** `generate_next_beats(count=5)` → LLM 根据当前故事状态（开放线索+最近场景摘要）生成候选节拍。返回的节拍没有 ID——由 `add_beats()` 分配 PBxxx 编号后持久化。
+**节拍生成：** `generate_next_beats(count=5)` → LLM 根据当前故事状态（开放线索+最近场景摘要）生成候选节拍。
 
 **节拍生命周期：**
 ```
@@ -523,13 +592,13 @@ Tick._verify_beat() → semantic similarity check
 
 ---
 
-## 十一、Tool 系统
+## 十二、Tool 系统
 
-### 11.1 ToolRegistry (`tools/registry.py`)
+### 12.1 ToolRegistry (`tools/registry.py`)
 
 维护工具名 → Tool 实例的映射。每个 Tool 有一个 `execute(args)` 方法。
 
-### 11.2 已注册的 10 个工具 (`cli/main.py:460-470`)
+### 12.2 已注册的 10 个工具
 
 | 工具名 | 实现类 | 功能 |
 |--------|--------|------|
@@ -544,15 +613,13 @@ Tick._verify_beat() → semantic similarity check
 | `faction.update` | `FactionUpdateTool` | 更新势力信息 |
 | `faction.query` | `FactionQueryTool` | 查询势力信息 |
 
-**设计逻辑：** Planner 的 Plan JSON 中 `actions` 数组每项指定 `tool` 和 `args`。PlanExecutor 遍历执行，返回结果。Planner 决定"需要生成一个角色"，调用 `character.generate`，但 Planner 不控制角色的具体属性——那是工具实现的事。这种分离让 Planner 保持战略层面，工具负责战术细节。
-
 ---
 
-## 十二、Skill 系统
+## 十三、Skill 系统
 
-### 12.1 Skill Importer (`skill/importer.py`)
+### 13.1 Skill Importer (`skill/importer.py`)
 
-将一部已完成的小说提取为"写作技能"（SKILL.yaml），供其他写作项目参考。
+将一部已完成的小说提取为"写作技能"（SKILL.yaml）。
 
 **Pipeline（944 行）：**
 ```
@@ -560,35 +627,71 @@ parse → index → stratified sample → batch LLM extract → merge → audit 
 ```
 
 **六层角色去重防线：**
-1. **LLM 自标注** — 批次 prompt 要求 LLM 输出 `name_type` (proper/descriptor) + `name_confidence` (high/medium/low)
+1. **LLM 自标注** — 批次 prompt 要求 LLM 输出 `name_type` + `name_confidence`
 2. **名字匹配** — `_name_overlap()` 检查两个角色名是否有共享字符
-3. **关系网重叠** — Jaccard 相似度：两个角色的关系对 `(with, type)` 交集/并集
+3. **关系网重叠** — 关系对 `(with, type)` 的 Jaccard 相似度
 4. **动态阈值** — `mean + 1.5σ` 的非零成对关系重叠均值，clamp [0.5, 0.9]
-5. **互引用阻断** — 如果角色 A 的关系里列出了角色 B 的名字，A 和 B 不能是同一个人（纯确定逻辑）
-6. **专名保护** — 两个 `name_type=proper` + `name_confidence=high` 且无名字重叠的角色，需要 ≥0.8 Jaccard 关系重叠才允许合并
+5. **互引用阻断** — 如 A 的关系列出 B 的名字，A 和 B 不能是同一个人
+6. **专名保护** — 两个 proper+high 角色需要 ≥0.8 Jaccard 才合并
 
-**分层采样：** 按对话密度分 5 bin (dialogue_ratio 分层)，确保覆盖对话/叙事/混合文本类型。
+**分层采样：** 按对话密度分 5 bin (dialogue_ratio 分层)。
 
-**审计（`_final_audit`）：** 两轮结构化审计——
-1. **清理轮** — 标签去重 + descriptor 角色合并/删除 + 高重叠对合并
-2. **修正轮** — 返回轻量 patch 列表（只修正 role/traits/arc_type，不重建整个角色对象）
+**审计（`_final_audit`）：** 清理轮 + 修正轮（轻量 patch）。
 
-**回援采样（`_rescue_batches`）：** 低置信度无关系角色进入 `_pending` 池。批次处理完毕后，搜索全文中出现这些角色名的未采样章节，追加 ≤3 章作为回援批次。
+**回援采样（`_rescue_batches`）：** 低置信度无关系角色 → `_pending` 池 → 回援 ≤3 章。
 
-### 12.2 Skill Injector (`skill/injector.py`)
+### 13.2 Skill Injector (`skill/injector.py`)
 
-将已导入的 SKILL 注入 Writer/Planner 上下文。三个模式：
+三个模式：
 - `reference` — 仅风格标签 + 句长/对话占比
 - `style_only` — 仅风格 profile
 - `full` — 全部 patterns（含模板和例句）
 
-`build_skill_context(state)` 函数从 `state["active_skills"]` 读取已激活技能，格式化为 prompt 可用的文本段。在 WriterContextBuilder 和 ContextBuilder 的 prompt 中作为 `skill_context` 注入。
+---
 
-**设计逻辑：** Skill 系统让 StoryDaemon 具备"风格感知"能力。导入《琼明神女录》提取的 SKILL 后，生成其他故事时可以在 prompt 中注入该小说的风格特征（句长、对话密度、写作模式），引导 Writer 产出相似风格。
+## 十四、REST API 层
+
+### 14.1 服务架构 (`api/server.py`)
+
+FastAPI 应用，13 个路由模块：
+
+```python
+# 路由注册
+health.router          # GET /health
+projects.router        # POST /api/v1/project, GET /api/v1/projects, POST /api/v1/resume
+generation.router      # POST /api/v1/project/{id}/tick, GET .../tick/stream, POST .../run
+entities.router        # GET entities (characters/locations/scenes/loops/factions + relationships)
+status.router          # GET /project/{id}/status, /goals, /lore
+compile.router         # POST /project/{id}/compile, GET /summarize, POST /titles
+plot.router            # GET/POST/DELETE /project/{id}/plot
+checkpoints.router     # POST/GET/DELETE /project/{id}/checkpoints
+skills.router          # POST /api/v1/skills/import, GET/POST/DELETE /api/v1/skills
+references.router      # POST /api/v1/references/import, POST /api/v1/references/search
+log.router             # POST /api/v1/log (前端日志接收)
+threads.router         # StoryThread CRUD + 审计端点
+```
+
+### 14.2 关键端点
+
+| 端点 | 方法 | 用途 |
+|------|------|------|
+| `/api/v1/project` | POST | 创建新项目 |
+| `/api/v1/projects` | GET | 列出所有项目 |
+| `/api/v1/resume` | POST | 恢复最近项目 |
+| `/api/v1/project/{id}/tick` | POST | 执行一幕（同步） |
+| `/api/v1/project/{id}/tick/stream` | GET | 执行一幕（SSE 流式） |
+| `/api/v1/project/{id}/run` | POST | 批量执行多幕 |
+| `/api/v1/project/{id}/status` | GET | 项目状态总览 |
+| `/api/v1/project/{id}/characters` | GET | 角色列表 |
+| `/api/v1/project/{id}/characters/{cid}` | GET | 角色详情 |
+| `/api/v1/project/{id}/locations` | GET | 地点列表 |
+| `/api/v1/project/{id}/relationships` | GET | 角色关系图数据 |
+| `/api/v1/project/{id}/compile` | POST | 编译完整手稿 |
+| `/api/v1/log` | POST | 前端日志收集 |
 
 ---
 
-## 十三、Engine 层 (`engine/core.py`)
+## 十五、Engine 层 (`engine/core.py`)
 
 ### EngineCore
 
@@ -596,26 +699,28 @@ parse → index → stratified sample → batch LLM extract → merge → audit 
 
 ```
 EngineCore
-├── LLMPool         LLM 连接池（多模型复用）
-├── ProjectManager  项目管理（创建/加载/删除项目）
+├── LLMPool         LLM 连接池（多模型复用，含健康检查）
+├── ProjectManager  项目管理（创建/加载/删除项目 + StoryAgent 实例池）
 └── SkillStore      技能存储（YAML→Skill 对象）
 ```
 
-**设计逻辑：** Engine 层是为 `novel serve` HTTP 服务准备的。CLI 单次命令不需要 EngineCore (`novel tick` 直接初始化 `StoryAgent`)，但常驻服务需要连接池和项目管理器。
+**设计逻辑：** Engine 层是为 `novel serve` HTTP 服务准备的。CLI 单次命令不需要 EngineCore (`novel tick` 直接通过 `factory.create_agent()` 初始化 `StoryAgent`)，但常驻服务需要连接池和项目管理器。
 
 ---
 
-## 十四、数据流全景
+## 十六、数据流全景
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        CLI / Engine                             │
-│  novel tick ──→ StoryAgent.tick()                               │
+│                     CLI / API / Engine                          │
+│  novel tick ──→ factory.create_agent() → StoryAgent.tick()      │
+│  POST /tick ──→ deps → factory.create_agent() → tick()         │
+│  GET  /tick/stream → StreamingStoryAgent.tick_stream()          │
 └──────────────────┬──────────────────────────────────────────────┘
                    │
     ┌──────────────▼──────────────┐
-    │     state.json              │  项目状态 (current_tick, active_character, ...)
-    │     config.yaml             │  项目配置 (llm backend/model, generation settings, ...)
+    │     state.json              │  项目状态 (current_tick, ...)
+    │     config.yaml             │  项目配置 (llm backend/model, ...)
     │     foundation.yaml         │  故事基础设定
     └──────────────┬──────────────┘
                    │
@@ -626,11 +731,12 @@ EngineCore
     │         │                              locations/           │
     │         │                              loops.json           │
     │         │                              lore.json            │
+    │         │                              threads.json         │
     │         ▼                                                   │
     │  LLM.generate() ──→ Plan JSON                               │
     │         │                                                   │
     │         ▼                                                   │
-    │  validate → enforce_beat → enforce_pacing                   │
+    │  validate → enforce_beat → enforce_threads → enforce_pacing │
     │         │                                                   │
     │         ▼                                                   │
     │  PlanExecutor ──→ ToolRegistry ──→ MemoryManager (write)    │
@@ -681,6 +787,8 @@ EngineCore
     │    │     └── lore.json (world rules)                        │
     │    └── CharacterDetector                                     │
     │          └── new stub characters                             │
+    │  ThreadManager.audit()                                       │
+    │    └── threads.json (支线状态更新)                           │
     │  VectorStore.index_scene() → ChromaDB                       │
     │  state["current_tick"] += 1 → state.json                    │
     └─────────────────────────────────────────────────────────────┘
@@ -688,23 +796,20 @@ EngineCore
 
 ---
 
-## 十五、设计原则
+## 十七、设计原则
 
 ### 确定性 vs 概率性边界
-
-StoryDaemon 在所有关键决策点都尽量使用**确定性逻辑**，LLM 只用于需要创造力的环节：
 
 | 决策点 | 方式 | 原因 |
 |--------|------|------|
 | 角色去重 | 确定性（6层规则） | 不能靠 LLM "觉得"两个角色是不是同一个人 |
 | POV 违规检测 | 关键词快速路径 + LLM 确认 | 规则能覆盖 80% 场景，LLM 处理模糊案例 |
 | 拒止检测 | 确定性关键词 | LLM 自己不会"承认"拒止 |
-| Plan 校验 | JSON Schema + 节拍强制 + 节奏约束 | 结构性约束必须硬编码 |
+| Plan 校验 | JSON Schema + 节拍强制 + 支线强制 + 节奏约束 | 结构性约束必须硬编码 |
 | 角色名字生成 | 随机 + 已用名去重 | 不需要 LLM |
 | 节拍验证 | 语义相似度 (ChromaDB) | 比关键字匹配更鲁棒 |
+| 叙事支线审计 | LLM 识别 + 确定性陈旧度检查 | 识别靠 LLM，生命周期靠规则 |
 | 场景内容 | 全部 LLM 生成 | 创造力不可替代 |
-| 角色性格/背景 | LLM 生成 | 需要上下文理解 |
-| 世界观提取 | LLM 提取 + 确定性冲突检测 | 提取靠 LLM，检测靠规则 |
 
 ### Prompt 策略
 
@@ -725,32 +830,36 @@ CLI --llm-backend --llm-model (本次运行)
 
 ---
 
-## 十六、关键文件索引
+## 十八、关键文件索引
 
-| 文件 | 行数 | 核心职责 |
-|------|------|---------|
-| `agent/agent.py` | 901 | StoryAgent — Tick 循环主编排 |
-| `agent/context.py` | 799 | ContextBuilder — Planner 上下文（~25 字段） |
-| `agent/writer_context.py` | 518 | WriterContextBuilder — Writer 上下文（~18 字段） |
-| `agent/writer.py` | 289 | SceneWriter — 写作 + 拒止回落 + 润色 |
-| `agent/evaluator.py` | 389 | SceneEvaluator — POV/连续性 + QA 指标 |
-| `agent/prompts.py` | ~150 | System Prompt + 模板加载 + split_prompt |
-| `agent/schemas.py` | ~60 | Plan JSON 校验规则 |
-| `agent/runtime.py` | ~100 | PlanExecutor — 工具调用执行 |
-| `agent/scene_committer.py` | ~120 | 场景提交 + Q&A 保存 |
-| `memory/manager.py` | ~650 | MemoryManager — 全部实体 CRUD |
-| `memory/entities.py` | ~400 | 数据类定义 (Character/Location/Scene/OpenLoop/Lore/Faction/...) |
-| `memory/vector_store.py` | ~200 | ChromaDB 向量索引 + 语义搜索 |
-| `memory/update.py` | ~200 | 场景后处理管道 (事实+世界观+角色检测) |
-| `plot/manager.py` | 197 | PlotOutlineManager — 节拍生成/持久化/状态 |
-| `tools/llm_interface.py` | 153 | 5 种后端的统一初始化入口 |
-| `tools/multi_provider_llm.py` | 606 | 多供应商 API 注册表 + 各供应商调用函数 |
-| `tools/provider.py` | 68 | LLMProvider — generate/chat 统一封装 |
-| `tools/router.py` | 79 | ModelRouter — 按任务路由模型 |
-| `tools/registry.py` | ~30 | ToolRegistry — 工具注册表 |
-| `tools/memory_tools.py` | ~600 | 10 个工具的实现 |
-| `skill/importer.py` | 944 | 小说 → SKILL 提取（所有去重+审计逻辑） |
-| `skill/injector.py` | ~100 | SKILL → 写作上下文注入 |
-| `skill/models.py` | ~60 | Skill/StyleProfile/NarrativePattern/CharacterArchetype |
-| `cli/main.py` | 1652 | 17 个 CLI 命令注册 + tick/run 实现 |
-| `engine/core.py` | ~60 | EngineCore — 常驻进程引擎 |
+| 文件 | 核心职责 |
+|------|---------|
+| `agent/agent.py` | StoryAgent — Tick 循环主编排 |
+| `agent/factory.py` | 基础设施组装工厂（CLI/API 共用） |
+| `agent/streaming_agent.py` | SSE 流式包装器 |
+| `agent/context.py` | ContextBuilder — Planner 上下文（~25 字段） |
+| `agent/writer_context.py` | WriterContextBuilder — Writer 上下文（~18 字段） |
+| `agent/writer.py` | SceneWriter — 写作 + 拒止回落 + 润色 |
+| `agent/evaluator.py` | SceneEvaluator — POV/连续性 + QA 指标 |
+| `agent/prompts.py` | System Prompt + 模板加载 |
+| `agent/schemas.py` | Plan JSON 校验规则 |
+| `agent/runtime.py` | PlanExecutor — 工具调用执行 |
+| `agent/scene_committer.py` | 场景提交 + Q&A 保存 |
+| `memory/manager.py` | MemoryManager — 全部实体 CRUD |
+| `memory/entities.py` | 数据类定义 (Character/Location/Scene/OpenLoop/Lore/Faction/StoryThread/...) |
+| `memory/vector_store.py` | ChromaDB 向量索引 + 语义搜索 |
+| `memory/update.py` | 场景后处理管道 (事实+世界观+角色检测) |
+| `memory/thread_manager.py` | 叙事支线生命周期管理 |
+| `plot/manager.py` | PlotOutlineManager — 节拍生成/持久化/状态 |
+| `tools/llm_interface.py` | 5 种后端的统一初始化入口 |
+| `tools/multi_provider_llm.py` | 多供应商 API 注册表 |
+| `tools/provider.py` | LLMProvider — generate/chat 统一封装 |
+| `tools/router.py` | ModelRouter — 按任务路由模型 |
+| `tools/memory_tools.py` | 10 个工具的实现 |
+| `skill/importer.py` | 小说 → SKILL 提取（6层去重+审计） |
+| `skill/injector.py` | SKILL → 写作上下文注入 |
+| `cli/main.py` | 17 个 CLI 命令注册 |
+| `api/server.py` | FastAPI 应用 + 13 个路由注册 |
+| `api/routers/log.py` | 前端日志接收端点 |
+| `api/routers/threads.py` | 支线追踪 REST API |
+| `engine/core.py` | EngineCore — 常驻进程引擎 |

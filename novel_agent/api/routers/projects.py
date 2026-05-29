@@ -6,6 +6,8 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
+from ...utils.log_manager import rmtree_force
+
 from ..deps import get_engine, get_novels_dir, resolve_project, create_agent
 from ..models import ProjectCreateRequest, TickRequest, TickResponse
 
@@ -106,14 +108,33 @@ def resume():
     raise HTTPException(status_code=404, detail="没有找到任何项目，请先创建项目或运行 novel tick")
 
 
+# ---- 删除 ----
+
+@router.delete("/project/{project_id}")
+def delete_project(project_id: str):
+    try:
+        project_dir = resolve_project(project_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail=f"项目不存在: {project_id}")
+    try:
+        rmtree_force(project_dir)
+    except OSError as exc:
+        logger.exception("删除项目失败: %s", project_dir)
+        raise HTTPException(status_code=500, detail=f"删除失败: {exc}")
+    return {"deleted": str(project_dir)}
+
+
 # ---- Tick ----
 
 @router.post("/project/{project_id}/tick", response_model=TickResponse)
 def run_tick(project_id: str, req: TickRequest = None):
-    if req is None:
-        req = TickRequest()
-    project_dir = resolve_project(project_id)
+    from .generation import _try_lock, _release
+    if not _try_lock(project_id):
+        raise HTTPException(status_code=409, detail="该项目正在生成中，请等待完成")
     try:
+        if req is None:
+            req = TickRequest()
+        project_dir = resolve_project(project_id)
         agent = create_agent(
             project_dir,
             llm_backend=req.llm_backend,
@@ -121,9 +142,14 @@ def run_tick(project_id: str, req: TickRequest = None):
             save_prompts=req.save_prompts,
         )
         result = agent.tick(notes=req.notes or "")
+    except HTTPException:
+        _release(project_id)
+        raise
     except Exception:
+        _release(project_id)
         logger.exception("Tick 失败: project=%s", project_id)
         raise HTTPException(status_code=500, detail="故事生成失败，请查看服务端日志")
+    _release(project_id)
     return TickResponse(
         success=True,
         tick=result.get("tick", 0),

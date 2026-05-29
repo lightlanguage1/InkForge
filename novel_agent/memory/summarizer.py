@@ -44,18 +44,18 @@ class SceneSummarizer:
         Returns:
             Formatted prompt
         """
-        prompt = f"""Read the following scene and generate {max_bullets} concise bullet points summarizing:
-- Key events that occurred
-- Important character actions or decisions
-- New information revealed
-- Emotional or relationship changes
+        prompt = f"""阅读以下场景文本，生成 {max_bullets} 条简洁的要点摘要，覆盖：
+- 发生的关键事件
+- 重要的角色行动或决定
+- 揭示的新信息
+- 情感或关系变化
 
-Be specific and factual. Each bullet should be a complete sentence.
+请具体、事实性地描述。每条要点为一个完整句子，用中文书写。
 
-Scene:
+场景：
 {scene_text}
 
-Summary (bullet points only, one per line):"""
+摘要（仅输出要点，每行一条）："""
         
         return prompt
     
@@ -101,14 +101,14 @@ Summary (bullet points only, one per line):"""
         Returns:
             Overall summary paragraph
         """
-        prompt = f"""Read the following {len(scene_texts)} scenes and generate a concise paragraph summarizing the overall story progression.
+        prompt = f"""阅读以下 {len(scene_texts)} 个场景，用中文生成一个简洁的段落，总结整体故事进展。
 
-Scenes:
+场景：
 """
         for i, text in enumerate(scene_texts, 1):
-            prompt += f"\n--- Scene {i} ---\n{text}\n"
-        
-        prompt += "\nOverall Summary:"
+            prompt += f"\n--- 场景 {i} ---\n{text}\n"
+
+        prompt += "\n整体摘要："
         
         response = self.llm.generate(prompt)
         return response.strip()

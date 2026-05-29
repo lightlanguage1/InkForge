@@ -62,6 +62,7 @@ class SkillInjector:
 
     def inject(self, skills: List[Skill], mode: str = "reference"):
         """Inject skills into the project state."""
+        from ..utils.file_ops import write_json
         state_file = self.project_path / "state.json"
         state = json.loads(state_file.read_text(encoding="utf-8"))
 
@@ -77,7 +78,15 @@ class SkillInjector:
             for s in skills
         ]
 
-        state_file.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
+        write_json(str(state_file), state)
+
+    def clear_skills(self):
+        """清空项目的所有活跃技能。"""
+        from ..utils.file_ops import write_json
+        state_file = self.project_path / "state.json"
+        state = json.loads(state_file.read_text(encoding="utf-8"))
+        state["active_skills"] = []
+        write_json(str(state_file), state)
 
     def build_skill_context(self, state: dict) -> str:
         """Build skill reference text for prompts."""

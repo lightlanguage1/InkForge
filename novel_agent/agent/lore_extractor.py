@@ -7,72 +7,61 @@ from typing import Dict, Any, List, Optional
 logger = logging.getLogger(__name__)
 
 
-LORE_EXTRACTION_PROMPT = """You are a world-building analyst extracting established lore from a scene.
+LORE_EXTRACTION_PROMPT = """你是一位世界观分析专家，从场景文本中提取已确立的世界规则。
 
-Your task is to identify significant world rules, constraints, facts, and capabilities that have been established in this scene. Focus on information that:
-- Defines how the world works (physics, magic, technology)
-- Establishes societal rules or norms
-- Reveals capabilities or limitations of characters/technology/magic
-- Sets constraints that should be consistent going forward
+**所有字段必须用中文书写。**
 
-**DO NOT extract:**
-- Character emotions or temporary states
-- Plot events or actions
-- Trivial details
-- Things that are already obvious or universal
+你的任务是识别本场景中已确立的重要世界规则。关注任何定义世界运作方式的信息——无论是物理定律、社会规范、科技水平、魔法体系、还是其他任何影响故事一致性的设定。
 
-## Scene Text
+**不要提取：**
+- 角色情绪或临时状态
+- 情节事件或动作本身
+- 琐碎细节
+- 已经显而易见或通用的常识
+
+## 场景文本
 
 {scene_text}
 
-## Context
+## 上下文
 
-**POV Character:** {pov_character_name} ({pov_character_id})
-**Location:** {location_name} ({location_id})
-**Tick:** {tick}
+**POV 角色：**{pov_character_name}（{pov_character_id}）
+**地点：**{location_name}（{location_id}）
+**Tick：**{tick}
 
-## Your Task
+## 输出格式
 
-Extract significant lore facts from this scene. For each lore item, provide:
-1. **type**: "rule", "fact", "constraint", "capability", or "limitation"
-2. **content**: Clear statement of the lore (1-2 sentences)
-3. **category**: "magic", "technology", "society", "physics", "biology", "culture", "economy", or "other"
-4. **importance**: "critical" (fundamental world rule), "important" (significant constraint), "normal" (useful detail), or "minor" (nice to know)
-5. **tags**: 1-3 relevant tags for categorization
+为每条世界观信息提供：
+1. **type**：根据本条目的性质自行归类（如 规则、事实、约束、能力、限制 等）
+2. **content**：清晰的陈述（1-2句话）
+3. **category**：根据故事世界观自行归类（不要用固定枚举，根据故事实际语境取名）
+4. **importance**：critical（核心世界规则）、important（重要约束）、normal（有用细节）、minor（参考信息）
+5. **tags**：1-3个中文标签
 
-## Output Format
-
-Respond with a JSON object:
+返回 JSON：
 
 ```json
 {{
   "lore_items": [
     {{
-      "type": "rule",
-      "content": "Magic requires verbal incantations to function",
-      "category": "magic",
-      "importance": "critical",
-      "tags": ["magic", "casting", "requirements"]
-    }},
-    {{
-      "type": "constraint",
-      "content": "FTL travel takes a minimum of 3 days between systems",
-      "category": "technology",
-      "importance": "important",
-      "tags": ["travel", "FTL", "time"]
+      "type": "由此场景语境决定",
+      "content": "用中文书写的世界观陈述",
+      "category": "由此场景语境决定",
+      "importance": "critical|important|normal|minor",
+      "tags": ["标签1", "标签2"]
     }}
   ]
 }}
 ```
 
-If no significant lore is established in this scene, return:
+如果没有重要的世界观被确立，返回：
 ```json
 {{
   "lore_items": []
 }}
 ```
 
-Extract only clear, significant lore. When in doubt, don't extract.
+只提取明确且重要的世界观条目。有疑问时不提取。
 """
 
 

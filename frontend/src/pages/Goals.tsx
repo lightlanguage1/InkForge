@@ -14,7 +14,7 @@ export function GoalsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-zinc-900 tracking-tight">目标层级</h1>
+      <h1 className="text-xl font-semibold tracking-tight" style={{ color: "var(--text-1)" }}>目标层级</h1>
 
       {data.story_goal && (
         <Card className="p-4">
@@ -26,20 +26,34 @@ export function GoalsPage() {
 
       {data.protagonist_goals && (
         <Card className="p-4">
-          <h3 className="font-semibold mb-3">
+          <h3 className="font-semibold mb-3" style={{ color: "var(--text-1)" }}>
             {data.protagonist_name || "主角"} 的目标
-            {data.protagonist_goals.arc_goal && <span className="ml-2 text-xs text-indigo-600">弧线: {data.protagonist_goals.arc_goal}</span>}
+            {data.protagonist_goals.arc_goal && (
+              <span className="ml-2 text-xs" style={{ color: "var(--accent)" }}>弧线: {data.protagonist_goals.arc_goal}</span>
+            )}
           </h3>
-          <div className="space-y-2">
-            {data.protagonist_goals.immediate.map((g) => (
-              <ProgressBar key={g} value={data.protagonist_goals!.progress[g] ?? 0} label={g} />
-            ))}
-          </div>
+          {/* 有进度数据时用进度条，否则纯列表（去重，最近20条） */}
+          {Object.keys(data.protagonist_goals.progress).length > 0 ? (
+            <div className="space-y-2">
+              {data.protagonist_goals.immediate.map((g) => (
+                <ProgressBar key={g} value={data.protagonist_goals!.progress[g] ?? 0} label={g} />
+              ))}
+            </div>
+          ) : (
+            <ul className="space-y-1.5">
+              {[...new Set(data.protagonist_goals.immediate)].slice(-20).reverse().map((g, i) => (
+                <li key={i} className="flex items-start gap-2 text-sm" style={{ color: "var(--text-2)" }}>
+                  <span className="mt-0.5 flex-shrink-0 w-1.5 h-1.5 rounded-full mt-1.5" style={{ background: "var(--accent)", opacity: 0.7 }} />
+                  {g}
+                </li>
+              ))}
+            </ul>
+          )}
           {data.protagonist_goals.completed.length > 0 && (
-            <p className="text-sm text-emerald-600 mt-3">已完成: {data.protagonist_goals.completed.join(", ")}</p>
+            <p className="text-sm mt-3" style={{ color: "var(--success, #4ade80)" }}>已完成: {data.protagonist_goals.completed.join("、")}</p>
           )}
           {data.protagonist_goals.abandoned.length > 0 && (
-            <p className="text-sm text-zinc-400 mt-1">已放弃: {data.protagonist_goals.abandoned.join(", ")}</p>
+            <p className="text-sm mt-1" style={{ color: "var(--text-3)" }}>已放弃: {data.protagonist_goals.abandoned.join("、")}</p>
           )}
         </Card>
       )}

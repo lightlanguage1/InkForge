@@ -34,6 +34,17 @@ def get_plot_status(project_dir: Path) -> Dict[str, Any]:
         "last_updated": outline.last_updated,
         "duplicate_ids": [] if isinstance(issues, list) else issues.get("duplicate_ids", []),
         "missing_prerequisites": [] if isinstance(issues, list) else issues.get("missing_prerequisites", []),
+        "beats": [
+            {
+                "id": b.id,
+                "description": b.description,
+                "status": b.status,
+                "characters_involved": b.characters_involved or [],
+                "location": b.location or "",
+                "tension_target": b.tension_target,
+            }
+            for b in outline.beats
+        ],
     }
 
 

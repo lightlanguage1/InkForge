@@ -14,12 +14,13 @@ class StreamingStoryAgent:
     enabling real-time progress display in API consumers.
     """
 
-    def __init__(self, agent: Any):
+    def __init__(self, agent: Any, notes: str = ""):
         self.agent = agent
+        self.notes = notes
 
     def tick_stream(self) -> Generator[str, None, None]:
-        """Execute one tick and yield SSE-formatted event strings."""
         tick = self.agent.state.get("current_tick", 0)
+        self.agent._tick_notes = self.notes  # 注入到 agent.tick() 流程
         yield self._event("tick_start", {"tick": tick})
         try:
             if tick == 0:
@@ -36,13 +37,15 @@ class StreamingStoryAgent:
 
         yield self._event("phase", {"name": "context", "tick": tick})
         context = self.agent.context_builder.build_planner_context(
-            self.agent.state, current_beat=current_beat
+            self.agent.state, current_beat=current_beat,
+            notes=getattr(self.agent, '_tick_notes', ''),
         )
 
         yield self._event("phase", {"name": "planning", "tick": tick})
         plan = self.agent._generate_plan(context)
         from .schemas import validate_plan
         validate_plan(plan)
+        self.agent._enforce_threads(plan, tick)
 
         yield self._event("phase", {"name": "execution", "tick": tick})
         execution_results = self.agent.executor.execute_plan(plan, tick)
@@ -51,7 +54,8 @@ class StreamingStoryAgent:
 
         yield self._event("phase", {"name": "writing", "tick": tick})
         writer_context = self.agent.writer_context_builder.build_writer_context(
-            plan, execution_results, self.agent.state
+            plan, execution_results, self.agent.state,
+            notes=getattr(self.agent, '_tick_notes', ''),
         )
 
         yield self._event("phase", {"name": "generating", "tick": tick})
@@ -80,6 +84,7 @@ class StreamingStoryAgent:
         yield self._event("phase", {"name": "memory", "tick": tick})
         self.agent._update_memory(scene_data["text"], scene_id, tick)
         self.agent._check_goal_promotion(tick)
+        self.agent._maybe_audit_threads(tick)
 
         self.agent.state["current_tick"] += 1
         self.agent._save_state()
@@ -88,6 +93,7 @@ class StreamingStoryAgent:
             tick, scene_id, scene_data, execution_results,
             eval_result, tension_result,
         )
+        result["text"] = scene_data.get("text", "")[:8000]
         yield self._event("tick_complete", result)
 
     def _stream_first_tick(self, tick: int) -> Generator[str, None, None]:
@@ -95,7 +101,9 @@ class StreamingStoryAgent:
         agent = self.agent
 
         yield self._event("phase", {"name": "context", "tick": tick})
-        context = agent.context_builder.build_planner_context(agent.state)
+        context = agent.context_builder.build_planner_context(
+            agent.state, notes=getattr(agent, '_tick_notes', ''),
+        )
 
         yield self._event("phase", {"name": "planning", "tick": tick})
         plan = agent._generate_plan(context)
@@ -116,7 +124,8 @@ class StreamingStoryAgent:
 
         yield self._event("phase", {"name": "writing", "tick": tick})
         writer_context = agent.writer_context_builder.build_writer_context(
-            plan, execution_results, agent.state
+            plan, execution_results, agent.state,
+            notes=getattr(agent, '_tick_notes', ''),
         )
 
         yield self._event("phase", {"name": "generating", "tick": tick})
@@ -149,6 +158,7 @@ class StreamingStoryAgent:
             "scene_id": scene_id,
             "scene_file": f"scenes/scene_{tick:03d}.md",
             "word_count": scene_data.get("word_count", 0),
+            "text": scene_data.get("text", "")[:8000],
         }
         yield self._event("tick_complete", result)
 

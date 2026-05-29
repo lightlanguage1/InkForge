@@ -5,7 +5,7 @@ import { Layout } from "../components/Layout";
 import { Spinner } from "../components/ui/Spinner";
 import { ProjectCard } from "../components/ProjectCard";
 import { NewProjectModal } from "../components/NewProjectModal";
-import { listProjects, resume, createProject } from "../api/projects";
+import { listProjects, resume, createProject, deleteProject } from "../api/projects";
 import { listSkills } from "../api/skills";
 import type { CreateProjectReq } from "../types/project";
 
@@ -40,6 +40,12 @@ export function DashboardPage() {
       setShowNew(false);
       navigate(`/project/${id}`);
     },
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (projectId: string) => deleteProject(projectId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["projects"] }),
+    onError: () => alert("删除失败，请检查服务端日志。"),
   });
 
   const projects = data?.projects ?? [];
@@ -162,6 +168,7 @@ export function DashboardPage() {
                     <ProjectCard
                       project={p}
                       onClick={() => navigate(`/project/${p.project_path.split(/[\\/]/).pop()}`)}
+                      onDelete={(pid) => deleteMut.mutate(pid)}
                     />
                   </div>
                 ))}

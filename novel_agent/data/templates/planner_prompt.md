@@ -58,10 +58,12 @@
 
 {absent_characters}
 
+{thread_dashboard}
+
 **角色处理规则：**
 - 配角不能出现1-2章后无故消失。每个配角必须有离场原因或持续存在的理由。角色离场时，更新其 off_screen_note 字段说明去向。
 - 角色死亡必须有充分的叙事铺垫和后果，不能为了推进剧情随意杀死配角。
-- 标记为 sidelined 或缺席的角色应考虑在合适时机回归（5-20章后）。
+- 标记为 sidelined 或缺席的角色应在合适的叙事时机回归，避免长期闲置。
 - 配角应有自己的故事线——他们可能在多章中持续出现、做自己的事情、然后因具体事件暂时离场。
 
 ## 可用工具
@@ -110,6 +112,10 @@
    - 类似的动作
    - 类似的情感节拍
 
+5. **追踪角色关系**——任何角色之间有意义的互动都必须调用 relationship.create 记录，已有关系的演变调用 relationship.update。
+   - 首次对话/合作/冲突 → relationship.create
+   - 关系状态变化（信任加深、产生矛盾等）→ relationship.update
+
 **规划问题：**
 
 1. 这一场景结束时什么会改变？
@@ -121,12 +127,10 @@
 
 在回答之前，使用上述**最近场景**、**张力模式**和**近期 QA 反馈**部分的信息，为以下规划字段做出选择：
 
-- `scene_mode`  Primary mode for this scene. Choose from `dialogue`, `political`, `action`, `technical`, or `introspective`.
-  - Prefer a different `scene_mode` than the last few scenes when possible.
-  - If recent QA or recent scenes show repeated `technical` mode, bias this scene toward `dialogue` or `political` to vary texture.
+- `scene_mode`  本场景的主要叙事模式。根据故事语境自行选择，描述本场景的叙事质感（1-2个中文词，如"对话""动作""内省""群像"等）。优先使用与最近几场不同的模式。
 - `palette_shift`  Short phrase or list that changes the sensory/emotional palette (e.g., `"heat, copper, crowd-noise"` or `"administrative neon, recycled air, clipped voices"`).
 - `transition_path`  1-3 sentence outline of how we move from the end of the previous scene into this one (physical/temporal bridge). **Required for every scene.** Describe the concrete moment that connects the two scenes.
-- `dialogue_targets`  Optional dialogue goals. Prefer a structured object (e.g. `{{ "min_exchanges": 6, "conflict_axis": "leverage vs trust", "participants": ["C000", "corp_proxy"] }}`).
+- `dialogue_targets`  可选对话目标。如有对话场景，提供结构化对象（例如 `{{ "min_exchanges": 6, "participants": ["C000", "C001"] }}`）。
 - `beat_target`  Specify how this scene relates to the Next Plot Beat (if shown above). Choose from `"direct"`, `"setup"`, `"followup"`, or `"skip"` and provide a brief explanation in `notes`.
 
 然后输出以下 JSON 对象：
@@ -138,16 +142,17 @@
   "key_change": "One sentence: What is fundamentally different after this scene?",
   "progress_milestone": "Specific milestone achieved toward resolving a loop (optional)",
   "progress_step": "setup|complication|reversal|revelation|decision|resolution (optional)",
-  "scene_mode": "dialogue|political|action|technical|introspective (choose mode that differs from the previous scene when possible)",
+  "scene_mode": "根据故事语境自行选择的中文叙事模式标签（1-2个词）",
   "palette_shift": "Short description of the scene's sensory/emotional palette (e.g., 'heat, copper, crowd-noise')",
   "transition_path": "1–3 sentence description of how we move from the previous scene/location to this one (required)",
-  "dialogue_targets": "Optional description of dialogue goals (e.g., 'at least 6 exchanges, conflict axis: leverage vs trust, participants: C000 and corp_proxy')",
+  "dialogue_targets": "可选的对话目标描述（如 '至少6轮对话，参与者: C000, C001'）",
   "beat_target": {{
     "beat_id": "{{optional beat id from Next Plot Beat or null}}",
     "strategy": "direct|setup|followup|skip",
     "notes": "Brief explanation of how/why this scene does or does not execute the beat"
   }},
   "loops_addressed": ["OL4", "OL5"],
+  "threads_addressed": ["ST001"],
   "pov_character": "Character ID for POV (use {active_character_id} or specify another)",
   "target_location": "Location ID where scene takes place (or null for new location)",
   "actions": [
@@ -175,8 +180,8 @@
 - 使用 memory.search 回忆相关上下文
 - 使用 character.generate 创建新角色——**请根据故事风格和角色定位提供合适的 name 参数（中文姓名）**
 - 使用 location.generate 根据需要创建地点
-- 在角色首次有重要互动时使用 relationship.create
-- 使用 relationship.update 追踪关系变化
+- **使用 relationship.create 创建角色关系**——任何两个角色之间有意义的互动（对话、合作、冲突、情感交流）都必须创建关系记录
+- 使用 relationship.update 追踪已有关系的变化（conflict_axis、status、intensity 等）
 - Use faction.generate/update/query to ground organizations when referenced (avoid generic “corporate”)
   - 需要新组织时，始终调用 faction.generate 创建；不要用编造的 id 调用 faction.update。
   - 调用 faction.update 时，id 参数必须是从之前的 faction.generate 或 faction.query 调用返回的真实 faction id。

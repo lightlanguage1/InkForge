@@ -1,5 +1,5 @@
 import { get } from "./client";
-import type { CharacterItem, CharacterDetail, LocationItem, LocationDetail, SceneItem, SceneDetail, LoopItem, FactionItem, FactionDetail } from "../types/entities";
+import type { CharacterItem, CharacterDetail, LocationItem, LocationDetail, SceneItem, SceneDetail, LoopItem, FactionItem, FactionDetail, RelationshipGraph } from "../types/entities";
 
 export function getCharacters(projectId: string) {
   return get<{ characters: CharacterItem[] }>(`/v1/project/${projectId}/characters`);
@@ -35,4 +35,8 @@ export function getFactions(projectId: string) {
 
 export function getFaction(projectId: string, factionId: string) {
   return get<FactionDetail>(`/v1/project/${projectId}/factions/${factionId}`);
+}
+
+export function getRelationships(projectId: string) {
+  return get<RelationshipGraph>(`/v1/project/${projectId}/relationships`);
 }

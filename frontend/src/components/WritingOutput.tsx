@@ -27,11 +27,12 @@ interface Props {
   streamMode: boolean;
   tickPending: boolean;
   isDayMode: boolean;
+  phase?: string;
   theme: WritingTheme;
-  onToggleTheme: () => void; // kept for future use, currently toggle lives in Writing.tsx
+  onToggleTheme: () => void;
 }
 
-export function WritingOutput({ text, result, running, streamMode, tickPending, theme }: Props) {
+export function WritingOutput({ text, result, running, streamMode, tickPending, phase, theme }: Props) {
   const t = theme;
   return (
     <div
@@ -43,9 +44,15 @@ export function WritingOutput({ text, result, running, streamMode, tickPending, 
         className="flex items-center justify-between px-5 py-3 flex-shrink-0 transition-colors duration-300"
         style={{ borderBottom: `1px solid ${t.cardBorder}` }}
       >
-        <h3 className="font-semibold text-[13px] transition-colors duration-300" style={{ color: t.text2 }}>
-          输出
-        </h3>
+        <div className="flex items-center gap-2">
+          <h3 className="font-semibold text-[13px] transition-colors duration-300" style={{ color: t.text2 }}>输出</h3>
+          {phase && (
+            <span className="text-[11px] px-2 py-0.5 rounded-full animate-pulse"
+              style={{ background: "var(--accent)", color: "var(--bg-base)" }}>
+              {phase}
+            </span>
+          )}
+        </div>
 
         <div className="flex items-center gap-3">
           {running && (
@@ -66,13 +73,13 @@ export function WritingOutput({ text, result, running, streamMode, tickPending, 
         className="flex-1 overflow-auto p-5 transition-colors duration-300"
         style={{ background: t.outputBg }}
       >
-        {/* Stream text */}
-        {streamMode && (text || running) ? (
+        {/* Stream / completed text */}
+        {text ? (
           <pre
             className="text-sm whitespace-pre-wrap font-sans leading-[1.9] transition-colors duration-300"
             style={{ color: t.text }}
           >
-            {text || ""}
+            {text}
           </pre>
 
         ) : running ? (
@@ -89,13 +96,13 @@ export function WritingOutput({ text, result, running, streamMode, tickPending, 
                 AI 正在创作中...
               </p>
               <p className="text-xs mt-1 transition-colors duration-300" style={{ color: t.text3 }}>
-                {tickPending ? "生成一幕" : "连续 5 幕"} · 请稍候
+                请稍候
               </p>
             </div>
           </div>
 
         ) : result ? (
-          /* Completed — show result summary if no stream text */
+          /* Completed — show result summary if no scene text */
           <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
             <div
               className="w-12 h-12 rounded-xl flex items-center justify-center text-xl transition-all duration-300"

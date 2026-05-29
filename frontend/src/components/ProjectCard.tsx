@@ -17,70 +17,97 @@ function resolveConfig(name: string): [string, string, string] {
 interface Props {
   project: ProjectInfo;
   onClick: () => void;
+  onDelete: (projectId: string) => void;
 }
 
-export function ProjectCard({ project, onClick }: Props) {
+export function ProjectCard({ project, onClick, onDelete }: Props) {
   const name = project.novel_name || project.project_path.split(/[\\/]/).pop() || "?";
-  const pid  = (project.project_path || "").split(/[\\/]/).pop();
+  const pid  = (project.project_path || "").split(/[\\/]/).pop() ?? "";
   const tick = project.current_tick ?? 0;
   const progress = Math.min(100, Math.max(4, (tick / 50) * 100));
   const [gradient, accentColor, shadow] = resolveConfig(name);
 
+  function handleDelete(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (window.confirm(`确认删除项目「${name}」？\n\n此操作不可恢复，项目文件将被永久删除。`)) {
+      onDelete(pid);
+    }
+  }
+
   return (
-    <button className="text-left w-full" onClick={onClick}>
-      <div
-        className={`bg-gradient-to-br ${gradient} rounded-2xl overflow-hidden hover:-translate-y-0.5 transition-all duration-300`}
+    <div className="relative group text-left w-full">
+      {/* Delete button — visible on card hover */}
+      <button
+        onClick={handleDelete}
+        className="absolute top-3 right-3 z-10 w-7 h-7 rounded-full flex items-center justify-center
+                   opacity-0 group-hover:opacity-100 transition-opacity duration-150"
         style={{
-          boxShadow: `0 8px 32px ${shadow}, 0 1px 4px rgba(0,0,0,0.4)`,
-          border: "1px solid rgba(240,236,226,0.06)",
+          background: "rgba(200,80,80,0.75)",
+          color: "#fff",
+          fontSize: "13px",
+          lineHeight: 1,
+          backdropFilter: "blur(4px)",
         }}
+        title="删除项目"
       >
-        <div className="relative p-5 pt-6 min-h-[188px] flex flex-col justify-between">
-          {/* Large ghost initial */}
-          <span
-            className="absolute right-3 top-0 text-[96px] font-black leading-none select-none pointer-events-none"
-            style={{ color: accentColor, opacity: 0.08 }}
-          >
-            {name[0]}
-          </span>
+        ✕
+      </button>
 
-          <div className="relative">
+      <button className="text-left w-full" onClick={onClick}>
+        <div
+          className={`bg-gradient-to-br ${gradient} rounded-2xl overflow-hidden hover:-translate-y-0.5 transition-all duration-300`}
+          style={{
+            boxShadow: `0 8px 32px ${shadow}, 0 1px 4px rgba(0,0,0,0.4)`,
+            border: "1px solid rgba(240,236,226,0.06)",
+          }}
+        >
+          <div className="relative p-5 pt-6 min-h-[188px] flex flex-col justify-between">
+            {/* Large ghost initial */}
             <span
-              className="inline-block text-[10px] font-medium rounded-full px-2.5 py-0.5"
-              style={{ background: "rgba(240,236,226,0.08)", color: "rgba(240,236,226,0.5)" }}
+              className="absolute right-3 top-0 text-[96px] font-black leading-none select-none pointer-events-none"
+              style={{ color: accentColor, opacity: 0.08 }}
             >
-              {tick > 0 ? `第 ${tick} 幕` : "未开始"}
+              {name[0]}
             </span>
-          </div>
 
-          <div className="relative mt-6">
-            <h3 className="font-semibold text-[15px] leading-tight truncate text-parchment">{name}</h3>
-            <p
-              className="text-[11px] font-mono mt-0.5 truncate"
-              style={{ color: "rgba(240,236,226,0.25)" }}
-            >
-              {pid}
-            </p>
-            <div className="mt-3.5">
-              <div
-                className="h-[2px] rounded-full overflow-hidden"
-                style={{ background: "rgba(240,236,226,0.1)" }}
+            <div className="relative">
+              <span
+                className="inline-block text-[10px] font-medium rounded-full px-2.5 py-0.5"
+                style={{ background: "rgba(240,236,226,0.08)", color: "rgba(240,236,226,0.5)" }}
               >
-                <div
-                  className="h-full rounded-full"
-                  style={{ width: `${progress}%`, background: accentColor, opacity: 0.6 }}
-                />
-              </div>
+                {tick > 0 ? `第 ${tick} 幕` : "未开始"}
+              </span>
+            </div>
+
+            <div className="relative mt-6">
+              <h3 className="font-semibold text-[15px] leading-tight truncate text-parchment">{name}</h3>
               <p
-                className="text-[10px] mt-1.5 tabular-nums font-mono"
+                className="text-[11px] font-mono mt-0.5 truncate"
                 style={{ color: "rgba(240,236,226,0.25)" }}
               >
-                {tick} / 50 幕
+                {pid}
               </p>
+              <div className="mt-3.5">
+                <div
+                  className="h-[2px] rounded-full overflow-hidden"
+                  style={{ background: "rgba(240,236,226,0.1)" }}
+                >
+                  <div
+                    className="h-full rounded-full"
+                    style={{ width: `${progress}%`, background: accentColor, opacity: 0.6 }}
+                  />
+                </div>
+                <p
+                  className="text-[10px] mt-1.5 tabular-nums font-mono"
+                  style={{ color: "rgba(240,236,226,0.25)" }}
+                >
+                  {tick} / 50 幕
+                </p>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-    </button>
+      </button>
+    </div>
   );
 }

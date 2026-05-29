@@ -9,7 +9,7 @@ from ..configs.constants import (
     OPEN_LOOPS_FILE, RELATIONSHIPS_FILE, LORE_FILE, COUNTERS_FILE, STATE_FILE,
 )
 from .entities import (
-    Character, Location, Scene, OpenLoop, RelationshipGraph, Lore, Faction,
+    Character, Location, Scene, OpenLoop, RelationshipGraph, Lore, Faction, StoryThread,
     HistoryEntry, RelationshipHistoryEntry
 )
 
@@ -29,6 +29,7 @@ class MemoryManager:
         self.locations_path = self.memory_path / "locations"
         self.scenes_path = self.memory_path / "scenes"
         self.factions_path = self.memory_path / "factions"
+        self.story_threads_path = self.memory_path / "story_threads"
         self.qa_path = self.memory_path / "qa"
         self.open_loops_file = self.memory_path / OPEN_LOOPS_FILE
         self.relationships_file = self.memory_path / RELATIONSHIPS_FILE
@@ -47,6 +48,7 @@ class MemoryManager:
         self.locations_path.mkdir(exist_ok=True)
         self.scenes_path.mkdir(exist_ok=True)
         self.factions_path.mkdir(exist_ok=True)
+        self.story_threads_path.mkdir(exist_ok=True)
         self.qa_path.mkdir(exist_ok=True)
         
         # Initialize empty files if they don't exist
@@ -85,6 +87,7 @@ class MemoryManager:
             "relationship",
             "lore",
             "faction",
+            "story_thread",
         ]:
             if key not in self.counters:
                 self.counters[key] = 0
@@ -150,6 +153,21 @@ class MemoryManager:
 
         if max_faction >= 0 and self.counters.get("faction", 0) <= max_faction:
             self.counters["faction"] = max_faction + 1
+            changed = True
+
+        # Ensure the story_thread counter is at least one past the highest ST* on disk
+        max_st = -1
+        for f in self.story_threads_path.glob("ST*.json"):
+            stem = f.stem
+            try:
+                idx = int(stem[2:])
+            except (ValueError, IndexError):
+                continue
+            if idx > max_st:
+                max_st = idx
+
+        if max_st >= 0 and self.counters.get("story_thread", 0) <= max_st:
+            self.counters["story_thread"] = max_st + 1
             changed = True
 
         # Ensure the open_loop counter is past any OL* IDs in open_loops.json
@@ -287,6 +305,8 @@ class MemoryManager:
             return f"R{current}"
         elif entity_type == "faction":
             return f"F{current}"
+        elif entity_type == "story_thread":
+            return f"ST{current:03d}"
         else:
             raise ValueError(f"Unknown entity type: {entity_type}")
     
@@ -437,16 +457,18 @@ class MemoryManager:
     # Generic Entity Operations
     # ========================================================================
     
-    def load_entity(self, entity_id: str) -> Optional[Union[Character, Location, Scene, Faction]]:
+    def load_entity(self, entity_id: str) -> Optional[Union[Character, Location, Scene, Faction, StoryThread]]:
         """Load an entity by ID (auto-detects type from prefix).
-        
+
         Args:
             entity_id: Entity ID (C0, L0, S001, etc.)
-        
+
         Returns:
             Entity object or None if not found
         """
-        if entity_id.startswith("C"):
+        if entity_id.startswith("ST"):
+            return self.load_thread(entity_id)
+        elif entity_id.startswith("C"):
             return self.load_character(entity_id)
         elif entity_id.startswith("L"):
             return self.load_location(entity_id)
@@ -457,7 +479,7 @@ class MemoryManager:
         else:
             raise ValueError(f"Unknown entity ID format: {entity_id}")
     
-    def save_entity(self, entity: Union[Character, Location, Scene, Faction]):
+    def save_entity(self, entity: Union[Character, Location, Scene, Faction, StoryThread]):
         """Save an entity to disk (auto-detects type)."""
         if isinstance(entity, Character):
             self.save_character(entity)
@@ -467,6 +489,8 @@ class MemoryManager:
             self.save_scene(entity)
         elif isinstance(entity, Faction):
             self.save_faction(entity)
+        elif isinstance(entity, StoryThread):
+            self.save_thread(entity)
         else:
             raise ValueError(f"Unknown entity type: {type(entity)}")
     
@@ -496,6 +520,8 @@ class MemoryManager:
             return self.list_scenes()
         elif entity_type == "faction":
             return self.list_factions()
+        elif entity_type == "story_thread":
+            return self.list_threads()
         else:
             raise ValueError(f"Unknown entity type: {entity_type}")
 
@@ -600,15 +626,9 @@ class MemoryManager:
         self.invalidate_cache()
     
     def get_open_loops(self, status: str = "open") -> List[OpenLoop]:
-        """Get loops by status.
-        
-        Args:
-            status: Status filter (open, resolved, abandoned)
-        
-        Returns:
-            List of matching loops
-        """
         loops = self.load_open_loops()
+        if not loops:
+            return []
         return [loop for loop in loops if loop.status == status]
     
     # ========================================================================
@@ -843,3 +863,52 @@ class MemoryManager:
         data = {"lore": [l.to_dict() for l in lore_list]}
         self._write_json(self.lore_file, data)
         self.invalidate_cache()
+
+    # ========================================================================
+    # CRUD Operations — StoryThreads
+    # ========================================================================
+
+    def load_thread(self, thread_id: str) -> Optional[StoryThread]:
+        path = self.story_threads_path / f"{thread_id}.json"
+        if not path.exists():
+            return None
+        data = self._read_json(path)
+        return StoryThread.from_dict(data)
+
+    def save_thread(self, thread: StoryThread):
+        thread.updated_at = datetime.utcnow().isoformat() + "Z"
+        path = self.story_threads_path / f"{thread.id}.json"
+        self._write_json(path, thread.to_dict())
+        self.invalidate_cache()
+
+    def delete_thread(self, thread_id: str):
+        path = self.story_threads_path / f"{thread_id}.json"
+        if path.exists():
+            path.unlink()
+            self.invalidate_cache()
+
+    def list_threads(self) -> List[str]:
+        return sorted(f.stem for f in self.story_threads_path.glob("ST*.json"))
+
+    def get_all_threads(self) -> List[StoryThread]:
+        def _load():
+            result = []
+            for tid in self.list_threads():
+                t = self.load_thread(tid)
+                if t:
+                    result.append(t)
+            return result
+        return self._cache_get("all_threads", _load)
+
+    def get_threads_by_status(self, status: str) -> List[StoryThread]:
+        return [t for t in self.get_all_threads() if t.status == status]
+
+    def advance_thread(self, thread_id: str, tick: int, scene_id: str, note: str = ""):
+        thread = self.load_thread(thread_id)
+        if not thread:
+            return
+        thread.last_advanced_tick = tick
+        thread.advancement_history.append({"tick": tick, "scene_id": scene_id, "note": note})
+        if thread.status == "pending":
+            thread.status = "active"
+        self.save_thread(thread)

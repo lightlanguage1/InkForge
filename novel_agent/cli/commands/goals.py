@@ -31,13 +31,19 @@ def get_goals_info(project_dir: Path, state: dict) -> Dict[str, Any]:
     if protagonist_id:
         protagonist = memory.load_character(protagonist_id)
         if protagonist:
+            # 优先用结构化字段，否则回退到 current_state.goals
+            immediate = protagonist.immediate_goals or []
+            if not immediate and protagonist.current_state:
+                cs = protagonist.current_state
+                state_goals = cs.goals if hasattr(cs, 'goals') else (cs.get('goals', []) if isinstance(cs, dict) else [])
+                immediate = state_goals or []
             protagonist_goals = {
-                'immediate': protagonist.immediate_goals,
+                'immediate': immediate,
                 'arc_goal': protagonist.arc_goal,
                 'story_goal': protagonist.story_goal,
                 'progress': protagonist.goal_progress,
-                'completed': protagonist.goals_completed,
-                'abandoned': protagonist.goals_abandoned
+                'completed': protagonist.goals_completed or [],
+                'abandoned': protagonist.goals_abandoned or []
             }
     
     # Get open loops marked as story goals

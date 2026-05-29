@@ -19,22 +19,22 @@ export function CompilePage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-zinc-900 tracking-tight">Compile / Export</h1>
+      <h1 className="font-semibold" style={{ fontSize: "1.375rem", color: "var(--text-1)" }}>编译导出</h1>
       <Card className="p-4">
         <div className="flex gap-3 items-end">
-          <Select label="Format" value={format} onChange={setFormat}
-            options={[{ value: "markdown", label: "Markdown" }, { value: "html", label: "HTML" }, { value: "prose", label: "Prose" }]} />
-          <Button onClick={() => compileMut.mutate()} loading={compileMut.isPending}>Compile</Button>
-          <Button variant="ghost" onClick={() => summaryMut.mutate()} loading={summaryMut.isPending}>Summary</Button>
-          <Button variant="ghost" onClick={() => titleMut.mutate()} loading={titleMut.isPending}>Titles</Button>
+          <Select label="格式" value={format} onChange={setFormat}
+            options={[{ value: "markdown", label: "Markdown" }, { value: "html", label: "HTML" }, { value: "prose", label: "纯文本" }]} />
+          <Button onClick={() => compileMut.mutate()} loading={compileMut.isPending}>编译</Button>
+          <Button variant="ghost" onClick={() => summaryMut.mutate()} loading={summaryMut.isPending}>摘要</Button>
+          <Button variant="ghost" onClick={() => titleMut.mutate()} loading={titleMut.isPending}>起名</Button>
         </div>
       </Card>
 
       {titles.length > 0 && (
         <Card className="p-4">
-          <h3 className="font-semibold mb-2">Title Suggestions</h3>
+          <h3 className="font-semibold mb-2" style={{ color: "var(--text-1)" }}>书名建议</h3>
           <div className="grid grid-cols-2 gap-1">
-            {titles.map((t, i) => <p key={i} className="text-sm text-zinc-700">{i + 1}. {t}</p>)}
+            {titles.map((t, i) => <p key={i} className="text-sm" style={{ color: "var(--text-2)" }}>{i + 1}. {t}</p>)}
           </div>
         </Card>
       )}
@@ -43,10 +43,11 @@ export function CompilePage() {
         content && (
           <Card className="p-4">
             <div className="flex justify-between mb-2">
-              <h3 className="font-semibold">Output</h3>
-              <Button variant="ghost" size="sm" onClick={() => navigator.clipboard.writeText(content)}>Copy</Button>
+              <h3 className="font-semibold" style={{ color: "var(--text-1)" }}>输出</h3>
+              <Button variant="ghost" size="sm" onClick={() => navigator.clipboard.writeText(content)}>复制</Button>
             </div>
-            <pre className="text-sm whitespace-pre-wrap bg-zinc-50 border border-zinc-100 p-4 rounded-lg max-h-96 overflow-auto text-zinc-700">{content}</pre>
+            <pre className="text-sm whitespace-pre-wrap p-4 rounded-lg max-h-96 overflow-auto"
+              style={{ background: "var(--pre-bg)", border: "1px solid var(--border)", color: "var(--text-2)" }}>{content}</pre>
           </Card>
         )
       )}

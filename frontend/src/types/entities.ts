@@ -111,3 +111,15 @@ export interface FactionItem {
 }
 
 export type FactionDetail = FactionItem;
+
+export interface GraphNode {
+  id: string; name: string; status: string;
+  degree: number; colorGroup: number;
+}
+export interface GraphEdge {
+  source: string; target: string; sourceName: string; targetName: string;
+  type: string; status: string; description: string;
+}
+export interface RelationshipGraph {
+  nodes: GraphNode[]; edges: GraphEdge[];
+}

@@ -23,11 +23,11 @@ PLAN_SCHEMA = {
         },
         "progress_step": {
             "type": ["string", "null"],
-            "description": "High-level step type (setup|complication|reversal|revelation|decision|resolution)"
+            "description": "High-level step type — 由 LLM 根据叙事节奏自行判断"
         },
         "scene_mode": {
             "type": ["string", "null"],
-            "description": "Primary mode for this scene: dialogue|political|action|technical|introspective"
+            "description": "本场景的主要叙事模式，由 LLM 根据故事语境自行选择"
         },
         "palette_shift": {
             "type": ["string", "null"],
@@ -66,6 +66,11 @@ PLAN_SCHEMA = {
                     "description": "Planner explanation of why the beat is executed, deferred, or skipped"
                 }
             }
+        },
+        "threads_addressed": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Thread IDs that this scene will advance (required when stale threads exist)"
         },
         "actions": {
             "type": "array",

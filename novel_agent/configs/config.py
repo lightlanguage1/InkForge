@@ -50,7 +50,7 @@ DEFAULT_CONFIG = {
         'prompt_for_character_creation': True,  # Show tips about detected characters
 
         # Plot-first mode configuration
-        'use_plot_first': False,  # Enable emergent plot-first architecture
+        'use_plot_first': True,  # Enable emergent plot-first architecture
         'plot_first_start_tick': 2,  # Start plot-first mode from this tick (allows character setup)
         'plot_beats_ahead': 5,  # Generate this many beats at a time
         'plot_regeneration_threshold': 2,  # Regenerate when pending beats < this

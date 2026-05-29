@@ -40,7 +40,7 @@ class Faction:
 
     # Core identity
     name: str = ""
-    org_type: str = "other"  # corporate | government | guild | criminal | cult | ai_collective | syndicate | consortium | other
+    org_type: str = "other"  # 由 LLM 根据故事语境自行归类
     summary: str = ""
 
     # Capabilities and position
@@ -299,15 +299,11 @@ class Character:
     off_screen_note: str = ""  # 离场原因 / 当前在做什么
     @property
     def full_name(self) -> str:
-        """Get full name with title if present."""
-        parts = []
+        """Get full name: family_name + first_name (Chinese convention)."""
+        core = (self.family_name or "") + (self.first_name or "")
         if self.title:
-            parts.append(self.title)
-        if self.first_name:
-            parts.append(self.first_name)
-        if self.family_name:
-            parts.append(self.family_name)
-        return " ".join(parts) if parts else "Unnamed"
+            return f"{self.title} {core}" if core else self.title
+        return core if core else "Unnamed"
     
     @property
     def display_name(self) -> str:
@@ -484,7 +480,7 @@ class OpenLoop:
     created_at: str = ""
     created_in_scene: str = ""
     status: str = "open"  # open, resolved, abandoned
-    category: str = ""  # mystery, relationship, goal, threat, etc.
+    category: str = ""    # 由 LLM 根据语境自行归类
     description: str = ""
     importance: str = "medium"  # low, medium, high, critical
     related_characters: List[str] = field(default_factory=list)
@@ -583,9 +579,9 @@ class Lore:
     """
     id: str
     type: str = "lore"
-    lore_type: str = ""  # "rule", "fact", "constraint", "capability", "limitation"
-    content: str = ""  # The actual lore statement
-    category: str = ""  # "magic", "technology", "society", "physics", "biology", etc.
+    lore_type: str = ""    # 由 LLM 根据语境自行归类
+    content: str = ""      # 世界观陈述内容（中文）
+    category: str = ""     # 由 LLM 根据故事情境自行归类
     source_scene_id: str = ""  # Scene where this was established
     tick: int = 0
     importance: str = "normal"  # "critical", "important", "normal", "minor"
@@ -702,3 +698,50 @@ class PlotOutline:
     def now_iso() -> str:
         """Get current timestamp in ISO format."""
         return datetime.utcnow().isoformat() + "Z"
+
+
+@dataclass
+class StoryThread:
+    """Named narrative thread spanning multiple scenes — 故事支线追踪。
+
+    Tracks subplot arcs, relationship arcs, mystery threads, and character
+    arcs as first-class entities. LLM suggestions flow through pending →
+    user confirmation → active → resolved.
+    """
+    id: str                          # ST000, ST001...
+    type: str = "story_thread"
+    created_at: str = ""
+    updated_at: str = ""
+
+    name: str = ""                   # 支线名称
+    description: str = ""            # 支线描述
+    category: str = "subplot"        # main|subplot|relationship|mystery|character_arc
+    status: str = "pending"          # pending|active|dormant|resolved|rejected
+    importance: str = "medium"       # critical|high|medium|low
+    source: str = "llm_suggested"    # llm_suggested|user_created
+
+    introduced_tick: int = 0
+    last_advanced_tick: int = 0
+    advancement_history: list = field(default_factory=list)  # [{tick, scene_id, note}]
+
+    related_characters: list = field(default_factory=list)   # ["C000", "C003"]
+    related_scenes: list = field(default_factory=list)       # ["S005", "S012"]
+    related_loops: list = field(default_factory=list)        # ["OL01"]
+
+    suggestion_evidence: str = ""      # LLM suggestion only
+    suggestion_confidence: str = ""    # high|medium|low (LLM suggestion only)
+    resolution_note: str = ""
+
+    def __post_init__(self):
+        now = datetime.utcnow().isoformat() + "Z"
+        if not self.created_at:
+            self.created_at = now
+        if not self.updated_at:
+            self.updated_at = self.created_at
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "StoryThread":
+        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})

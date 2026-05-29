@@ -23,10 +23,10 @@ export function ScenesPage() {
   return (
     <div className="flex gap-6 h-full">
       <EntityList title="场景" columns={columns} data={list?.scenes ?? []} loading={isLoading}
-        onRowClick={(s: SceneItem) => setSelected(s.file)} />
+        onRowClick={(s: SceneItem) => setSelected(`S${String(s.number).padStart(3, "0")}`)} />
       <Modal open={!!detail} title={`场景详情`} onClose={() => setSelected(null)}>
         {detail && (
-          <div className="space-y-2 text-sm">
+          <div className="p-6 space-y-2 text-sm" style={{ overflowWrap: "break-word", wordBreak: "break-word" }}>
             <p><strong>标题:</strong> {detail.title}</p>
             <p><strong>POV:</strong> {detail.pov_character_id}</p>
             <p><strong>地点:</strong> {detail.location_id}</p>

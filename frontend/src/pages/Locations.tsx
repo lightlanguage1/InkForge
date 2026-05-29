@@ -14,7 +14,7 @@ export function LocationsPage() {
 
   const columns = [
     { key: "name", header: "名称" },
-    { key: "type", header: "类型" },
+    { key: "description", header: "描述" },
     { key: "atmosphere", header: "氛围" },
   ];
 

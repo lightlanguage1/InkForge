@@ -10,6 +10,7 @@ export interface StatusInfo {
   lore_count: number;
   word_count: number;
   avg_tension: number;
+  generating?: boolean;
 }
 
 export interface GoalsInfo {

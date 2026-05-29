@@ -207,6 +207,9 @@ class ContextBuilder:
         # Character lifecycle
         context["absent_characters"] = self._format_absent_characters()
 
+        # Thread dashboard (plot-line tracking)
+        context["thread_dashboard"] = self._format_thread_dashboard(project_state.get("current_tick", 0))
+
         # Per-tick notes override config-level writer_notes
         context["writer_notes"] = self._format_writer_notes(notes)
 
@@ -234,10 +237,9 @@ class ContextBuilder:
         if not notes:
             return ''
         return (
-            '\n## 场景方向指导\n\n' + notes +
-            '\n\n请在 scene_intention 和 key_change 中体现上述方向。'
-            '**衔接要求：** 转变需自然流畅，角色行为与已有性格一致。'
-            '当方向与故事现状冲突时，优先保持连续性，寻找最自然的切入点。'
+            '\n## 场景方向指导（必须执行）\n\n' + notes +
+            '\n\n以上是用户指定的场景方向，请严格据此规划本章内容。'
+            '在满足用户方向的前提下，保持故事连续性和角色性格一致。'
         )
 
     def _get_next_plot_beat_hint(self, project_state: dict) -> str:
@@ -470,6 +472,11 @@ class ContextBuilder:
         lines.append("")
         lines.append("考虑本章是否适合让其中某个角色回归。")
         return "\n".join(lines)
+
+    def _format_thread_dashboard(self, current_tick: int) -> str:
+        from ..memory.thread_manager import ThreadManager
+        mgr = ThreadManager(self.memory)
+        return mgr.format_dashboard(current_tick)
 
     def _get_overall_summary(self) -> str:
         """Get high-level summary of all scenes so far.
@@ -741,8 +748,8 @@ class ContextBuilder:
         Returns:
             Instructions for how to handle the plot beat
         """
-        use_plot_first = self.config.get('generation.use_plot_first', False)
-        
+        use_plot_first = self.config.get('generation.use_plot_first', True)
+
         if not use_plot_first:
             return ""
         

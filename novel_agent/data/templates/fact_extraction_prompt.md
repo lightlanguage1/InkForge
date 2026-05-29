@@ -1,12 +1,14 @@
-Extract structured updates from this scene.
+从本场景中提取结构化更新。
 
-Scene: {scene_text}
+**所有输出内容必须使用中文。**
 
-POV: {pov_character_id} | Location: {location_id}
+场景：{scene_text}
 
-Open Loops: {existing_open_loops}
+POV：{pov_character_id} | 地点：{location_id}
 
-Return ONLY JSON with these updates:
+已有开放线索：{existing_open_loops}
+
+只返回 JSON，包含以下更新：
 
 ```json
 {{
@@ -14,11 +16,11 @@ Return ONLY JSON with these updates:
     {{
       "id": "C000",
       "changes": {{
-        "emotional_state": "string or null",
-        "physical_state": "string or null",
-        "inventory": ["item1", "item2"] or null,
-        "goals": ["goal1", "goal2"] or null,
-        "beliefs": ["belief1", "belief2"] or null
+        "emotional_state": "字符串或 null",
+        "physical_state": "字符串或 null",
+        "inventory": ["物品1", "物品2"] 或 null,
+        "goals": ["目标1", "目标2"] 或 null,
+        "beliefs": ["信念1", "信念2"] 或 null
       }}
     }}
   ],
@@ -26,17 +28,17 @@ Return ONLY JSON with these updates:
     {{
       "id": "L000",
       "changes": {{
-        "description": "string or null",
-        "atmosphere": "string or null",
-        "features": ["feature1", "feature2"] or null
+        "description": "字符串或 null",
+        "atmosphere": "字符串或 null",
+        "features": ["特征1", "特征2"] 或 null
       }}
     }}
   ],
   "open_loops_created": [
     {{
-      "description": "string",
+      "description": "用中文描述的新线索",
       "importance": "low|medium|high|critical",
-      "category": "mystery|relationship|goal|threat|etc",
+      "category": "根据故事情境自行归类",
       "related_characters": ["C000"],
       "related_locations": ["L000"]
     }}
@@ -47,14 +49,14 @@ Return ONLY JSON with these updates:
       "character_a": "C000",
       "character_b": "C001",
       "changes": {{
-        "status": "string or null",
-        "perspective_a": "string or null",
-        "perspective_b": "string or null",
-        "intensity": 0-10 or null
+        "status": "字符串或 null",
+        "perspective_a": "字符串或 null",
+        "perspective_b": "字符串或 null",
+        "intensity": 0-10 或 null
       }}
     }}
   ]
 }}
 ```
 
-Rules: Use null for no change. Only extract what's clearly shown. For lists, only include NEW items.
+规则：无变化时用 null。只提取场景中明确展示的内容。列表只包含新增项。
