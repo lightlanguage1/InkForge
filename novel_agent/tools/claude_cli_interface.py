@@ -1,6 +1,6 @@
 """Wrapper for calling Claude Code (claude) CLI from Python.
 
-Provides a subprocess-based interface to the `claude` CLI so StoryDaemon can
+Provides a subprocess-based interface to the `claude` CLI so InkForge can
 use Claude models via the local tool in headless (non-interactive) mode,
 similar to the Codex and Gemini CLI backends.
 """

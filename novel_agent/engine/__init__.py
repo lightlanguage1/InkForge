@@ -1,1 +1,1 @@
-"""Engine core - persistent runtime for StoryDaemon."""
+"""Engine core - persistent runtime for InkForge."""

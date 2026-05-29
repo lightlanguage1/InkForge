@@ -1,4 +1,4 @@
-# StoryDaemon 实施计划
+# InkForge 实施计划
 
 > 与 `ARCHITECTURE_DEEP_ANALYSIS.md`（设计原则）互补，本文是文件级实施指南  
 > 顺序按依赖排列：先基础设施，后业务逻辑
@@ -657,7 +657,7 @@ Phase 4a       memory/update.py     新建        +120
 
 ```bash
 # 1. 基础测试
-cd F:\StoryDaemon
+cd F:\InkForge
 python -m pytest tests/ -v --tb=short
 
 # 2. 导入测试（确保无循环依赖）

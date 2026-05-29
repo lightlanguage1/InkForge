@@ -3,14 +3,37 @@
 from typing import Optional
 
 from fastapi import APIRouter, Query
+from pydantic import BaseModel
 
 from ..deps import resolve_project
 from ...cli.project import load_project_state
 from ...cli.commands.goals import get_goals_info
 from ...cli.commands.lore import get_lore_info
 from ...memory.manager import MemoryManager
+from ...utils.file_ops import write_json
 
 router = APIRouter(prefix="/api/v1", tags=["信息"])
+
+
+class FoundationPatch(BaseModel):
+    tone: Optional[str] = None
+    genre: Optional[str] = None
+    premise: Optional[str] = None
+    setting: Optional[str] = None
+
+
+@router.patch("/project/{project_id}/foundation")
+def patch_foundation(project_id: str, patch: FoundationPatch):
+    """Update writable fields in story_foundation."""
+    project_dir = resolve_project(project_id)
+    state_file = project_dir / "state.json"
+    import json
+    state = json.loads(state_file.read_text(encoding="utf-8"))
+    foundation = state.setdefault("story_foundation", {})
+    updates = patch.model_dump(exclude_none=True)
+    foundation.update(updates)
+    write_json(str(state_file), state)
+    return {"updated": list(updates.keys())}
 
 
 @router.get("/project/{project_id}/status")
@@ -44,6 +67,7 @@ def get_status(project_id: str):
         "avg_tension": sum(tensions) / len(tensions) if tensions else 0,
         "generating": project_id in _running,
         "genre": (state.get("story_foundation") or {}).get("genre", ""),
+        "tone":  (state.get("story_foundation") or {}).get("tone",  ""),
     }
 
 

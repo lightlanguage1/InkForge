@@ -1,4 +1,4 @@
-"""CLI command: start StoryDaemon server."""
+"""CLI command: start InkForge server."""
 
 import typer
 
@@ -10,11 +10,11 @@ def start_server(
     port: int = typer.Option(DEFAULT_PORT, "--port", "-p", help="Listen port"),
     reload: bool = typer.Option(True, "--reload/--no-reload", help="热重载（开发模式，默认开启）"),
 ):
-    """Start the StoryDaemon API server.
+    """Start the InkForge API server.
 
     Runs as a persistent process providing REST API access.
     """
-    typer.echo(f"  StoryDaemon Server starting on {host}:{port}")
+    typer.echo(f"  InkForge Server starting on {host}:{port}")
 
     import uvicorn
     import os

@@ -59,7 +59,7 @@ export function DashboardPage() {
           {/* Top bar */}
           <div className="flex items-center justify-between mb-16">
             <p className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: "var(--accent)" }}>
-              StoryDaemon
+              InkForge
             </p>
             <div className="flex items-center gap-3">
               <button

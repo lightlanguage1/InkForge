@@ -12,6 +12,7 @@ export interface StatusInfo {
   avg_tension: number;
   generating?: boolean;
   genre?: string;
+  tone?: string;
 }
 
 export interface GoalsInfo {

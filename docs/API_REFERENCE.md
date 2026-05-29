@@ -1,4 +1,4 @@
-# StoryDaemon 接口文档（API Reference）
+# InkForge 接口文档（API Reference）
 
 > 版本：基于当前代码库  
 > 更新日期：2026-04-17

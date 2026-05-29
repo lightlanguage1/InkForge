@@ -1,1 +1,1 @@
-"""StoryDaemon REST API."""
+"""InkForge REST API."""

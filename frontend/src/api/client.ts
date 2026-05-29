@@ -35,6 +35,15 @@ export async function post<T>(path: string, body?: unknown): Promise<T> {
   return handleResponse<T>(res, path);
 }
 
+export async function patch<T>(path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  return handleResponse<T>(res, path);
+}
+
 export async function del<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`, { method: "DELETE" });
   return handleResponse<T>(res, path);

@@ -1,4 +1,4 @@
-"""StoryDaemon REST API 入口。"""
+"""InkForge REST API 入口。"""
 
 import logging
 
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 from ..utils.log_manager import setup_logging as _setup_logging
 _setup_logging()
 
-app = FastAPI(title="StoryDaemon API", version="1.0.0")
+app = FastAPI(title="InkForge API", version="1.0.0")
 
 # CORS — 允许前端开发服务器跨域访问
 app.add_middleware(

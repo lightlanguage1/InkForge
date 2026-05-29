@@ -2,8 +2,8 @@
 
 Resolution order (first wins):
     1. Provider-specific environment variable (e.g. DEEPSEEK_API_KEY)
-    2. STORYDAEMON_API_KEY (single key for all providers)
-    3. ``.env`` file in the StoryDaemon package root
+    2. INKFORGE_API_KEY (single key for all providers)
+    3. ``.env`` file in the InkForge package root
     4. Error with clear message
 
 .env format (one per line)::
@@ -28,7 +28,7 @@ _PROVIDER_ENV_MAP: Dict[str, str] = {
     "gemini":    "GEMINI_API_KEY",
 }
 
-_UNIFIED_KEY = "STORYDAEMON_API_KEY"
+_UNIFIED_KEY = "INKFORGE_API_KEY"
 
 # Cached .env contents (loaded once)
 _env_cache: Optional[Dict[str, str]] = None
@@ -91,7 +91,7 @@ def _raise_missing_key(provider: str) -> None:
         msg = (
             f"API key not found for provider '{provider}'.\n"
             f"  Set the environment variable '{specific_var}',\n"
-            f"  or set 'STORYDAEMON_API_KEY' for all providers,\n"
+            f"  or set 'INKFORGE_API_KEY' for all providers,\n"
             f"  or create {env_path} with:\n"
             f"    {specific_var}=sk-xxx"
         )
@@ -99,6 +99,6 @@ def _raise_missing_key(provider: str) -> None:
         supported = ", ".join(_PROVIDER_ENV_MAP)
         msg = (
             f"Unknown provider '{provider}'. Supported: {supported}.\n"
-            f"  Set 'STORYDAEMON_API_KEY' to cover any provider."
+            f"  Set 'INKFORGE_API_KEY' to cover any provider."
         )
     raise RuntimeError(msg)

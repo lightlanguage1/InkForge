@@ -11,7 +11,30 @@ router = APIRouter(prefix="/api/v1", tags=["画像"])
 logger = logging.getLogger(__name__)
 
 _PROMPT = """\
-你是矢量徽章设计专家。为下面这部小说设计一枚点阵风格的专属徽章/Logo。
+你是点阵徽章设计专家。所有图案由离散的**小圆点**组成，不能有连续实线或实心面。
+每个图元的 density 和 width 决定了点阵的疏密，点与点之间必须保持肉眼可见的间隙。
+
+== 图元工具 ==
+ring(cx, cy, r, width, density)
+  - 在半径 r 的圆周上均匀放置 density 个直径为 width 的圆点。
+  - 要保持空心圆环的"虚线感"：density ≤ 40，width ≤ 5
+
+arc(cx, cy, r, a1, a2, width, density)
+  - 从角度 a1 到 a2（0°=右, 90°=下）均匀放置 density 个圆点。
+  - 用于弧线片段，density ≤ 30, width ≤ 5
+
+line(x1, y1, x2, y2, width, density)
+  - 两点间线段上均匀放置 density 个圆点。
+  - 表现虚线、放射线、分割线，density ≤ 25, width ≤ 4
+
+poly(points, width, density)
+  - 填充多边形（顶点 [[x,y], ...]），内部随机撒 density 个直径为 width 的圆点。
+  - **关键**：点数必须稀疏，不能连成片。密度限制：density ≤ 35 且 width ≤ 4
+  - 适合做盾形、星形、剑形、钥匙孔形等异形外框或核心符号。
+
+ellipse(cx, cy, rx, ry, width, density)
+  - 填充椭圆，仅用于小装饰节点（rx, ry ≤ 16）。
+  - 严格限制：density ≤ 20, width ≤ 3，防止变成实心圆饼。
 
 == 小说信息 ==
 名称：{name} | 类型：{genre}
@@ -20,45 +43,48 @@ _PROMPT = """\
 基调：{tone} | 进度：第{tick}幕
 
 == 画布 ==
-440×330 像素，中心 (220,165)。图案主体控制在 半径80-120px 范围内。
+440×330 像素，中心 (220,165)。主体控制在半径 60-130px 内。
 
-== 图元工具箱 ==
-ring(cx,cy,r,width,density)          — 空心圆环
-arc(cx,cy,r,a1,a2_度,width,density) — 弧线（0°=右,90°=下）
-line(x1,y1,x2,y2,width,density)     — 线段
-poly(points[[x,y]...],density)       — 填充多边形
-ellipse(cx,cy,rx,ry,density)         — 填充椭圆（仅小节点,rx/ry≤18）
+== 你必须执行的内部设计流程（不输出） ==
+1. **提取意象**：从简介和主角中找到 1-2 个核心物品、符号或形态（例如：钥匙、齿轮、莲花、剑、眼睛、沙漏、树、面具）。
+2. **抽象为几何**：将意象拆解成几何元素：
+   - 钥匙 → 圆头(中心小椭圆) + 杆(竖线) + 齿(短横线)
+   - 莲花 → 中心点 + 周围 5-7 条弧线花瓣
+   - 齿轮 → 多边形外框 + 辐射线段 + 中心小环
+3. **确定外轮廓**：选择一个呼应故事世界的轮廓。可以是：
+   - 直接用 poly 构成复杂多边形（盾形、七角星、菱形、扁六边形、钥匙孔形）
+   - 或用多条 line + arc 拼接成闭合轮廓（例如上方弧线 + 下方折线组成心形、水滴形）
+   - **禁止**用 ring 做唯一外框，除非内部线条将其改造成明确符号（如十字、缺角）。
+4. **搭建骨架**：用 3-6 条 line 或 arc 画出主体的方向性结构（交叉、放射、折线、螺旋等），这些线条必须与意象相关，不能是纯装饰。
+5. **添加细节**：在骨架节点上放置小椭圆、小 ring 或短弧线，增强层次。所有细节图元总数 8-15 个。
+6. **检查密度**：确保任何一个填充图元（poly / ellipse）的点与点之间**有明显空隙**。想象一下：如果缩小到 32×24 像素，你仍能看清每个独立的点，而不是一团色块。
 
-== 强制设计规则 ==
-1. 外框必须是 ring 或 poly（六边形/菱形/八边形等），不能是填充ellipse
-2. 内部必须有线条结构：放射线/分割线/内嵌几何形，不能全是圆弧
-3. ellipse 只用于中心点（rx≤12）或小装饰节点
-4. 整体像一枚有辨识度的徽章，不是模糊的圆形色块
-5. 共20-30个图元，层次丰富
+== 强制性设计规则（违反将导致生成失败） ==
+- **外轮廓**：必须使用 poly 或 3 条以上的 line/arc 组合作为外框。ring 只能作为内部装饰。
+- **内部骨架**：必须包含至少 3 个 line 或 arc 图元，且这些线条必须构成可辨识的意象符号。
+- **禁止实心面**：任何 poly 的 density > 35 或 ellipse 的 density > 20 均禁止。记住你是点阵艺术家，不是填色游戏。
+- **禁止同心圆堆砌**：绝对禁止出现"两个以上同心 ring 而无其他结构打破"的靶子图案。
+- **禁止傻瓜模板**：以下图案直接判定不合格：十字准星、六角星、三条射线+圆环、纯齿轮、纯星图、纯瞄准镜。每部小说的徽章必须独一无二。
+- **不对称与动感**：主体不应完美居中对称，重心可以有 20-40px 的偏移，利用线条平衡画面。
 
-== 好设计示例（科幻星图徽章） ==
-外六边形: poly([[220,55],[307,110],[307,220],[220,275],[133,220],[133,110]],d=2.5)
-内圆环:   ring(220,165,r=70,w=4,d=2.0)
-内圆环2:  ring(220,165,r=45,w=2,d=1.8)
-放射线×6: line(220,165→六个方向到六边形边,w=2,d=1.5)
-中心点:   ellipse(220,165,rx=10,ry=10,d=3.0)
-弧装饰:   arc(220,165,r=70,a1=0,a2=60,w=6,d=2.0) ×6段
+== 颜色（十六进制，不可更改） ==
+- 科幻：cyan  #00E5FF
+- 奇幻：purple #B44CFF
+- 武侠/修仙：amber #FFB74D
+- 悬疑：red #FF5252
+- 言情：pink #FF80AB
+- 历史：gold #FFD54F
+直接使用对应 hex 值，不要使用其他颜色。
 
-== 糟糕示例（禁止） ==
-大填充椭圆: ellipse(220,165,rx=100,ry=60) ← 禁止！这只是一坨圆
-多个同心圆环没有内部结构 ← 禁止！看起来像靶心不像徽章
-
-== 颜色 ==
-cyan科幻, purple奇幻, amber武侠/修仙, red悬疑, pink言情, gold历史
-
-请根据《{name}》的世界观，创作一个独特的、有辨识度的徽章图案。
-只输出JSON，无解释无代码块：
+== 最终输出 ==
+只输出一个 JSON 对象，无任何额外文字和代码块标记：
 {{
-  "color":"cyan",
-  "caption":"标题12字内",
-  "shapes":[
-    {{"type":"poly","points":[[220,55],[307,110],[307,220],[220,275],[133,220],[133,110]],"density":2.5}},
-    ...更多图元...
+  "color": "#00E5FF",
+  "caption": "标题12字内",
+  "shapes": [
+    {{"type":"poly", "points":[[100,90],[340,90],[300,240],[140,240]], "width":3, "density":28}},
+    {{"type":"line", "x1":220,"y1":60,"x2":220,"y2":270,"width":3,"density":20}},
+    ...
   ]
 }}
 """
@@ -85,7 +111,6 @@ def get_portrait(project_id: str, force: bool = False):
         try:
             cached = json.loads(cache_file.read_text(encoding="utf-8"))
             portrait = cached.get("portrait", {})
-            # Invalidate cache if format is outdated (missing shapes) or tick drifted
             if portrait.get("shapes") and abs(cached.get("cached_tick", -999) - tick) < 5:
                 return portrait
         except Exception:
@@ -103,13 +128,11 @@ def get_portrait(project_id: str, force: bool = False):
 
     try:
         engine = get_engine()
-        # Read the configured model; fall back to deepseek-chat (the project's LLM).
-        # Never default to gpt-5.1 — that requires an OpenAI key the user doesn't have.
         model  = engine.config.get("llm.model") or engine.config.get("llm.default_model") or "deepseek-chat"
-        if model in ("gpt-5.1", "gpt-4", "gpt-4o"):   # safety: reject OpenAI models
+        if model in ("gpt-5.1", "gpt-4", "gpt-4o"):
             model = "deepseek-chat"
         llm    = engine.llm_pool.get_connection(backend="api", model=model)
-        raw    = llm.generate_with_retry(prompt, max_tokens=1800)
+        raw    = llm.generate_with_retry(prompt, max_tokens=2000)
         portrait = json.loads(_strip_fences(raw))
         cache_file.write_text(
             json.dumps({"cached_tick": tick, "portrait": portrait},

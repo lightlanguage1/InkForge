@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 
 class EngineCore:
-    """StoryDaemon persistent engine core.
+    """InkForge persistent engine core.
 
     Manages LLM connection pool, project instances, and skill store lifecycle.
     """

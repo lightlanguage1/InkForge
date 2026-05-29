@@ -3,7 +3,7 @@ set -e
 
 echo
 echo "  ╔══════════════════════════════════════╗"
-echo "  ║     StoryDaemon — 小说生成系统       ║"
+echo "  ║     InkForge — 小说生成系统       ║"
 echo "  ╚══════════════════════════════════════╝"
 echo
 
@@ -28,7 +28,7 @@ fi
 source .venv/bin/activate
 
 # -------- 检查安装 ----------
-if ! pip show storydaemon &>/dev/null; then
+if ! pip show inkforge &>/dev/null; then
     echo
     echo "[*] 正在安装依赖..."
     pip install -e . -q
@@ -36,11 +36,11 @@ if ! pip show storydaemon &>/dev/null; then
 fi
 
 # -------- 检查配置文件 ----------
-mkdir -p "$HOME/.storydaemon"
-if [ ! -f "$HOME/.storydaemon/config.yaml" ]; then
+mkdir -p "$HOME/.inkforge"
+if [ ! -f "$HOME/.inkforge/config.yaml" ]; then
     echo
     echo "[*] 首次运行 — 使用默认配置"
-    echo "    配置文件: $HOME/.storydaemon/config.yaml"
+    echo "    配置文件: $HOME/.inkforge/config.yaml"
 fi
 
 # -------- 选择运行模式 ----------

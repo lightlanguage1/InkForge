@@ -248,12 +248,31 @@ function StepWorld({ form, setForm, onBack, onNext }: StepWorldProps) {
         <label className="block text-[11px] font-semibold uppercase tracking-wider mb-2.5" style={{ color: "var(--text-3)" }}>
           故事基调
         </label>
-        <div className="grid grid-cols-2 gap-2">
+        {/* Quick presets */}
+        <div className="grid grid-cols-2 gap-2 mb-2">
           {TONES.map((t) => (
             <ToneCard key={t.label} tone={t} selected={form.tone === t.label}
               onSelect={() => setForm({ ...form, tone: form.tone === t.label ? "" : t.label })} />
           ))}
         </div>
+        {/* Custom tone input */}
+        <textarea
+          rows={2}
+          value={TONES.some(t => t.label === form.tone) ? "" : form.tone}
+          onChange={e => setForm({ ...form, tone: e.target.value })}
+          placeholder="或自定义基调，例：宏大冷峻的太空歌剧，孤独感与求知欲交织…"
+          className="w-full text-sm rounded-xl px-3 py-2 resize-none"
+          style={{
+            background: "var(--bg-raised)", border: "1px solid var(--border)",
+            color: "var(--text-1)", outline: "none", lineHeight: 1.6,
+            borderColor: form.tone && !TONES.some(t => t.label === form.tone) ? "var(--accent)" : "var(--border)",
+          }}
+          onFocus={e => (e.currentTarget.style.borderColor = "var(--accent)")}
+          onBlur={e => {
+            if (!form.tone || TONES.some(t => t.label === form.tone))
+              e.currentTarget.style.borderColor = "var(--border)";
+          }}
+        />
       </div>
 
       <Input label="主题（逗号分隔）" value={form.themes ?? ""} onChange={(v) => setForm({ ...form, themes: v })}

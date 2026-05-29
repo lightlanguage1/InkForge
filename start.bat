@@ -1,10 +1,10 @@
 @echo off
 chcp 65001 >nul
-title StoryDaemon
+title InkForge
 
 echo.
 echo   ╔══════════════════════════════════════╗
-echo   ║     StoryDaemon — 小说生成系统       ║
+echo   ║     InkForge — 小说生成系统       ║
 echo   ╚══════════════════════════════════════╝
 echo.
 
@@ -38,7 +38,7 @@ if not exist ".venv\" (
 call .venv\Scripts\activate.bat
 
 :: -------- 检查安装 ----------
-pip show storydaemon >nul 2>&1
+pip show inkforge >nul 2>&1
 if errorlevel 1 (
     echo.
     echo [*] 正在安装依赖...
@@ -52,11 +52,11 @@ if errorlevel 1 (
 )
 
 :: -------- 检查配置文件 ----------
-if not exist "%USERPROFILE%\.storydaemon\" mkdir "%USERPROFILE%\.storydaemon"
-if not exist "%USERPROFILE%\.storydaemon\config.yaml" (
+if not exist "%USERPROFILE%\.inkforge\" mkdir "%USERPROFILE%\.inkforge"
+if not exist "%USERPROFILE%\.inkforge\config.yaml" (
     echo.
     echo [*] 首次运行 — 使用默认配置
-    echo     配置文件: %USERPROFILE%\.storydaemon\config.yaml
+    echo     配置文件: %USERPROFILE%\.inkforge\config.yaml
     echo     修改此文件可切换 LLM 后端 / 模型
 )
 

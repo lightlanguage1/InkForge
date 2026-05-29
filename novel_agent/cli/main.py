@@ -1,4 +1,4 @@
-"""Main CLI entry point for StoryDaemon."""
+"""Main CLI entry point for InkForge."""
 import typer
 from pathlib import Path
 from typing import Optional, Dict, Any
@@ -161,7 +161,7 @@ def _prompt_for_llm_selection() -> tuple[str, str]:
 
 app = typer.Typer(
     name="novel",
-    help="StoryDaemon - Agentic novel generation system",
+    help="InkForge - Agentic novel generation system",
     add_completion=False
 )
 
@@ -1460,7 +1460,7 @@ def serve(
     port: int = typer.Option(DEFAULT_PORT, "--port", "-p", help="监听端口"),
     reload: bool = typer.Option(False, "--reload", help="热重载（开发用）"),
 ):
-    """启动 StoryDaemon 服务（常驻进程模式）。
+    """启动 InkForge 服务（常驻进程模式）。
 
     以 HTTP 服务模式运行，提供 REST API。
     """

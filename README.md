@@ -1,12 +1,12 @@
-# StoryDaemon
+# InkForge
 
 **LLM 驱动的中文长篇小说涌现式生成系统**
 
-StoryDaemon 通过自治 Agent 逐幕规划、写作、评估、提交，让叙事结构在迭代中自然涌现，而非预设大纲。灵感源自作者此前的 [NovelWriter](https://github.com/EdwardAThomson/NovelWriter) 项目，但 StoryDaemon 强调涌现优于规划。
+InkForge 通过自治 Agent 逐幕规划、写作、评估、提交，让叙事结构在迭代中自然涌现，而非预设大纲。灵感源自作者此前的 [NovelWriter](https://github.com/EdwardAThomson/NovelWriter) 项目，但 InkForge 强调涌现优于规划。
 
 ## 视频介绍
 
-- [StoryDaemon: The Future of Story Generation?](https://youtu.be/vIBRLavyxbs)
+- [InkForge: The Future of Story Generation?](https://youtu.be/vIBRLavyxbs)
 
 ## 功能特性
 
@@ -373,7 +373,7 @@ novel serve --port 9000                        # 指定端口
 
 ### 全局配置
 
-`~/.storydaemon/config.yaml`：
+`~/.inkforge/config.yaml`：
 
 ```yaml
 llm:
@@ -411,7 +411,7 @@ OPENAI_API_KEY      # OpenAI GPT-5/5.1
 CLAUDE_API_KEY      # Anthropic Claude 4.5
 GEMINI_API_KEY      # Google Gemini 2.5 Pro
 DEEPSEEK_API_KEY    # DeepSeek
-STORYDAEMON_API_KEY # 通用 Key（所有供应商共享）
+INKFORGE_API_KEY # 通用 Key（所有供应商共享）
 OLLAMA_BASE_URL     # Ollama 地址（默认 http://localhost:11434）
 LOCAL_LLM_URL       # 本地 llama-server 地址（默认 http://127.0.0.1:8080/v1）
 ```

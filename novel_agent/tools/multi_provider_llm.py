@@ -6,7 +6,7 @@ Claude, Ollama) based on the model name.
 
 API keys are resolved centrally via configs/api_keys.py:
     1. Provider-specific env var (e.g. DEEPSEEK_API_KEY)
-    2. STORYDAEMON_API_KEY (single key for all providers)
+    2. INKFORGE_API_KEY (single key for all providers)
 """
 
 from typing import Callable, Dict, List, Optional
@@ -484,7 +484,7 @@ def ollama_health_check(model: Optional[str] = None) -> dict:
 class MultiProviderInterface:
     """Thin adapter exposing generate / generate_with_retry.
 
-    This class allows the rest of StoryDaemon to treat the ai_helper-style
+    This class allows the rest of InkForge to treat the ai_helper-style
     functions as a simple LLM client with generate(...) and
     generate_with_retry(...), similar to CodexInterface.
     """

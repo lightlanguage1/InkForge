@@ -58,7 +58,7 @@ def get_log_path(log_dir: Path | None = None) -> Path:
 
 def _resolve_log_path(log_dir: Path | None) -> Path:
     base = log_dir or (Path.cwd() / "logs")
-    return base / "storydaemon.log"
+    return base / "inkforge.log"
 
 
 def rmtree_force(path: Path) -> None:

@@ -31,3 +31,5 @@ reference_analysis.md
 
 logs/
 *.log
+
+work/**/portrait.json

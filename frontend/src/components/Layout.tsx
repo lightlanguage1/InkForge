@@ -28,7 +28,7 @@ export function Layout({ children }: { children: ReactNode }) {
             onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "var(--accent)"; }}
             onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = "var(--text-1)"; }}
           >
-            StoryDaemon
+            InkForge
           </span>
         </a>
 

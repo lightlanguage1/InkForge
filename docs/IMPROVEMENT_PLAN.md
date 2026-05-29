@@ -1,4 +1,4 @@
-# StoryDaemon 优化方案
+# InkForge 优化方案
 
 ## 原则
 

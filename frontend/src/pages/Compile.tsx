@@ -7,6 +7,21 @@ import { Select } from "../components/ui/Select";
 import { Spinner } from "../components/ui/Spinner";
 import { compile, summarize, generateTitles } from "../api/compile";
 
+const EXT: Record<string, string> = { markdown: "md", html: "html", prose: "txt" };
+const MIME: Record<string, string> = { markdown: "text/markdown", html: "text/html", prose: "text/plain" };
+
+function downloadFile(content: string, format: string, projectId: string) {
+  const ext = EXT[format] ?? "txt";
+  const mime = MIME[format] ?? "text/plain";
+  const blob = new Blob([content], { type: mime + ";charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${projectId}.${ext}`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export function CompilePage() {
   const { id } = useParams<{ id: string }>();
   const [format, setFormat] = useState("markdown");
@@ -44,7 +59,12 @@ export function CompilePage() {
           <Card className="p-4">
             <div className="flex justify-between mb-2">
               <h3 className="font-semibold" style={{ color: "var(--text-1)" }}>输出</h3>
-              <Button variant="ghost" size="sm" onClick={() => navigator.clipboard.writeText(content)}>复制</Button>
+              <div className="flex gap-2">
+                <Button variant="ghost" size="sm" onClick={() => navigator.clipboard.writeText(content)}>复制</Button>
+                <Button size="sm" onClick={() => downloadFile(content, format, id!)}>
+                  下载 .{EXT[format] ?? "txt"}
+                </Button>
+              </div>
             </div>
             <pre className="text-sm whitespace-pre-wrap p-4 rounded-lg max-h-96 overflow-auto"
               style={{ background: "var(--pre-bg)", border: "1px solid var(--border)", color: "var(--text-2)" }}>{content}</pre>

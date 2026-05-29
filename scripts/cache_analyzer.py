@@ -1,4 +1,4 @@
-"""Prompt cache-hit analyser for StoryDaemon.
+"""Prompt cache-hit analyser for InkForge.
 
 Runs one tick with prompt interception and reports:
 - Total tokens per component (planner / writer / extractor / evaluator)
@@ -8,7 +8,7 @@ Runs one tick with prompt interception and reports:
 - Estimated cost savings from caching.
 
 Usage:
-    python scripts/cache_analyzer.py --project "F:/StoryDaemon/work/novels/剑心劫_b8dd3dad"
+    python scripts/cache_analyzer.py --project "F:/InkForge/work/novels/剑心劫_b8dd3dad"
     python scripts/cache_analyzer.py --project <path> --tokens-only  # fast: template-based estimate, no live tick
 """
 
@@ -149,7 +149,7 @@ def analyze_calls(calls: List[dict]) -> dict:
 # ---------------------------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="StoryDaemon cache-hit analyser")
+    parser = argparse.ArgumentParser(description="InkForge cache-hit analyser")
     parser.add_argument("--project", "-p", required=True, help="Path to novel project")
     parser.add_argument("--tokens-only", action="store_true",
                         help="Template-based estimate only (no live tick)")

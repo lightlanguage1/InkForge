@@ -7,4 +7,4 @@ router = APIRouter()
 
 @router.get("/health")
 def health():
-    return {"status": "ok", "service": "storydaemon"}
+    return {"status": "ok", "service": "inkforge"}

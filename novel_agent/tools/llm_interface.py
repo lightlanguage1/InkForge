@@ -1,4 +1,4 @@
-"""LLM interface for StoryDaemon.
+"""LLM interface for InkForge.
 
 Provides a backend-agnostic interface for LLM access.
 

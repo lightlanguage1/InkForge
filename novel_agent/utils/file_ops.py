@@ -1,6 +1,6 @@
-"""File I/O utilities for StoryDaemon.
+"""File I/O utilities for InkForge.
 
-Adapted from NovelWriter's helper_fns.py with improvements for StoryDaemon's needs.
+Adapted from NovelWriter's helper_fns.py with improvements for InkForge's needs.
 """
 import os
 import json

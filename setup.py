@@ -1,11 +1,11 @@
-"""StoryDaemon — 开箱即用的涌现式小说生成系统。"""
+"""InkForge — 开箱即用的涌现式小说生成系统。"""
 from setuptools import setup, find_packages
 
 with open("README.md", encoding="utf-8") as f:
     long_description = f.read()
 
 setup(
-    name="storydaemon",
+    name="inkforge",
     version="1.0.0",
     author="Edward A. Thomson",
     description="LLM 驱动的中文长篇小说涌现式生成系统",

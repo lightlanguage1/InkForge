@@ -1,4 +1,4 @@
-# StoryDaemon 架构设计文档
+# InkForge 架构设计文档
 
 > 基于代码实际探索，非旧文档推断。日期：2026-05-28。
 
@@ -6,7 +6,7 @@
 
 ## 一、项目概述
 
-StoryDaemon 是一个 **LLM 驱动的中文长篇小说涌现式生成系统**。核心理念：不预设大纲，让叙事结构在逐幕（Tick）迭代中自行涌现。
+InkForge 是一个 **LLM 驱动的中文长篇小说涌现式生成系统**。核心理念：不预设大纲，让叙事结构在逐幕（Tick）迭代中自行涌现。
 
 **技术栈：** Python 3.11+, Typer CLI, FastAPI REST API, ChromaDB 向量存储, JSON 文件持久化
 
@@ -25,7 +25,7 @@ StoryDaemon 是一个 **LLM 驱动的中文长篇小说涌现式生成系统**�
 ## 二、顶层目录结构
 
 ```
-StoryDaemon/
+InkForge/
 ├── novel_agent/              Python 后端包（~99 个源文件）
 │   ├── agent/                核心引擎（17 个文件）
 │   │   ├── agent.py          StoryAgent — Tick 循环主编排器
@@ -695,7 +695,7 @@ threads.router         # StoryThread CRUD + 审计端点
 
 ### EngineCore
 
-常驻进程引擎，管理整个 StoryDaemon 运行时的生命周期：
+常驻进程引擎，管理整个 InkForge 运行时的生命周期：
 
 ```
 EngineCore

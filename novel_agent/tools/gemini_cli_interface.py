@@ -1,6 +1,6 @@
 """Wrapper for calling Gemini CLI from Python.
 
-Provides a subprocess-based interface to the `gemini` CLI so StoryDaemon can
+Provides a subprocess-based interface to the `gemini` CLI so InkForge can
 use Gemini models via the local tool, similar to the Codex CLI backend.
 """
 

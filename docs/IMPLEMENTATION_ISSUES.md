@@ -141,6 +141,6 @@ else:
 
 ```bash
 pip install pytest
-cd F:\StoryDaemon
+cd F:\InkForge
 python -m pytest tests/ -v
 ```

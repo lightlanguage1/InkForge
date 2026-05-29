@@ -1,4 +1,4 @@
-"""Configuration management for StoryDaemon."""
+"""Configuration management for InkForge."""
 import os
 import warnings
 import yaml
@@ -106,7 +106,7 @@ DEFAULT_CONFIG = {
 
 
 class Config:
-    """Configuration manager for StoryDaemon."""
+    """Configuration manager for InkForge."""
     
     def __init__(self, config_path: Optional[str] = None):
         """Initialize configuration.

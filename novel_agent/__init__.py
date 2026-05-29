@@ -1,4 +1,4 @@
-"""StoryDaemon - Agentic Novel Generation System."""
+"""InkForge - Agentic Novel Generation System."""
 
 import logging
 import sys

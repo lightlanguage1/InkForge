@@ -1,5 +1,5 @@
-# StoryDaemon 全局配置
-# 复制此文件到 ~/.storydaemon/config.yaml
+# InkForge 全局配置
+# 复制此文件到 ~/.inkforge/config.yaml
 # 首次启动时会自动使用默认值，不复制也可运行
 
 # ---- LLM 后端 ----
