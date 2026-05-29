@@ -55,6 +55,8 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
     const runOne = () => {
       const { notes, backend, model, finale } = paramsRef.current;
       const qs = new URLSearchParams();
+      const token = localStorage.getItem("inkforge_token");
+      if (token) qs.set("token", token);
       if (notes) qs.set("notes", notes);
       if (backend) qs.set("llm_backend", backend);
       if (model) qs.set("llm_model", model);

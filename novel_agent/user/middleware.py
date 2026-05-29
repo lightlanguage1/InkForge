@@ -30,7 +30,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
             if path.startswith(prefix):
                 return await call_next(request)
 
+        # Authorization: Bearer <token> (fetch) or ?token=<token> (EventSource)
         token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+        if not token:
+            token = request.query_params.get("token", "").strip()
         if not token:
             return Response(
                 content='{"detail":"请先使用邀请码激活"}',
