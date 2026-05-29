@@ -1,0 +1,19 @@
+# Development override — mounts local source into container so code changes
+# take effect immediately without rebuilding.  Use together with the base:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+
+services:
+  backend:
+    build:
+      args:
+        PIP_INDEX: ${PIP_INDEX:-https://pypi.tuna.tsinghua.edu.cn/simple}
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-pypi.tuna.tsinghua.edu.cn}
+    command: uvicorn novel_agent.api.server:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./novel_agent:/app/novel_agent:ro
+      - ./requirements.txt:/app/requirements.txt:ro
+      - inkforge_data:/app/work
+
+  frontend:
+    volumes:
+      - ./frontend/dist:/usr/share/nginx/html:ro
