@@ -16,7 +16,7 @@ router = APIRouter(prefix="/api/v1", tags=["项目"])
 
 
 def _list_filesystem_projects() -> list[dict]:
-    """扫描 novels 目录，返回所有有效项目（有 state.json）。"""
+    """扫描用户 novels 目录，返回所有有效项目。"""
     novels = get_novels_dir()
     if not novels.exists():
         return []

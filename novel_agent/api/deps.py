@@ -48,20 +48,13 @@ def _scan_dir_for_project(base: Path, project_id: str) -> Path | None:
 
 def resolve_project(project_id: str) -> Path:
     """Resolve project_id to a project directory with state.json."""
-    # 1. Absolute path
     as_path = Path(project_id)
     if as_path.is_absolute() and (as_path / "state.json").exists():
         return as_path.resolve()
 
-    # 2. User-scoped directory
     found = _scan_dir_for_project(get_novels_dir(), project_id)
     if found:
         return found
-
-    # 3. Legacy shared directory (backward compatibility)
-    legacy = _scan_dir_for_project(Path("work/novels"), project_id)
-    if legacy:
-        return legacy
 
     raise ValueError(f"未找到项目: {project_id}")
 

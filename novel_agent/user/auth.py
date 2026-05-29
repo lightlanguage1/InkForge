@@ -68,12 +68,19 @@ class ActivationError(Exception):
 
 
 def activate(db: Database, invite_code: str, display_name: str) -> dict:
-    """Validate invite code, create user, return {token, user_id, display_name}."""
+    """Validate invite code, create or re-login user, return {token, user_id, display_name}."""
     display_name = display_name.strip()
     if not display_name or len(display_name) > 30:
         raise ActivationError("用户名需在1-30个字符之间")
     if not invite_code.strip():
         raise ActivationError("请输入邀请码")
+
+    # Re-login: if this invite code already has a user, return that user
+    existing = db.get_user_by_invite_code(invite_code)
+    if existing:
+        db.touch_user(existing["user_id"])
+        token = create_token(existing["user_id"])
+        return {"token": token, "user_id": existing["user_id"], "display_name": existing["display_name"]}
 
     err = db.validate_code(invite_code)
     if err:

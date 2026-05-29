@@ -143,6 +143,15 @@ class Database:
             ).fetchone()
         return dict(row) if row else None
 
+    def get_user_by_invite_code(self, code: str) -> Optional[dict]:
+        """Find existing user by invite code (for re-login)."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT user_id, invite_code, display_name, is_admin, created_at, last_seen "
+                "FROM users WHERE invite_code = ?", (code.strip().upper(),)
+            ).fetchone()
+        return dict(row) if row else None
+
     # ── projects ─────────────────────────────────────────────────────────
 
     def list_projects(self, user_id: str) -> list[dict]:
