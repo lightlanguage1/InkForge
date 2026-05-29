@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 # Whitelisted paths that don't require authentication
 _NO_AUTH_PREFIXES = (
     "/api/v1/auth/",
-    "/api/v1/health",
+    "/health",
     "/docs",
     "/openapi.json",
 )

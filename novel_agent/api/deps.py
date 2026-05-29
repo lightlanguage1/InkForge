@@ -26,8 +26,9 @@ def get_novels_dir() -> Path:
     """Return the user-scoped novels directory based on auth context."""
     from ..user.context import get_current_user
     user_id = get_current_user()
-    novels = Path("work/users") / user_id / "novels"
-    return novels.resolve()
+    novels = (Path("work/users") / user_id / "novels").resolve()
+    novels.mkdir(parents=True, exist_ok=True)
+    return novels
 
 
 def resolve_project(project_id: str) -> Path:
