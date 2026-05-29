@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { Routes, Route } from "react-router-dom";
+import { InviteGate, getToken, clearToken } from "./components/InviteGate";
 import { DashboardPage } from "./pages/Dashboard";
 import { ProjectLayout } from "./pages/ProjectLayout";
 import { OverviewPage } from "./pages/Overview";
@@ -19,6 +21,10 @@ import { ReadPage } from "./pages/Read";
 import { CompilePage } from "./pages/Compile";
 
 export function App() {
+  const [token, setToken] = useState<string | null>(getToken);
+
+  if (!token) return <InviteGate onActivated={setToken} />;
+
   return (
     <Routes>
       <Route path="/" element={<DashboardPage />} />

@@ -23,11 +23,10 @@ def get_engine() -> EngineCore:
 
 
 def get_novels_dir() -> Path:
-    """从 config 读取 novels 目录，默认 work/novels。"""
-    path = _config.get("paths.novels_dir", "work/novels")
-    novels = Path(path)
-    if not novels.is_absolute():
-        novels = Path.cwd() / novels
+    """Return the user-scoped novels directory based on auth context."""
+    from ..user.context import get_current_user
+    user_id = get_current_user()
+    novels = Path("work/users") / user_id / "novels"
     return novels.resolve()
 
 

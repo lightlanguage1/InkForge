@@ -6,9 +6,11 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from ..user.middleware import AuthMiddleware
+
 from .routers import (
     health, projects, generation, entities, status,
-    compile, plot, checkpoints, skills, references, log, threads, portrait,
+    compile, plot, checkpoints, skills, references, log, threads, portrait, auth,
 )
 
 logger = logging.getLogger(__name__)
@@ -27,6 +29,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.add_middleware(AuthMiddleware)
 
 
 # 全局异常兜底 — 保证所有未捕获异常都有 traceback 日志
@@ -52,3 +56,4 @@ app.include_router(references.router)
 app.include_router(log.router)
 app.include_router(threads.router)
 app.include_router(portrait.router)
+app.include_router(auth.router)

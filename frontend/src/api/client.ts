@@ -21,15 +21,23 @@ async function handleResponse<T>(res: Response, path: string): Promise<T> {
   return res.json();
 }
 
+function authHeaders(extra?: Record<string, string>): Record<string, string> {
+  const token = localStorage.getItem("inkforge_token");
+  return {
+    ...(extra ?? {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
 export async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`);
+  const res = await fetch(`${BASE}${path}`, { headers: authHeaders() });
   return handleResponse<T>(res, path);
 }
 
 export async function post<T>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: body ? JSON.stringify(body) : undefined,
   });
   return handleResponse<T>(res, path);
@@ -38,13 +46,16 @@ export async function post<T>(path: string, body?: unknown): Promise<T> {
 export async function patch<T>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: body ? JSON.stringify(body) : undefined,
   });
   return handleResponse<T>(res, path);
 }
 
 export async function del<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, { method: "DELETE" });
+  const res = await fetch(`${BASE}${path}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
   return handleResponse<T>(res, path);
 }

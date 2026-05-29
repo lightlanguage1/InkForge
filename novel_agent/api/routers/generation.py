@@ -2,31 +2,39 @@
 
 import asyncio
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from ..deps import resolve_project, create_agent
 from ...agent.streaming_agent import StreamingStoryAgent
+from ...user.context import get_current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["生成"])
 
-# 并发锁——每个项目同时只能有一个 tick 在运行
-_locks: dict[str, asyncio.Lock] = {}
+# 线程池——避免长时间生成阻塞事件循环
+_executor = ThreadPoolExecutor(max_workers=20)
+
+# 并发锁——user_id:project_id 粒度，不同用户互不阻塞
 _running: set[str] = set()
 
 
+def _scope_key(project_id: str) -> str:
+    return f"{get_current_user()}:{project_id}"
+
+
 def _try_lock(project_id: str) -> bool:
-    """尝试获取项目锁。已被占用返回 False。"""
-    if project_id in _running:
+    key = _scope_key(project_id)
+    if key in _running:
         return False
-    _running.add(project_id)
+    _running.add(key)
     return True
 
 
 def _release(project_id: str):
-    _running.discard(project_id)
+    _running.discard(_scope_key(project_id))
 
 
 _FINALE_INSTRUCTION = (

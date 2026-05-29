@@ -62,7 +62,13 @@ def resolve_api_key(provider: str) -> str:
     """Return the API key for *provider*."""
     provider = provider.lower().strip()
 
-    # 1. Provider-specific env var
+    # 1. Key pool (INKFORGE_API_KEYS — round-robin across multiple keys)
+    from .key_pool import get_key as _pool_key
+    pk = _pool_key()
+    if pk and provider in ("deepseek", "openai", "api"):
+        return pk
+
+    # 2. Provider-specific env var
     specific_var = _PROVIDER_ENV_MAP.get(provider)
     if specific_var:
         key = os.environ.get(specific_var)
