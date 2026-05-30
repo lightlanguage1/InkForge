@@ -228,6 +228,7 @@ class StoryAgent:
 
             # Phase 4: Memory update
             self._update_memory(scene_data["text"], scene_id, tick)
+            self._bump_loop_mentions(plan)
             promotion_result = self._check_goal_promotion(tick)
             self._maybe_audit_threads(tick)
 
@@ -926,6 +927,22 @@ class StoryAgent:
             'mentions': top_loop.scenes_mentioned
         }
     
+    def _bump_loop_mentions(self, plan: dict) -> None:
+        """Increment scenes_mentioned for open loops addressed in this scene."""
+        loop_ids = set(plan.get("loops_addressed", []) or [])
+        if not loop_ids:
+            return
+        loops = self.memory.load_open_loops()
+        updated = False
+        for loop in loops:
+            if loop.id in loop_ids:
+                loop.scenes_mentioned = getattr(loop, "scenes_mentioned", 0) + 1
+                loop.last_mentioned_tick = self.state["current_tick"]
+                updated = True
+        if updated:
+            self.memory.save_open_loops(loops)
+            logger.debug("Bumped mentions for loops: %s", loop_ids)
+
     def _needs_beat_regeneration(self) -> bool:
         """Check if we need to generate more plot beats (Phase 5).
         
