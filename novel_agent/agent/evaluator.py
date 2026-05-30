@@ -62,28 +62,43 @@ POV角色：{character_name}
 只输出JSON：{{"is_contradiction": true/false, "reason": "一句话理由(中文)"}}"""
 
 
-_LOGIC_QA_PROMPT = """你是小说逻辑审核专家。请通读以下场景，找出其中的时间矛盾、年龄冲突和逻辑谬误。
+_LOGIC_QA_PROMPT = """你是小说逻辑审核专家。通读以下场景，找出其中的逻辑谬误和设定矛盾。
 
-审核标准：
-1. 时间连续性：场景中提到的时间跨度是否合理？有没有"第1章在报名路上，第2章突然三天后"之类缺少过渡的问题？
-2. 年龄一致性：角色年龄与其行为/经历是否匹配？例如"16岁少女20年前救了人"就是明显的年龄矛盾。
-3. 逻辑一致性：场景中的事件、对话、设定是否与故事已建立的事实冲突？
+== 检测规则（通用，适用于所有题材） ==
 
-场景上下文：
-- 故事名：{novel_name}
-- 当前第 {current_tick} 幕
-- POV角色：{pov_name}（年龄：{pov_age}岁）
-- 场景意图：{scene_intention}
-- 世界观规则：{lore_rules}
+1. **时间自洽性**：场景内的时间跨度是否与事件量匹配？描述的事件在所述时间段内能否完成？
+   例：一句话"三天后"但中间没有任何过渡 → warning。但星际航行、修炼闭关等世界观允许的长时间跨度不算问题。
 
-场景全文：
+2. **因果关系**：事件之间是否有合理的因果链？是否存在"因为A所以B"但A和B之间逻辑断裂的情况？
+
+3. **性格/关系一致性**：角色的行为和对话是否与前面已建立的性格/关系一致？如有显著变化，是否有充分的剧情铺垫？
+
+4. **设定遵守**：场景中的事件是否违反了下方列出的世界观规则？如果世界观明确允许某设定，则不算违规。
+
+5. **信息连续性**：前面场景中已确认的信息（角色位置、物品归属、已经发生的事件等）是否在本场景中被无故推翻或无视？
+
+6. **能力一致性**：角色的能力/技能是否与之前的表现一致？没有铺垫的新能力/知识突然出现 → error。
+
+== 不检测的内容 ==
+- 如果世界观规则明确允许（如魔法世界可以飞行、科幻世界可以跃迁），不算违规
+- 角色的主观感受、情感反应（这些是创作自由）
+- 对话的措辞风格
+
+== 场景上下文 ==
+- 故事：{novel_name} | 类型由世界观决定
+- 第 {current_tick} 幕
+- POV：{pov_name}（{pov_age}岁）
+- 意图：{scene_intention}
+- 已确立的世界观（这些规则不可违反）：{lore_rules}
+
+== 场景全文 ==
 ```
 {scene_text}
 ```
 
 只输出JSON：
-{{"issues": [{{"type": "time|age|logic", "description": "问题描述", "severity": "error|warning"}}], "passed": true/false}}
-如果没有问题，返回空issues数组和passed=true。只返回JSON。"""
+{{"issues": [{{"type": "time|causality|character|setting|info|ability", "description": "具体问题（中文）", "severity": "error|warning"}}], "passed": true/false}}
+无问题则 passed=true, issues=[]。只返回JSON。"""
 
 
 class SceneEvaluator:
@@ -114,7 +129,7 @@ class SceneEvaluator:
         if not checks["continuity"]:
             issues.append("连续性错误：场景与角色状态矛盾")
 
-        # LLM 时间/逻辑一致性评审（非致命，记入 warnings）
+        # LLM 时间/逻辑一致性评审 — severity=error 会阻断场景，必须重写
         logic_result = self._check_logic(scene_text, scene_context)
         if logic_result:
             checks["logic"] = logic_result.get("passed", True)
@@ -263,9 +278,13 @@ class SceneEvaluator:
                 char_name = char.display_name or char_name
                 char_age = str(char.physical_traits.age) if char.physical_traits and char.physical_traits.age else "未知"
 
-        # 收集世界观规则
+        # 收集世界观规则 — more context for better consistency checks
         lore_items = self.memory.load_all_lore()
-        lore_text = "; ".join(l.content[:80] for l in lore_items[-5:]) if lore_items else "暂无"
+        critical = [l for l in lore_items if getattr(l, "importance", "") == "critical"]
+        important = [l for l in lore_items if getattr(l, "importance", "") == "important"]
+        normal = [l for l in lore_items if getattr(l, "importance", "") not in ("critical", "important")]
+        selected = critical + important[-5:] + normal[-5:]
+        lore_text = "; ".join(f"[{getattr(l, 'importance', '?')}] {l.content[:100]}" for l in selected[-15:]) if selected else "暂无"
 
         prompt = _LOGIC_QA_PROMPT.format(
             novel_name=context.get("novel_name", ""),
