@@ -132,7 +132,8 @@ class SceneEvaluator:
         # LLM 时间/逻辑一致性评审 — severity=error 会阻断场景，必须重写
         logic_result = self._check_logic(scene_text, scene_context)
         if logic_result:
-            checks["logic"] = logic_result.get("passed", True)
+            has_errors = any(i.get("severity") == "error" for i in (logic_result.get("issues") or []))
+            checks["logic"] = logic_result.get("passed", True) and not has_errors
             for issue in logic_result.get("issues", []):
                 msg = f"[{issue.get('type', '?')}] {issue.get('description', '')}"
                 if issue.get("severity") == "error":
