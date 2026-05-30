@@ -48,6 +48,14 @@ class WriterContextBuilder:
         # Extract basic info
         novel_name = project_state.get("novel_name", "Untitled Novel")
         current_tick = project_state.get("current_tick", 0)
+        foundation = project_state.get("story_foundation", {})
+        foundation_summary = (
+            f"Genre: {foundation.get('genre', '')}\n"
+            f"Premise: {foundation.get('premise', '')}\n"
+            f"Protagonist: {foundation.get('protagonist_archetype', '')}\n"
+            f"Setting: {foundation.get('setting', '')}\n"
+            f"Tone: {foundation.get('tone', '')}"
+        )
         scene_intention = plan.get("scene_intention", "Continue the story")
         key_change = plan.get("key_change", "Advance the plot")
         progress_milestone = plan.get("progress_milestone", "")
@@ -86,6 +94,7 @@ class WriterContextBuilder:
         return {
             "novel_name": novel_name,
             "current_tick": current_tick,
+            "story_foundation_summary": foundation_summary,
             "scene_intention": scene_intention,
             "key_change": key_change,
             "progress_milestone": progress_milestone,
