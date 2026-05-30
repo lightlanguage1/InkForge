@@ -8,6 +8,7 @@
 
 {story_foundation_summary}
 
+{skill_context}
 {writer_notes}
 ## 当前故事状态
 

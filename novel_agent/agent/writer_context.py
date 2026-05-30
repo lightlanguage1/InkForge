@@ -88,9 +88,13 @@ class WriterContextBuilder:
         # Get optional length guidance from plan metadata
         scene_length_guidance = self._get_length_guidance(plan)
         
-        # Format plot beat section (Phase 5)
+        # Format plot beat section
         plot_beat_section = self._format_plot_beat_section(plan)
-        
+
+        # Thread / story goal context for Writer
+        thread_context = self._format_thread_context(project_state.get("current_tick", 0))
+        story_goal_context = self._format_story_goal(project_state)
+
         return {
             "novel_name": novel_name,
             "current_tick": current_tick,
@@ -117,6 +121,8 @@ class WriterContextBuilder:
             "recent_context": recent_context,
             "tool_results_summary": tool_results_summary,
             "scene_length_guidance": scene_length_guidance,
+            "thread_context": thread_context,
+            "story_goal_context": story_goal_context,
             "skill_context": _build_skill_context(
                 project_state,
                 store_path=(self.config.get("skill") or {}).get("store_path"),
@@ -538,6 +544,26 @@ class WriterContextBuilder:
             "Apply these references as TONAL GUIDANCE only — adopt mood, pacing, "
             "and descriptive approach where fitting, but do NOT copy plot, characters, "
             "or specific phrasing."
+        )
+
+    def _format_thread_context(self, current_tick: int) -> str:
+        """Active story threads for Writer awareness."""
+        try:
+            from ..memory.thread_manager import ThreadManager
+            mgr = ThreadManager(self.memory, config=self.config)
+            return mgr.format_dashboard(current_tick)
+        except Exception:
+            return ""
+
+    def _format_story_goal(self, project_state: dict) -> str:
+        """Story goal for Writer awareness."""
+        goals = project_state.get("story_goals", {}) or {}
+        primary = goals.get("primary")
+        if not primary:
+            return ""
+        return (
+            f"**故事终极目标**（第{primary.get('promoted_at_tick','?')}幕浮现）："
+            f"{primary.get('description','')}\n"
         )
 
         return "\n".join(sections)

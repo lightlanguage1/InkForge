@@ -146,15 +146,11 @@ class SceneEvaluator:
 
     def _check_pov(self, text: str, context: Dict[str, Any]) -> bool:
         """POV check: fast-path keyword bypass → LLM full-scene scan."""
-        # Fast path: no common markers at all, skip LLM to save cost
+        # Run POV check via LLM whenever available
         text_lower = text.lower()
         if not any(m in text_lower for m in _FAST_PATH_MARKERS):
             if not self.llm:
-                return True  # No LLM, no markers — assume clean
-            # Even without markers, run LLM on first 2 ticks or when configured
-            tick = context.get("current_tick", 99)
-            if tick > 2 and not self.config.get("generation", {}).get("eval_always_llm", False):
-                return True  # Skip LLM for cost efficiency on established stories
+                return True
 
         if self.llm:
             return self._llm_check_pov(text, context)
@@ -254,9 +250,9 @@ class SceneEvaluator:
             return None
 
         tick = context.get("current_tick", 0)
-        # 每 5 幕做一次完整评审，节省成本但不遗漏
-        if tick > 0 and tick % 5 != 0 and not self.config.get("generation", {}).get("eval_always_llm", False):
-            return None
+        # Run logic QA every tick — the cost of missing contradictions far outweighs LLM cost
+        if tick > 0:
+            pass
 
         pov_id = context.get("pov_character_id", "")
         char_name = context.get("pov_character_name", "未知")

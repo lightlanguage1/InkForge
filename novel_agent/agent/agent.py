@@ -229,6 +229,7 @@ class StoryAgent:
             # Phase 4: Memory update
             self._update_memory(scene_data["text"], scene_id, tick)
             self._bump_loop_mentions(plan)
+            self._advance_threads(plan, scene_id, tick)
             promotion_result = self._check_goal_promotion(tick)
             self._maybe_audit_threads(tick)
 
@@ -942,6 +943,17 @@ class StoryAgent:
         if updated:
             self.memory.save_open_loops(loops)
             logger.debug("Bumped mentions for loops: %s", loop_ids)
+
+    def _advance_threads(self, plan: dict, scene_id: str, tick: int) -> None:
+        """Mark story threads as advanced when addressed in this scene."""
+        thread_ids = plan.get("threads_addressed", []) or []
+        if not thread_ids:
+            return
+        for tid in thread_ids:
+            try:
+                self.memory.advance_thread(tid, tick, scene_id)
+            except Exception as e:
+                logger.debug("Thread %s advance failed: %s", tid, e)
 
     def _needs_beat_regeneration(self) -> bool:
         """Check if we need to generate more plot beats (Phase 5).

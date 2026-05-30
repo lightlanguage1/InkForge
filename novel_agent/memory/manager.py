@@ -636,9 +636,11 @@ class MemoryManager:
     # ========================================================================
     
     def load_relationships(self) -> List[RelationshipGraph]:
-        """Load all relationships."""
-        data = self._read_json(self.relationships_file)
-        return [RelationshipGraph.from_dict(rel) for rel in data.get("relationships", [])]
+        """Load all relationships (tick-cached)."""
+        return self._cache_get("relationships", lambda: [
+            RelationshipGraph.from_dict(rel)
+            for rel in self._read_json(self.relationships_file).get("relationships", [])
+        ])
     
     def save_relationships(self, relationships: List[RelationshipGraph]):
         """Save relationships to disk."""

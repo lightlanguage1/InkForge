@@ -31,8 +31,8 @@ DEFAULT_CONFIG = {
     },
     'generation': {
         'max_tools_per_tick': 3,
-        'recent_scenes_count': 3,
-        'summary_scenes_count': 5,    # Number of older scenes to include as summaries in writer context
+        'recent_scenes_count': 10,   # More context for long-story coherence
+        'summary_scenes_count': 15,   # Writer sees deeper history
         'include_overall_summary': True,
         'enable_fact_extraction': True,
         'enable_entity_updates': True,

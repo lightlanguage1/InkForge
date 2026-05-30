@@ -216,6 +216,9 @@ class ContextBuilder:
         # Character lifecycle
         context["absent_characters"] = self._format_absent_characters()
 
+        # Skill context (same format as Writer — Planner needs style awareness too)
+        context["skill_context"] = self._format_skill_context(project_state)
+
         # Thread dashboard (plot-line tracking)
         context["thread_dashboard"] = self._format_thread_dashboard(project_state.get("current_tick", 0))
 
@@ -232,6 +235,15 @@ class ContextBuilder:
             context["plan_rejection_feedback"] = ""
 
         return context
+
+    def _format_skill_context(self, project_state: dict) -> str:
+        """Format active skill styles for Planner awareness."""
+        try:
+            from ..skill.injector import build_skill_context
+            store_path = (self.config.get("skill") or {}).get("store_path")
+            return build_skill_context(project_state, store_path=store_path)
+        except Exception:
+            return ""
 
     def _format_writer_notes(self, per_tick_notes: str = "") -> str:
         """Format direction notes for planner/writer contexts.

@@ -117,23 +117,29 @@ class SceneCommitter:
         return filepath
     
     def _extract_characters(self, plan: Dict[str, Any]) -> List[str]:
-        """Extract character IDs from plan.
-        
-        Args:
-            plan: Plan dictionary
-        
-        Returns:
-            List of character IDs present in scene
-        """
+        """Extract character IDs present in this scene from plan metadata."""
         characters = set()
-        
-        # Add POV character
+
+        # 1. POV character
         pov_char = plan.get("pov_character")
-        if pov_char:
+        if pov_char and pov_char.startswith("C"):
             characters.add(pov_char)
-        
-        # TODO: In future, could extract from tool results
-        # For example, if character.generate was used, add that character
-        # For now, just return POV character
-        
+
+        # 2. Beat characters_involved
+        beat_target = plan.get("beat_target") or {}
+        if isinstance(beat_target, dict):
+            beat_id = beat_target.get("beat_id")
+            if beat_id:
+                try:
+                    from ..plot.manager import PlotOutlineManager
+                    mgr = PlotOutlineManager(self.project_path)
+                    outline = mgr.load_outline()
+                    beat = next((b for b in outline.beats if b.id == beat_id), None)
+                    if beat and getattr(beat, "characters_involved", None):
+                        for cid in beat.characters_involved:
+                            if cid.startswith("C"):
+                                characters.add(cid)
+                except Exception:
+                    pass
+
         return list(characters)

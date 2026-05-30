@@ -24,6 +24,8 @@
 **本场景必须完成的关键变化：**{key_change}
 **进展里程碑（如非解决）：**{progress_milestone}
 
+{story_goal_context}
+{thread_context}
 {plot_beat_section}
 
 **场景模式：**{scene_mode}
