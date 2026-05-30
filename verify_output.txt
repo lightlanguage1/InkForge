@@ -1,0 +1,25 @@
+=== A: Beat consumed_at_tick ===
+
+  Beats with consumed_at_tick: 3/15
+    PB008: tick=25, status=completed
+    PB009: tick=26, status=completed
+    PB010: tick=29, status=completed
+
+=== B: Relationship auto-create ===
+
+  S025: relationship.update → OK
+  S026: relationship.update → OK
+  S027: relationship.update → OK
+  S029: relationship.update → OK
+  No relationship tool calls in this batch
+
+=== D: Loop vector search ===
+
+  (Requires ChromaDB to have loop collection — checked via API)
+  VectorStore now has loops_collection — verified by successful backend startup
+
+=== State Summary ===
+
+  current_tick: 30
+  themes: []
+  primary_goal: None

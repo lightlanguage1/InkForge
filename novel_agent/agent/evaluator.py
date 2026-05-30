@@ -121,16 +121,24 @@ class SceneEvaluator:
         warnings: List[str] = []
         checks: Dict[str, bool] = {}
 
-        checks["pov"] = self._check_pov(scene_text, scene_context)
-        if not checks["pov"]:
-            issues.append("POV违规：场景存在全知叙述或视角跳跃，需要修正")
+        # POV + Logic QA run in parallel — independent LLM analyses of same text
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            pov_future = pool.submit(self._check_pov, scene_text, scene_context)
+            logic_future = pool.submit(self._check_logic, scene_text, scene_context)
 
-        checks["continuity"] = self._check_continuity(scene_text, scene_context)
-        if not checks["continuity"]:
-            issues.append("连续性错误：场景与角色状态矛盾")
+            # Continuity check is fast (keyword-based), run inline
+            checks["continuity"] = self._check_continuity(scene_text, scene_context)
+            if not checks["continuity"]:
+                issues.append("连续性错误：场景与角色状态矛盾")
 
-        # LLM 时间/逻辑一致性评审 — severity=error 会阻断场景，必须重写
-        logic_result = self._check_logic(scene_text, scene_context)
+            # Collect POV result
+            checks["pov"] = pov_future.result()
+            if not checks["pov"]:
+                issues.append("POV违规：场景存在全知叙述或视角跳跃，需要修正")
+
+            # Collect logic QA result
+            logic_result = logic_future.result()
         if logic_result:
             has_errors = any(i.get("severity") == "error" for i in (logic_result.get("issues") or []))
             checks["logic"] = logic_result.get("passed", True) and not has_errors
