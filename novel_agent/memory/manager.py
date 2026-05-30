@@ -17,13 +17,15 @@ from .entities import (
 class MemoryManager:
     """Manages persistent storage and retrieval of entities."""
     
-    def __init__(self, project_path: Path):
+    def __init__(self, project_path: Path, vector_store=None):
         """Initialize memory manager.
-        
+
         Args:
             project_path: Path to the novel project directory
+            vector_store: Optional VectorStore for indexing loops
         """
         self.project_path = Path(project_path)
+        self.vector_store = vector_store
         self.memory_path = self.project_path / "memory"
         self.characters_path = self.memory_path / "characters"
         self.locations_path = self.memory_path / "locations"
@@ -599,6 +601,13 @@ class MemoryManager:
         """Save open loops to disk."""
         data = {"loops": [loop.to_dict() for loop in loops]}
         self._write_json(self.open_loops_file, data)
+        # Index loops in vector store if available
+        if self.vector_store:
+            for loop in loops:
+                try:
+                    self.vector_store.index_loop(loop)
+                except Exception:
+                    pass  # Don't block on indexing errors
     
     def add_open_loop(self, loop: OpenLoop):
         """Add a new open loop."""

@@ -15,6 +15,7 @@ class ProjectCreateRequest(BaseModel):
     setting: Optional[str] = None
     tone: Optional[str] = None
     themes: Optional[str] = None
+    primary_goal: Optional[str] = None
     use_plot_first: bool = False
     skill_ids: List[str] = []
 

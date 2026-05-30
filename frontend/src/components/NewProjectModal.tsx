@@ -40,7 +40,7 @@ interface Props {
 
 /* ── Component ──────────────────────────────────────── */
 export function NewProjectModal({ open, onClose, onSubmit, isLoading, skills }: Props) {
-  const [form, setForm] = useState<CreateProjectReq>({ name: "", genre: "", premise: "", setting: "", tone: "" });
+  const [form, setForm] = useState<CreateProjectReq>({ name: "", genre: "", premise: "", setting: "", tone: "", primary_goal: "" });
   const [step, setStep] = useState(0);
   const [showCustomGenre, setShowCustomGenre] = useState(false);
 
@@ -48,7 +48,7 @@ export function NewProjectModal({ open, onClose, onSubmit, isLoading, skills }: 
 
   function resetAndClose() {
     setStep(0);
-    setForm({ name: "", genre: "", premise: "", setting: "", tone: "" });
+    setForm({ name: "", genre: "", premise: "", setting: "", tone: "", primary_goal: "" });
     setShowCustomGenre(false);
     onClose();
   }
@@ -223,6 +223,10 @@ function StepBasics({ form, setForm, showCustomGenre, setShowCustomGenre, select
       <Textarea label="故事前提" value={form.premise ?? ""} onChange={(v) => setForm({ ...form, premise: v })}
         placeholder="一两句话描述故事的核心设定和冲突..." rows={3} />
 
+      <div className="p-3 rounded-lg text-[11px] leading-relaxed" style={{ background: "rgba(200,151,90,0.06)", border: "1px solid rgba(200,151,90,0.15)", color: "var(--text-2)" }}>
+        💡 <strong>提示：</strong>填得越详细，AI 生成的故事越真实。类型、前提和主角设定是必须的——如果留空，首次生成时 AI 会根据现有内容自动补全。
+      </div>
+
       <div className="flex justify-end gap-2 pt-3" style={{ borderTop: "1px solid var(--border)" }}>
         <Button variant="ghost" size="sm" onClick={onNext}>更多设定 →</Button>
         <Button size="sm" onClick={onSkip} loading={loading} disabled={!form.name}>创建</Button>
@@ -277,6 +281,9 @@ function StepWorld({ form, setForm, onBack, onNext }: StepWorldProps) {
 
       <Input label="主题（逗号分隔）" value={form.themes ?? ""} onChange={(v) => setForm({ ...form, themes: v })}
         placeholder="复仇 / 成长 / 爱情 / 救赎..." />
+
+      <Textarea label="主角核心目标" value={form.primary_goal ?? ""} onChange={(v) => setForm({ ...form, primary_goal: v })}
+        placeholder="主角最想达成的一件事——主线剧情的核心驱动力，一句话说清楚…" rows={2} />
 
       <div
         className="flex items-center justify-between p-4 rounded-xl cursor-pointer transition-all duration-150"

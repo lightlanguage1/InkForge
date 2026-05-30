@@ -1,5 +1,6 @@
 """Memory-related tools for the story agent."""
 
+import logging
 import random
 from typing import Dict, List, Optional, Any
 from pathlib import Path
@@ -10,6 +11,8 @@ from ..memory.entities import (
     PhysicalTraits, Personality, CurrentState
 )
 from .base import Tool
+
+logger = logging.getLogger(__name__)
 
 
 def _llm_generate_given_name(role: str, description: str) -> str:
@@ -43,7 +46,7 @@ class MemorySearchTool(Tool):
                 },
                 "entity_types": {
                     "type": "array",
-                    "items": {"type": "string", "enum": ["character", "location", "scene", "faction"]},
+                    "items": {"type": "string", "enum": ["character", "location", "scene", "faction", "loop"]},
                     "description": "Optional filter by entity types",
                     "optional": True
                 },
@@ -486,10 +489,27 @@ class RelationshipUpdateTool(Tool):
         # Find relationship
         relationship = self.memory_manager.get_relationship_between(character_a, character_b)
         if not relationship:
-            return {
-                "success": False,
-                "error": f"No relationship found between {character_a} and {character_b}"
-            }
+            # Auto-create minimal relationship before updating
+            rel_id = self.memory_manager.generate_id("relationship")
+            # Infer relationship_type from status if available
+            rel_type = "unknown"
+            if status and "敌" in status:
+                rel_type = "enemies"
+            elif status and ("爱" in status or "恋" in status):
+                rel_type = "romantic"
+            elif status and ("友" in status or "合作" in status):
+                rel_type = "friends"
+            relationship = RelationshipGraph(
+                id=rel_id,
+                character_a=character_a,
+                character_b=character_b,
+                relationship_type=rel_type,
+                perspective_a="",
+                perspective_b="",
+                status=status or "neutral",
+            )
+            self.memory_manager.add_relationship(relationship)
+            logger.info("Auto-created relationship %s between %s and %s", rel_id, character_a, character_b)
         
         # Build changes dict
         changes = {}

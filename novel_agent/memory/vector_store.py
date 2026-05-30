@@ -5,7 +5,7 @@ from typing import List, Dict, Any, Optional
 import chromadb
 from chromadb.config import Settings
 
-from .entities import Character, Location, Scene, Lore, Faction
+from .entities import Character, Location, Scene, Lore, Faction, OpenLoop
 
 
 class VectorStore:
@@ -47,6 +47,10 @@ class VectorStore:
         self.factions_collection = self.client.get_or_create_collection(
             name="factions",
             metadata={"description": "Faction/organization entities"}
+        )
+        self.loops_collection = self.client.get_or_create_collection(
+            name="loops",
+            metadata={"description": "Open loop / story thread entities"}
         )
     
     # ========================================================================
@@ -188,10 +192,42 @@ class VectorStore:
             metadatas=[metadata]
         )
     
+    def index_loop(self, loop: OpenLoop):
+        """Add or update open loop in vector index.
+
+        Args:
+            loop: OpenLoop entity to index
+        """
+        # Build searchable text from loop fields
+        parts = [loop.description]
+        if hasattr(loop, 'category') and loop.category:
+            parts.append(loop.category)
+        if hasattr(loop, 'resolution_hint') and loop.resolution_hint:
+            parts.append(loop.resolution_hint)
+        text = " ".join(parts)
+
+        metadata = {
+            "entity_type": "loop",
+            "id": loop.id,
+            "priority": loop.priority if hasattr(loop, 'priority') else 0,
+            "status": loop.status if hasattr(loop, 'status') else "open",
+        }
+
+        # Remove existing entry if present
+        existing = self.loops_collection.get(ids=[loop.id])
+        if existing and existing["ids"]:
+            self.loops_collection.delete(ids=[loop.id])
+
+        self.loops_collection.add(
+            ids=[loop.id],
+            documents=[text],
+            metadatas=[metadata]
+        )
+
     # ========================================================================
     # Search Methods
     # ========================================================================
-    
+
     def search_characters(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
         """Search for relevant characters.
         
@@ -257,24 +293,27 @@ class VectorStore:
             List of search results sorted by relevance
         """
         if entity_types is None:
-            entity_types = ["character", "location", "scene", "faction"]
-        
+            entity_types = ["character", "location", "scene", "faction", "loop"]
+
         all_results = []
-        
+
         if "character" in entity_types:
             char_results = self.search_characters(query, limit)
             all_results.extend(char_results)
-        
+
         if "location" in entity_types:
             loc_results = self.search_locations(query, limit)
             all_results.extend(loc_results)
-        
+
         if "scene" in entity_types:
             scene_results = self.search_scenes(query, limit)
             all_results.extend(scene_results)
         if "faction" in entity_types:
             fac_results = self.search_factions(query, limit)
             all_results.extend(fac_results)
+        if "loop" in entity_types:
+            loop_results = self.search_loops(query, limit)
+            all_results.extend(loop_results)
         
         # Sort by distance (lower is better)
         all_results.sort(key=lambda x: x["distance"])
@@ -296,7 +335,23 @@ class VectorStore:
             n_results=limit
         )
         return self._format_results(results)
-    
+
+    def search_loops(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
+        """Search for relevant open loops.
+
+        Args:
+            query: Natural language search query
+            limit: Maximum number of results
+
+        Returns:
+            List of search results
+        """
+        results = self.loops_collection.query(
+            query_texts=[query],
+            n_results=limit
+        )
+        return self._format_results(results)
+
     def _format_results(self, results: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Format ChromaDB results into a consistent structure.
         

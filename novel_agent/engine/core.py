@@ -34,12 +34,16 @@ class EngineCore:
 
         foundation = None
         if any([foundation_kwargs.get('genre'), foundation_kwargs.get('premise')]):
+            themes_raw = foundation_kwargs.get('themes', '')
+            themes_list = [t.strip() for t in str(themes_raw).split(',') if t.strip()] if themes_raw else []
             foundation = StoryFoundation(
                 genre=foundation_kwargs.get('genre', ''),
                 premise=foundation_kwargs.get('premise', ''),
                 protagonist_archetype=foundation_kwargs.get('protagonist', ''),
                 setting=foundation_kwargs.get('setting', ''),
                 tone=foundation_kwargs.get('tone', ''),
+                themes=themes_list,
+                primary_goal=foundation_kwargs.get('primary_goal', ''),
             )
 
         project_dir = create_novel_project(

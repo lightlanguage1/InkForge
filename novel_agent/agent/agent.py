@@ -223,7 +223,7 @@ class StoryAgent:
 
             # Phase 3: Post-commit
             self._save_qa(scene_id, tick, eval_result, plan)
-            self._verify_beat(scene_id, plan, current_beat, scene_data)
+            self._verify_beat(scene_id, plan, current_beat, scene_data, tick=tick)
             self._save_tension(scene_id, tension)
 
             # Phase 4: Memory update
@@ -414,11 +414,11 @@ class StoryAgent:
         except (IOError, OSError) as e:
             logger.warning("Failed to save scene QA: %s", e)
         try:
-            self._update_beats_from_evaluation(scene_id, plan, eval_result)
+            self._update_beats_from_evaluation(scene_id, plan, eval_result, tick=tick)
         except (IOError, OSError, AttributeError, ValueError) as e:
             logger.warning("Failed to update beats from evaluation: %s", e)
 
-    def _verify_beat(self, scene_id, plan, current_beat, scene_data):
+    def _verify_beat(self, scene_id, plan, current_beat, scene_data, tick=None):
         if not current_beat:
             return
         logger.info("   验证节拍执行情况...")
@@ -430,6 +430,7 @@ class StoryAgent:
 
         if planner_targeted:
             self._mark_beat_complete(current_beat.id, scene_id,
+                                     tick=tick,
                                      verification_score=semantic_score,
                                      verification_method="trusted_planner")
             logger.info("        [v] 节拍 %s 已完成（规划器确认，得分=%.2f）", current_beat.id, semantic_score)
@@ -439,6 +440,7 @@ class StoryAgent:
             threshold = self.config.get('generation.beat_verification_threshold', 0.5)
             if semantic_score >= threshold:
                 self._mark_beat_complete(current_beat.id, scene_id,
+                                         tick=tick,
                                          verification_score=semantic_score,
                                          verification_method="semantic")
                 logger.info("        [v] 节拍 %s 已完成（语义匹配，得分=%.2f）", current_beat.id, semantic_score)
@@ -448,6 +450,7 @@ class StoryAgent:
                     logger.info("        节拍 %s 保持待执行状态", current_beat.id)
         else:
             self._mark_beat_complete(current_beat.id, scene_id,
+                                     tick=tick,
                                      verification_score=semantic_score,
                                      verification_method="auto")
 
@@ -490,6 +493,67 @@ class StoryAgent:
             }
         return result
 
+    def _auto_fill_foundation(self):
+        """Auto-fill missing story foundation fields via LLM inference.
+
+        Only fills themes and primary_goal if they are empty. Uses existing
+        genre, premise, protagonist_archetype, setting, and tone to infer.
+        """
+        foundation = self.state.get("story_foundation", {})
+        if not foundation:
+            return
+
+        themes = foundation.get("themes") or []
+        primary_goal = foundation.get("primary_goal") or ""
+
+        if isinstance(themes, list) and len(themes) > 0 and primary_goal:
+            return  # Nothing to fill
+
+        logger.info("   自动补全故事基础设定（themes/primary_goal）...")
+        genre = foundation.get("genre", "")
+        premise = foundation.get("premise", "")
+        protagonist = foundation.get("protagonist_archetype", "")
+        setting = foundation.get("setting", "")
+        tone = foundation.get("tone", "")
+
+        prompt = (
+            "你是一个故事设定助理。根据以下已有的故事信息，补全缺失的设定项。\n\n"
+            f"已有信息：\n"
+            f"- 类型：{genre}\n"
+            f"- 前提：{premise}\n"
+            f"- 主角设定：{protagonist}\n"
+            f"- 世界背景：{setting}\n"
+            f"- 基调：{tone}\n\n"
+            "请输出JSON：\n"
+            '{"themes": ["主题1", "主题2", "主题3"], "primary_goal": "主角的核心目标，一句话描述"}\n\n'
+            "要求：\n"
+            "- 主题3-5个，每个2-6字中文，要具体不空洞\n"
+            "- 核心目标要具体，与前提紧密相关，能从前提中自然推导\n"
+            "- 如果已有主题或目标不为空，保留原有内容\n"
+            "只返回JSON。"
+        )
+
+        try:
+            response = self.llm.generate(prompt, max_tokens=200)
+            data = self._parse_plan_response(response)
+            if data:
+                new_themes = data.get("themes", [])
+                new_goal = data.get("primary_goal", "")
+
+                if isinstance(new_themes, list) and len(new_themes) > 0 and not themes:
+                    foundation["themes"] = new_themes
+                    logger.info("   [+] 补全 themes: %s", ", ".join(new_themes))
+
+                if new_goal and not primary_goal:
+                    foundation["primary_goal"] = new_goal
+                    logger.info("   [+] 补全 primary_goal: %s", new_goal)
+
+                if foundation is not self.state.get("story_foundation", {}):
+                    self.state["story_foundation"] = foundation
+                    self._save_state()
+        except Exception as e:
+            logger.warning("   [-] 自动补全 foundation 失败: %s", e)
+
     def _first_tick(self) -> Dict[str, Any]:
         """Execute first tick with world baseline + two-phase entity generation.
 
@@ -502,6 +566,17 @@ class StoryAgent:
         logger.info("     执行第0幕（三阶段初始化）...")
 
         try:
+            # Index any existing loops from disk into vector store
+            existing_loops = self.memory.load_open_loops()
+            for loop in existing_loops:
+                try:
+                    self.vector.index_loop(loop)
+                except Exception:
+                    pass
+
+            # Auto-fill missing story foundation fields
+            self._auto_fill_foundation()
+
             # PHASE 0: World Baseline
             logger.info("   阶段零：生成世界观基线...")
             foundation = self.state.get("story_foundation", {})
@@ -749,7 +824,7 @@ class StoryAgent:
             "success": entity_results.get("success", True) and remaining_results.get("success", True)
         }
     
-    def _update_beats_from_evaluation(self, scene_id: str, plan: Dict[str, Any], eval_result: Dict[str, Any]) -> None:
+    def _update_beats_from_evaluation(self, scene_id: str, plan: Dict[str, Any], eval_result: Dict[str, Any], tick: int = None) -> None:
         if isinstance(self.config, dict):
             mode = self.config.get("plot", {}).get("beat_mode", "soft_hint")
         else:
@@ -784,6 +859,8 @@ class StoryAgent:
                 # while keeping executed_in_scene/execution_notes as metadata.
                 setattr(beat, "status", "completed")
                 setattr(beat, "executed_in_scene", scene_id)
+                if tick is not None:
+                    setattr(beat, "consumed_at_tick", tick)
                 notes = getattr(beat, "execution_notes", "") or ""
                 extra = f"Executed in {scene_id} with alignment {label}"
                 if isinstance(score, (int, float)):
@@ -967,17 +1044,19 @@ class StoryAgent:
         return pending_count < threshold
     
     def _mark_beat_complete(
-        self, 
-        beat_id: str, 
+        self,
+        beat_id: str,
         scene_id: str,
+        tick: int = None,
         verification_score: float = None,
         verification_method: str = None
     ):
         """Mark a plot beat as completed (Phase 5).
-        
+
         Args:
             beat_id: ID of the beat to mark complete
             scene_id: ID of the scene where beat was executed
+            tick: Current tick number when beat was consumed
             verification_score: Optional confidence score (0.0-1.0)
             verification_method: How verification was done (trusted_planner, semantic, llm, manual)
         """
@@ -988,6 +1067,8 @@ class StoryAgent:
                     beat.status = "completed"
                     beat.executed_in_scene = scene_id
                     beat.execution_notes = f"Executed in {scene_id}"
+                    if tick is not None:
+                        beat.consumed_at_tick = tick
                     if verification_score is not None:
                         beat.verification_score = verification_score
                     if verification_method:

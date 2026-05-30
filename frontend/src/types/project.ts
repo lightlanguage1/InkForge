@@ -7,6 +7,7 @@ export interface CreateProjectReq {
   setting?: string;
   tone?: string;
   themes?: string;
+  primary_goal?: string;
   use_plot_first?: boolean;
   skill_ids?: string[];
 }

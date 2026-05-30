@@ -617,6 +617,7 @@ class PlotBeat:
     prerequisites: List[str] = field(default_factory=list)
     status: str = "pending"  # pending, in_progress, completed, skipped
     created_at: str = ""
+    consumed_at_tick: Optional[int] = None  # tick when beat was consumed
     executed_in_scene: Optional[str] = None
     execution_notes: str = ""
 

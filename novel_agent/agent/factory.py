@@ -75,8 +75,8 @@ def create_agent(
 
     # --- 初始化工具注册表和记忆组件 ---
     tool_registry = ToolRegistry()
-    memory_manager = MemoryManager(project_dir)
     vector_store = VectorStore(project_dir)
+    memory_manager = MemoryManager(project_dir, vector_store=vector_store)
 
     # --- 注册 10 个工具 ---
     data_dir = Path(__file__).parent.parent / DATA_NAMES_DIR
