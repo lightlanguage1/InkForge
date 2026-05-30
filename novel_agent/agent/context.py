@@ -93,7 +93,7 @@ class ContextBuilder:
         return scenes
 
     def _qa_feedback_text(self) -> str:
-        """加载最近 QA 反馈。"""
+        """加载最近 QA 反馈 — 包含上一幕的全部问题与警告。"""
         try:
             recent = self.memory.get_recent_scene_qa(count=3)
         except Exception:
@@ -109,6 +109,15 @@ class ContextBuilder:
             achieved_val = achieved.get("value")
             prefix = f"Tick {tick_num} ({scene_id})" if tick_num is not None else f"Scene {scene_id}"
             lines.append(f"- {prefix}: change={'yes' if achieved_val else 'no' if achieved_val is not None else 'unknown'}")
+
+            # Include full issues/warnings so Planner knows what went wrong last time
+            issues = evaluation.get("issues", []) or []
+            warnings = evaluation.get("warnings", []) or []
+            if issues or warnings:
+                for issue in issues:
+                    lines.append(f"问题: {issue}")
+                for warn in warnings:
+                    lines.append(f"建议: {warn}")
         return "\n".join(lines)
 
     def build_planner_context(self, project_state: dict, current_beat=None, notes: str = "", rejection_feedback: str = "") -> dict:
