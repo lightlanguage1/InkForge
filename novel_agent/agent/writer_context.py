@@ -424,44 +424,58 @@ class WriterContextBuilder:
             return ""
     
     def _format_plot_beat_section(self, plan: Dict[str, Any]) -> str:
-        """Format plot beat section for writer prompt (Phase 5).
-        
-        Args:
-            plan: The plan dictionary (may contain plot_beat from agent)
-        
-        Returns:
-            Formatted plot beat section or empty string
+        """Format plot beat section for writer prompt.
+
+        Reads beat_target from the Planner's plan and loads the full beat
+        description / constraints from plot_outline.json so the Writer knows
+        exactly what story beat to execute in this scene.
         """
-        # Check if plot_beat was injected by the agent
-        plot_beat = plan.get("plot_beat")
-        if not plot_beat or not isinstance(plot_beat, dict):
+        beat_target = plan.get("beat_target")
+        if not beat_target or not isinstance(beat_target, dict):
             return ""
-        
-        description = plot_beat.get("description", "")
+
+        beat_id = beat_target.get("beat_id", "")
+        if not beat_id:
+            return ""
+
+        # Load beat details from plot_outline.json
+        try:
+            from ..plot.manager import PlotOutlineManager
+            manager = PlotOutlineManager(self.memory.project_path)
+            outline = manager.load_outline()
+            beat = next((b for b in outline.beats if b.id == beat_id), None)
+        except Exception:
+            beat = None
+
+        description = getattr(beat, "description", "") if beat else ""
         if not description:
             return ""
-        
-        section = f"\n** PLOT BEAT TO EXECUTE:** {description}\n"
-        
-        # Add additional beat constraints if present
-        characters = plot_beat.get("characters_involved", [])
-        if characters:
-            section += f"**Required Characters:** {', '.join(characters)}\n"
-        
-        location = plot_beat.get("location")
-        if location:
-            section += f"**Required Location:** {location}\n"
-        
-        tension_target = plot_beat.get("tension_target")
-        if tension_target:
-            section += f"**Target Tension Level:** {tension_target}/10\n"
-        
-        plot_threads = plot_beat.get("plot_threads", [])
-        if plot_threads:
-            section += f"**Advances Plot Threads:** {', '.join(plot_threads)}\n"
-        
-        section += "\n**THIS BEAT MUST BE ACCOMPLISHED IN THIS SCENE.**\n"
 
+        section = f"## 本场景必须执行的节拍\n\n"
+        section += f"**{beat_id}**: {description}\n\n"
+
+        if beat:
+            chars = getattr(beat, "characters_involved", []) or []
+            if chars:
+                section += f"涉及角色：{', '.join(chars)}\n\n"
+            loc = getattr(beat, "location", "")
+            if loc:
+                section += f"地点：{loc}\n\n"
+            tension = getattr(beat, "tension_target", None)
+            if tension is not None:
+                section += f"目标张力：{tension}/10\n\n"
+            threads = getattr(beat, "plot_threads", []) or []
+            if threads:
+                section += f"推进支线：{', '.join(threads)}\n\n"
+
+        strategy = beat_target.get("strategy", "")
+        if strategy:
+            section += f"Planner 策略：{strategy}\n"
+            notes = beat_target.get("notes", "")
+            if notes:
+                section += f"说明：{notes}\n"
+
+        section += "\n以上节拍必须在本场景中完成。\n"
         return section
 
     def _search_references(self, plan: dict, project_state: dict) -> str:

@@ -1,0 +1,22 @@
+services:
+  backend:
+    image: storydaemon-backend:latest
+    ports:
+      - "8000:8000"
+    environment:
+      - INKFORGE_API_KEYS=${INKFORGE_API_KEYS}
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - inkforge_data:/app/work
+    restart: unless-stopped
+
+  frontend:
+    image: storydaemon-frontend:latest
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  inkforge_data:
