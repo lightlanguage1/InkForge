@@ -24,7 +24,7 @@ class VectorStore:
         # Initialize ChromaDB client
         self.client = chromadb.PersistentClient(
             path=str(self.index_path),
-            settings=Settings(anonymized_telemetry=False)
+            settings=Settings(anonymized_telemetry=False, chroma_sqlite_timeout=60000)
         )
         
         # Initialize collections

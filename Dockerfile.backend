@@ -10,8 +10,9 @@ ARG HTTPS_PROXY=""
 ENV HTTP_PROXY=${HTTP_PROXY}
 ENV HTTPS_PROXY=${HTTPS_PROXY}
 
-# Install system deps + nginx
-RUN apt-get update && apt-get install -y --no-install-recommends nginx && \
+# Install system deps + nginx (no proxy — use Debian mirror directly)
+RUN unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy && \
+    apt-get update && apt-get install -y --no-install-recommends nginx && \
     rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
