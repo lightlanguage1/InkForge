@@ -56,6 +56,12 @@ class Database:
     def _init(self):
         with self._connect() as conn:
             conn.executescript(_SCHEMA)
+            # Migration: add IP tracking columns for existing databases
+            for col in ("activate_ip", "last_ip"):
+                try:
+                    conn.execute(f"ALTER TABLE users ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
+                except sqlite3.OperationalError:
+                    pass  # column already exists
             conn.commit()
 
     # ── invite codes ──────────────────────────────────────────────────────
@@ -107,32 +113,38 @@ class Database:
 
     # ── users ────────────────────────────────────────────────────────────
 
-    def get_or_create_user(self, invite_code: str, display_name: str) -> str:
+    def get_or_create_user(self, invite_code: str, display_name: str, ip: str = "") -> str:
         """Create a user from a valid invite code. Returns user_id."""
         now = datetime.utcnow().isoformat()
-        user_id = secrets.token_hex(6)  # 12-char hex
+        user_id = secrets.token_hex(6)
         code = invite_code.strip().upper()
         with self._connect() as conn:
-            # Check if this invite code is an admin code
             row = conn.execute(
                 "SELECT is_admin FROM invite_codes WHERE code = ?", (code,)
             ).fetchone()
             is_admin = row["is_admin"] if row else 0
             conn.execute(
-                "INSERT INTO users (user_id, invite_code, display_name, created_at, last_seen, is_admin) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (user_id, code, display_name.strip(), now, now, is_admin)
+                "INSERT INTO users (user_id, invite_code, display_name, created_at, last_seen, is_admin, activate_ip, last_ip) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (user_id, code, display_name.strip(), now, now, is_admin, ip, ip)
             )
             conn.commit()
         return user_id
 
-    def touch_user(self, user_id: str):
-        """Update last_seen timestamp."""
+    def touch_user(self, user_id: str, ip: str = ""):
+        """Update last_seen and last_ip (for audit, not enforcement)."""
+        now = datetime.utcnow().isoformat()
         with self._connect() as conn:
-            conn.execute(
-                "UPDATE users SET last_seen = ? WHERE user_id = ?",
-                (datetime.utcnow().isoformat(), user_id)
-            )
+            if ip:
+                conn.execute(
+                    "UPDATE users SET last_seen = ?, last_ip = ? WHERE user_id = ?",
+                    (now, ip, user_id)
+                )
+            else:
+                conn.execute(
+                    "UPDATE users SET last_seen = ? WHERE user_id = ?",
+                    (now, user_id)
+                )
             conn.commit()
 
     def get_user(self, user_id: str) -> Optional[dict]:

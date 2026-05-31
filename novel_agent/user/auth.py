@@ -67,7 +67,7 @@ class ActivationError(Exception):
     pass
 
 
-def activate(db: Database, invite_code: str, display_name: str) -> dict:
+def activate(db: Database, invite_code: str, display_name: str, ip: str = "") -> dict:
     """Validate invite code, create or re-login user, return {token, user_id, display_name}."""
     display_name = display_name.strip()
     if not display_name or len(display_name) > 30:
@@ -78,7 +78,7 @@ def activate(db: Database, invite_code: str, display_name: str) -> dict:
     # Re-login: if this invite code already has a user, return that user
     existing = db.get_user_by_invite_code(invite_code)
     if existing:
-        db.touch_user(existing["user_id"])
+        db.touch_user(existing["user_id"], ip=ip)
         token = create_token(existing["user_id"])
         return {"token": token, "user_id": existing["user_id"], "display_name": existing["display_name"]}
 
@@ -89,7 +89,7 @@ def activate(db: Database, invite_code: str, display_name: str) -> dict:
     if not db.consume_code(invite_code):
         raise ActivationError("邀请码已达使用上限")
 
-    user_id = db.get_or_create_user(invite_code, display_name)
+    user_id = db.get_or_create_user(invite_code, display_name, ip=ip)
     token = create_token(user_id)
 
     return {

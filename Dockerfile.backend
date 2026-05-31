@@ -5,6 +5,10 @@ WORKDIR /app
 # Pip mirror — override via build-arg for constrained networks
 ARG PIP_INDEX=https://pypi.org/simple/
 ARG PIP_TRUSTED_HOST=""
+ARG HTTP_PROXY=""
+ARG HTTPS_PROXY=""
+ENV HTTP_PROXY=${HTTP_PROXY}
+ENV HTTPS_PROXY=${HTTPS_PROXY}
 
 # Install Python dependencies
 COPY requirements.txt .
@@ -24,8 +28,9 @@ ENV PYTHONUNBUFFERED=1
 
 RUN mkdir -p /app/work
 
-# Pre-download ChromaDB embedding model (avoids 80s first-gen delay)
-RUN python3 -c "import chromadb; chromadb.Client().get_or_create_collection('warmup')"
+# Pre-download ChromaDB embedding model — baked into image, survives rebuilds
+RUN python3 -c "from chromadb.utils.embedding_functions import DefaultEmbeddingFunction; \
+    DefaultEmbeddingFunction(); print('Embedding model cached')"
 
 EXPOSE 8000
 

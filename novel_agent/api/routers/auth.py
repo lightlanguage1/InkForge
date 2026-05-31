@@ -1,7 +1,7 @@
 """Auth endpoints — activation and user info."""
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from ...user.auth import activate, ActivationError
@@ -34,10 +34,12 @@ class ActivateResponse(BaseModel):
 
 
 @router.post("/activate", response_model=ActivateResponse)
-def activate_user(req: ActivateRequest):
+def activate_user(req: ActivateRequest, request: Request):
     """Activate with an invite code and choose a display name."""
+    # Get client IP for audit (not enforcement)
+    ip = request.client.host if request.client else ""
     try:
-        result = activate(_get_db(), req.invite_code, req.display_name)
+        result = activate(_get_db(), req.invite_code, req.display_name, ip=ip)
         return ActivateResponse(**result)
     except ActivationError as e:
         raise HTTPException(status_code=400, detail=str(e))
