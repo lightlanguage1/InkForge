@@ -1,4 +1,4 @@
-import { get, post, del } from "./client";
+import { get, post, upload, del } from "./client";
 import type { SkillInfo, SkillImportReq, SkillImportResult, ActiveSkillRef } from "../types/skill";
 
 export function listSkills() {
@@ -7,6 +7,10 @@ export function listSkills() {
 
 export function importSkill(req: SkillImportReq) {
   return post<SkillImportResult>("/v1/skills/import", req);
+}
+
+export function uploadSkill(file: File) {
+  return upload<SkillImportResult>("/v1/skills/import/upload", file);
 }
 
 export function getActiveSkills(projectId: string) {

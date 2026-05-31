@@ -52,6 +52,17 @@ export async function patch<T>(path: string, body?: unknown): Promise<T> {
   return handleResponse<T>(res, path);
 }
 
+export async function upload<T>(path: string, file: File): Promise<T> {
+  const fd = new FormData();
+  fd.append("file", file);
+  const res = await fetch(`${BASE}${path}`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: fd,
+  });
+  return handleResponse<T>(res, path);
+}
+
 export async function del<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method: "DELETE",

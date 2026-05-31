@@ -2,16 +2,14 @@ import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card } from "../components/ui/Card";
-import { Button } from "../components/ui/Button";
-import { Input } from "../components/ui/Input";
+import { DropZone } from "../components/DropZone";
 import { Badge } from "../components/ui/Badge";
 import { Spinner } from "../components/ui/Spinner";
-import { listSkills, importSkill, deleteSkill, getActiveSkills, applyProjectSkills } from "../api/skills";
+import { listSkills, uploadSkill, deleteSkill, getActiveSkills, applyProjectSkills } from "../api/skills";
 
 export function SkillsPage() {
   const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
-  const [filePath, setFilePath] = useState("");
 
   const { data: allData, isLoading } = useQuery({ queryKey: ["skills"], queryFn: listSkills });
   const { data: activeData } = useQuery({
@@ -21,8 +19,8 @@ export function SkillsPage() {
   });
 
   const importMut = useMutation({
-    mutationFn: () => importSkill({ file_path: filePath }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["skills"] }); setFilePath(""); },
+    mutationFn: (file: File) => uploadSkill(file),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["skills"] }),
   });
 
   const deleteMut = useMutation({
@@ -61,11 +59,12 @@ export function SkillsPage() {
 
       {/* 导入 */}
       <Card className="p-4">
-        <p className="text-sm mb-3" style={{ color: "var(--text-2)" }}>导入小说文件，提取写作风格技能</p>
-        <div className="flex gap-2">
-          <Input value={filePath} onChange={setFilePath} placeholder="小说文件路径（.txt）" />
-          <Button onClick={() => importMut.mutate()} loading={importMut.isPending} disabled={!filePath}>导入</Button>
-        </div>
+        <p className="text-sm mb-3" style={{ color: "var(--text-2)" }}>拖拽小说文件，提取写作风格技能</p>
+        <DropZone
+          onFile={(f) => importMut.mutate(f)}
+          loading={importMut.isPending}
+          placeholder="拖拽 .txt 小说文件到此处，或点击选择"
+        />
       </Card>
 
       {/* 技能库 */}

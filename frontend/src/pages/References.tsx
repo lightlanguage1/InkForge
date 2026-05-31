@@ -1,18 +1,21 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Card } from "../components/ui/Card";
+import { DropZone } from "../components/DropZone";
 import { Button } from "../components/ui/Button";
 import { Input } from "../components/ui/Input";
 import { Spinner } from "../components/ui/Spinner";
-import { importReference, searchReferences } from "../api/references";
+import { uploadReference, searchReferences } from "../api/references";
 import type { ReferenceSearchResult } from "../types/reference";
 
 export function ReferencesPage() {
-  const [filePath, setFilePath] = useState("");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ReferenceSearchResult[]>([]);
 
-  const importMut = useMutation({ mutationFn: () => importReference({ file_path: filePath }), onSuccess: (d) => { alert(`已导入：${d.title}（${d.chunk_count} 块）`); setFilePath(""); } });
+  const importMut = useMutation({
+    mutationFn: (file: File) => uploadReference(file),
+    onSuccess: (d) => alert(`已导入：${d.title}（${d.chunk_count} 块）`),
+  });
   const searchMut = useMutation({ mutationFn: () => searchReferences({ query, top_k: 5 }), onSuccess: (d) => setResults(d.results) });
 
   return (
@@ -20,11 +23,12 @@ export function ReferencesPage() {
       <h1 className="font-semibold" style={{ fontSize: "1.375rem", color: "var(--text-1)" }}>参考文库</h1>
 
       <Card className="p-4">
-        <p className="text-sm mb-3" style={{ color: "var(--text-2)" }}>导入外部小说作为写作风格参考</p>
-        <div className="flex gap-2">
-          <Input value={filePath} onChange={setFilePath} placeholder="参考小说文件路径" />
-          <Button onClick={() => importMut.mutate()} loading={importMut.isPending} disabled={!filePath}>导入</Button>
-        </div>
+        <p className="text-sm mb-3" style={{ color: "var(--text-2)" }}>拖拽外部小说文件，作为写作风格参考</p>
+        <DropZone
+          onFile={(f) => importMut.mutate(f)}
+          loading={importMut.isPending}
+          placeholder="拖拽 .txt 小说文件到此处，或点击选择"
+        />
       </Card>
 
       <Card className="p-4">

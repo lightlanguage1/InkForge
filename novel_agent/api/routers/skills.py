@@ -1,8 +1,10 @@
 """技能管理路由。"""
 
 import logging
+import tempfile
+from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel
 
 from ..deps import get_engine, resolve_project
@@ -105,6 +107,35 @@ def project_apply_skills(project_id: str, req: ProjectSkillApplyRequest):
     injector = SkillInjector(project_path=project_dir, config=engine.config)
     injector.inject(skills, mode=req.mode)
     return {"applied": len(skills), "skills": [s.name for s in skills]}
+
+
+@router.post("/skills/import/upload")
+def skill_upload(file: UploadFile = File(...)):
+    """Upload novel file via browser drag-and-drop and extract skill."""
+    tmp = Path(tempfile.gettempdir()) / f"inkforge_skill_{file.filename}"
+    tmp.write_bytes(file.file.read())
+    try:
+        engine = get_engine()
+        backend = engine.config.get("llm.backend", "api")
+        importer = SkillImporter(
+            engine.llm_pool.get_connection(backend=backend),
+            engine.skill_store,
+        )
+        name = file.filename.rsplit(".", 1)[0]
+        skill = importer.import_novel(file_path=str(tmp), name=name)
+    except Exception:
+        logger.exception("技能导入失败: %s", file.filename)
+        raise HTTPException(status_code=500, detail="技能导入失败")
+    finally:
+        try: tmp.unlink()
+        except OSError: pass
+
+    return {
+        "skill_id": skill.id, "slug": skill.slug, "name": skill.name,
+        "style_tags": skill.tags,
+        "patterns": len(skill.patterns),
+        "archetypes": len(skill.character_archetypes),
+    }
 
 
 @router.delete("/skills/{slug}")
