@@ -45,9 +45,11 @@ def _list_filesystem_projects() -> list[dict]:
 @router.post("/project")
 def create_project(req: ProjectCreateRequest):
     engine = get_engine()
+    # Force user-scoped directory, never use legacy global novels_dir
+    user_novels_dir = str(get_novels_dir())
     try:
         path = engine.create_project(
-            name=req.name, directory=req.directory,
+            name=req.name, directory=user_novels_dir,
             genre=req.genre, premise=req.premise,
             protagonist=req.protagonist, setting=req.setting,
             tone=req.tone, themes=req.themes,
