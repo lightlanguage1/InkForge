@@ -42,7 +42,8 @@ class LLMPool:
 
         Same backend+model reuses the connection.
         """
-        model = model or self.config.get('llm.model', 'gpt-5.1')
+        llm_cfg = self.config.get('llm', {}) or {}
+        model = model or llm_cfg.get('model') or llm_cfg.get('openai_model') or 'deepseek-chat'
         key = f"{backend}:{model}"
 
         if key in self.connections and self.connections[key].healthy:
