@@ -1,4 +1,5 @@
 # Core dependencies
+python-multipart>=0.0.6
 typer>=0.9.0
 pyyaml>=6.0.0
 jsonschema>=4.0.0
