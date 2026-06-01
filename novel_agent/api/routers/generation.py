@@ -81,8 +81,6 @@ async def tick_stream(
                     q.put(done)
                 except Exception as exc:
                     q.put(exc)
-                finally:
-                    _release(project_id)
 
             loop = asyncio.get_event_loop()
             loop.run_in_executor(_executor, _run)
@@ -98,6 +96,7 @@ async def tick_stream(
                     yield item
             except asyncio.CancelledError:
                 logger.info("SSE client disconnected, releasing lock for %s", project_id)
+            finally:
                 _release(project_id)
 
         return StreamingResponse(

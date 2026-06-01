@@ -28,3 +28,18 @@
 - Users: 7 已注册, 15/22 码可用
 - Logs: 干净，无 RuntimeError/Traceback。仅个别"编译失败，没有场景可编译"（空项目正常操作）
 - 活跃项目: 转生异世界成为猫娘、重生贤者加入魔王军、哥布林之王 等
+
+### #2 — 2026-06-01 13:35 CST (05:35 UTC)
+- Health: ✅ 200 (5ms)
+- Docker: ✅ backend Up 12min, frontend Up 1h
+- Users: 7 已注册, 7/22 码已用
+- Projects: 转生异世界成为猫娘靠哈气攻略迷宫(tick 0), 哥布林之王(已有), 茉莉花_bb6d7d58(已有)
+- Logs: ✅ 干净，无异常
+- ChromaDB: ✅ 模型已永久固化，0.7s 加载
+
+### #3 — 2026-06-01 18:23 CST (10:23 UTC)
+- Health: ✅ 200 (5ms)
+- Docker: ✅ backend Up 2h, frontend Up 3h
+- Users: 8 (+1), 8/22 码已用
+- Projects: 转生异世界成为猫娘靠哈气攻略迷宫(tick 2, 在生成中), 其他项目正常
+- Logs: ✅ 干净，无异常
