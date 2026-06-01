@@ -8,13 +8,18 @@ type ShapeRing    = { type:"ring";   cx:number; cy:number; r:number;  width:numb
 type ShapeLine    = { type:"line";   x1:number; y1:number; x2:number; y2:number; width:number; density:number };
 type ShapeArc     = { type:"arc";    cx:number; cy:number; r:number;  a1:number; a2:number; width:number; density:number };
 type ShapePoly    = { type:"poly";   points:[number,number][]; width:number; density:number };
-type Shape = ShapeEllipse|ShapeRing|ShapeLine|ShapeArc|ShapePoly;
+type ShapeGrid    = { type:"dot_grid"; cx:number; cy:number; w:number; h:number; spacing:number; dot_r:number; density:number };
+type ShapeScatter = { type:"scatter"; cx:number; cy:number; rx:number; ry:number; count:number; dot_r:number; density:number };
+type ShapeRadial  = { type:"radial"; cx:number; cy:number; r:number; rays:number; width:number; density:number };
+type ShapeZigzag  = { type:"zigzag"; x1:number; y1:number; x2:number; y2:number; amplitude:number; segments:number; width:number; density:number };
+type ShapeSpiral  = { type:"spiral"; cx:number; cy:number; r0:number; r1:number; turns:number; width:number; density:number };
+type Shape = ShapeEllipse|ShapeRing|ShapeLine|ShapeArc|ShapePoly|ShapeGrid|ShapeScatter|ShapeRadial|ShapeZigzag|ShapeSpiral;
 
 interface PortraitData { color:string; caption:string; shapes:Shape[] }
 interface Props { projectId:string; currentTick:number }
 
 const W = 440, H = 330;
-const STEP = 3.5;   // grid spacing — uniform gap between every dot
+const STEP = 3.5;
 const DOT_R = 1.6;
 const FOV = 600, DEPTH = 600;
 
@@ -45,9 +50,9 @@ type Dot3 = { hx:number; hy:number; hz:number; r:number; x:number; y:number; vx:
 
 function densityToHz(s:Shape):number {
   const d=s.density;
-  if(d>=2.5||s.type==="line"||s.type==="arc") return -15; // foreground
+  if(d>=2.5||s.type==="line"||s.type==="arc"||s.type==="zigzag"||s.type==="spiral"||s.type==="radial") return -15;
   if(d>=1.5) return 0;
-  return 15; // background
+  return 15;
 }
 
 // hit-test: is grid point (px,py) inside shape s?
@@ -57,10 +62,45 @@ function hitShape(px:number,py:number,s:Shape):boolean {
       const rx=Math.min(s.rx??10,20),ry=Math.min(s.ry??10,20);
       return (px-s.cx)**2/Math.max(rx,1)**2+(py-s.cy)**2/Math.max(ry,1)**2<=1;
     }
-    case"ring":   return Math.abs(Math.hypot(px-s.cx,py-s.cy)-s.r)<=(s.width??4)/2+1;
-    case"line":   return distSeg(px,py,s.x1,s.y1,s.x2,s.y2)<=(s.width??3)/2+1;
-    case"arc":    return inArc(px,py,s);
-    case"poly":   return s.points?.length>=3&&pip(px,py,s.points);
+    case"ring": return Math.abs(Math.hypot(px-s.cx,py-s.cy)-s.r)<=(s.width??4)/2+1;
+    case"line": return distSeg(px,py,s.x1,s.y1,s.x2,s.y2)<=(s.width??3)/2+1;
+    case"arc": return inArc(px,py,s);
+    case"poly": return s.points?.length>=3&&pip(px,py,s.points);
+    case"dot_grid":{
+      const x0=s.cx-s.w/2,x1=s.cx+s.w/2,y0=s.cy-s.h/2,y1=s.cy+s.h/2;
+      return px>=x0&&px<=x1&&py>=y0&&py<=y1;
+    }
+    case"scatter":{
+      const rxx=Math.max(s.rx??30,1),ryy=Math.max(s.ry??30,1);
+      return (px-s.cx)**2/rxx**2+(py-s.cy)**2/ryy**2<=1;
+    }
+    case"radial":{
+      for(let i=0;i<(s.rays??8);i++){
+        const a=(2*Math.PI*i)/(s.rays??8);
+        const ex=s.cx+(s.r??100)*Math.cos(a),ey=s.cy+(s.r??100)*Math.sin(a);
+        if(distSeg(px,py,s.cx,s.cy,ex,ey)<=(s.width??3)/2+1) return true;
+      }
+      return false;
+    }
+    case"zigzag":{
+      const segs=s.segments??6,amp=s.amplitude??30;
+      const dx_=(s.x2-s.x1)/segs,dy_=(s.y2-s.y1)/segs,len=Math.hypot(dx_,dy_)||1;
+      for(let i=0;i<segs;i++){
+        const mid=i%2===0?amp:-amp,px_=-dy_/len*mid,py_=dx_/len*mid;
+        const xa=s.x1+dx_*i+px_,ya=s.y1+dy_*i+py_;
+        const xb=s.x1+dx_*(i+1)-px_,yb=s.y1+dy_*(i+1)-py_;
+        if(distSeg(px,py,xa,ya,xb,yb)<=(s.width??3)/2+1) return true;
+      }
+      return false;
+    }
+    case"spiral":{
+      const r0=s.r0??10,r1=s.r1??90,trn=s.turns??2,steps=Math.floor((s.density??30)*2);
+      for(let i=0;i<steps;i++){
+        const t=i/steps*trn*2*Math.PI,r=r0+(r1-r0)*i/steps;
+        if(Math.hypot(px-s.cx-r*Math.cos(t),py-s.cy-r*Math.sin(t))<=(s.width??3)/2+1.5) return true;
+      }
+      return false;
+    }
   }
 }
 
@@ -68,28 +108,30 @@ function hitShape(px:number,py:number,s:Shape):boolean {
 function buildDots(data:PortraitData|null):Dot3[] {
   if(!data?.shapes?.length) return [];
 
-  // Compute bounding box across all shapes for centering
   let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity;
   for(const s of data.shapes){
-    const pts:number[][]=
-      s.type==="ellipse"?[[s.cx-s.rx,s.cy],[s.cx+s.rx,s.cy],[s.cx,s.cy-s.ry],[s.cx,s.cy+s.ry]]:
+    const pts:number[][] =
+      s.type==="ellipse"||s.type==="scatter"?[[s.cx-s.rx,s.cy],[s.cx+s.rx,s.cy],[s.cx,s.cy-s.ry],[s.cx,s.cy+s.ry]]:
       (s.type==="ring"||s.type==="arc")?[[s.cx-s.r,s.cy],[s.cx+s.r,s.cy],[s.cx,s.cy-s.r],[s.cx,s.cy+s.r]]:
-      s.type==="line"?[[s.x1,s.y1],[s.x2,s.y2]]:
-      s.points;
+      s.type==="line"||s.type==="zigzag"?[[s.x1,s.y1],[s.x2,s.y2]]:
+      s.type==="radial"?[[s.cx-s.r,s.cy],[s.cx+s.r,s.cy],[s.cx,s.cy-s.r],[s.cx,s.cy+s.r]]:
+      s.type==="spiral"?[[s.cx-s.r1,s.cy],[s.cx+s.r1,s.cy],[s.cx,s.cy-s.r1],[s.cx,s.cy+s.r1]]:
+      s.type==="dot_grid"?[[s.cx-s.w/2,s.cy],[s.cx+s.w/2,s.cy],[s.cx,s.cy-s.h/2],[s.cx,s.cy+s.h/2]]:
+      (s as ShapePoly).points;
     for(const [px,py] of pts){if(px<x0)x0=px;if(px>x1)x1=px;if(py<y0)y0=py;if(py>y1)y1=py;}
   }
   const ox=W/2-(x0+x1)/2, oy=H/2-(y0+y1)/2;
 
   const shifted:Shape[]=data.shapes.map(s=>{
-    if(s.type==="ellipse") return {...s,cx:s.cx+ox,cy:s.cy+oy};
-    if(s.type==="ring")    return {...s,cx:s.cx+ox,cy:s.cy+oy};
-    if(s.type==="line")    return {...s,x1:s.x1+ox,y1:s.y1+oy,x2:s.x2+ox,y2:s.y2+oy};
-    if(s.type==="arc")     return {...s,cx:s.cx+ox,cy:s.cy+oy};
-    if(s.type==="poly")    return {...s,points:s.points.map(([px,py])=>[px+ox,py+oy] as [number,number])};
+    if(s.type==="ellipse"||s.type==="scatter") return {...s,cx:s.cx+ox,cy:s.cy+oy};
+    if(s.type==="ring"||s.type==="arc")       return {...s,cx:s.cx+ox,cy:s.cy+oy};
+    if(s.type==="line"||s.type==="zigzag")     return {...s,x1:s.x1+ox,y1:s.y1+oy,x2:s.x2+ox,y2:s.y2+oy};
+    if(s.type==="radial"||s.type==="spiral")    return {...s,cx:s.cx+ox,cy:s.cy+oy};
+    if(s.type==="dot_grid")                     return {...s,cx:s.cx+ox,cy:s.cy+oy};
+    if(s.type==="poly")                         return {...s,points:s.points.map(([px,py]:[number,number])=>[px+ox,py+oy] as [number,number])};
     return s;
   });
 
-  // Global grid scan — every dot is at a fixed grid position STEP apart
   const all:Dot3[]=[];
   for(let gy=STEP/2;gy<H;gy+=STEP){
     for(let gx=STEP/2;gx<W;gx+=STEP){
@@ -135,13 +177,10 @@ export function ProtagonistPortrait({projectId,currentTick}:Props){
     const canvas=canvasRef.current;if(!canvas)return;
     const ctx=canvas.getContext("2d")!;
     const SPRING=0.22,DAMP=0.60,REP_R=45,REP_F=6;
-    const MAX_ROT=0.40;
 
     const frame=()=>{
       ctx.clearRect(0,0,W,H);
       const color=data?.color??"#FFB74D";
-      // Dimmer variant: blend color toward black
-      const dimColor=color;
       const {x:mx,y:my}=mouseRef.current;
       const {x:rotX,y:rotY}=rotRef.current;
       const use3D=is3D;
@@ -184,7 +223,6 @@ export function ProtagonistPortrait({projectId,currentTick}:Props){
     };
     rafRef.current=requestAnimationFrame(frame);
     return()=>cancelAnimationFrame(rafRef.current);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   },[data,is3D]);
 
   const onMouseMove=useCallback((e:React.MouseEvent)=>{
@@ -228,12 +266,6 @@ export function ProtagonistPortrait({projectId,currentTick}:Props){
         color:is3D?color:"var(--text-3)",cursor:"pointer",letterSpacing:"0.06em",
       }}>{is3D?"3D":"2D"}</button>
 
-      {!isLoading&&data?.caption&&(
-        <div style={{position:"absolute",bottom:0,left:0,right:0,padding:"6px 14px 10px",
-          background:"linear-gradient(to top,rgba(10,8,6,0.88) 50%,transparent)",pointerEvents:"none"}}>
-          <span style={{fontSize:"11px",color,letterSpacing:"0.06em"}}>{data.caption}</span>
-        </div>
-      )}
       {isLoading&&(
         <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",
           justifyContent:"center",pointerEvents:"none"}}>
