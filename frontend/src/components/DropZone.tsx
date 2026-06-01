@@ -4,10 +4,11 @@ interface Props {
   onFile: (file: File) => void;
   accept?: string;
   loading?: boolean;
+  progress?: number;
   placeholder?: string;
 }
 
-export function DropZone({ onFile, accept = ".txt", loading, placeholder = "拖拽 .txt 文件到此处，或点击选择" }: Props) {
+export function DropZone({ onFile, accept = ".txt", loading, progress, placeholder = "拖拽 .txt 文件到此处，或点击选择" }: Props) {
   const [hover, setHover] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -28,9 +29,20 @@ export function DropZone({ onFile, accept = ".txt", loading, placeholder = "拖�
       }}
     >
       {loading ? (
-        <div className="flex items-center gap-3">
-          <div className="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: "var(--accent)", borderTopColor: "transparent" }} />
-          <span className="text-sm" style={{ color: "var(--text-2)" }}>处理中...</span>
+        <div className="flex flex-col items-center gap-3 w-full max-w-xs">
+          {progress !== undefined ? (
+            <>
+              <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: "var(--bg-surface)" }}>
+                <div className="h-full rounded-full transition-all duration-300" style={{ width: `${progress}%`, background: "var(--accent)" }} />
+              </div>
+              <span className="text-xs" style={{ color: "var(--text-2)" }}>上传中 {progress}%</span>
+            </>
+          ) : (
+            <>
+              <div className="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: "var(--accent)", borderTopColor: "transparent" }} />
+              <span className="text-sm" style={{ color: "var(--text-2)" }}>处理中...</span>
+            </>
+          )}
         </div>
       ) : (
         <>

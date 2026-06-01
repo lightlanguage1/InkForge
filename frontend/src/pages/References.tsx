@@ -12,9 +12,11 @@ export function ReferencesPage() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ReferenceSearchResult[]>([]);
 
+  const [uploadProgress, setUploadProgress] = useState<number | undefined>();
+
   const importMut = useMutation({
-    mutationFn: (file: File) => uploadReference(file),
-    onSuccess: (d) => alert(`已导入：${d.title}（${d.chunk_count} 块）`),
+    mutationFn: (file: File) => uploadReference(file, setUploadProgress),
+    onSuccess: (d) => { alert(`已导入：${d.title}（${d.chunk_count} 块）`); setUploadProgress(undefined); },
   });
   const searchMut = useMutation({ mutationFn: () => searchReferences({ query, top_k: 5 }), onSuccess: (d) => setResults(d.results) });
 
@@ -27,6 +29,7 @@ export function ReferencesPage() {
         <DropZone
           onFile={(f) => importMut.mutate(f)}
           loading={importMut.isPending}
+          progress={uploadProgress}
           placeholder="拖拽 .txt 小说文件到此处，或点击选择"
         />
       </Card>

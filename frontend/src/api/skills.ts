@@ -9,8 +9,8 @@ export function importSkill(req: SkillImportReq) {
   return post<SkillImportResult>("/v1/skills/import", req);
 }
 
-export function uploadSkill(file: File) {
-  return upload<SkillImportResult>("/v1/skills/import/upload", file);
+export function uploadSkill(file: File, onProgress?: (pct: number) => void) {
+  return upload<SkillImportResult>("/v1/skills/import/upload", file, onProgress);
 }
 
 export function getActiveSkills(projectId: string) {

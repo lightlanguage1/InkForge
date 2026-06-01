@@ -73,6 +73,19 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
       es.addEventListener("tick_complete", (e: MessageEvent) => {
         const d = JSON.parse(e.data);
         runCountRef.current++;
+        // Play completion chime
+        try {
+          const ctx = new AudioContext();
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain); gain.connect(ctx.destination);
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(880, ctx.currentTime);
+          osc.frequency.setValueAtTime(1100, ctx.currentTime + 0.08);
+          gain.gain.setValueAtTime(0.3, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+          osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.3);
+        } catch { /* audio not supported */ }
         const newText = d.text as string | undefined;
         setSession(prev => {
           if (!prev) return prev;

@@ -52,15 +52,30 @@ export async function patch<T>(path: string, body?: unknown): Promise<T> {
   return handleResponse<T>(res, path);
 }
 
-export async function upload<T>(path: string, file: File): Promise<T> {
-  const fd = new FormData();
-  fd.append("file", file);
-  const res = await fetch(`${BASE}${path}`, {
-    method: "POST",
-    headers: authHeaders(),
-    body: fd,
+export async function upload<T>(path: string, file: File, onProgress?: (pct: number) => void): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${BASE}${path}`);
+    const token = localStorage.getItem("inkforge_token");
+    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try { resolve(JSON.parse(xhr.responseText)); }
+        catch { resolve(xhr.responseText as unknown as T); }
+      } else {
+        const err = new ApiError(xhr.status, xhr.responseText);
+        logError("api", err, { path, status: xhr.status });
+        reject(err);
+      }
+    };
+    xhr.onerror = () => reject(new ApiError(0, "Network error"));
+    const fd = new FormData();
+    fd.append("file", file);
+    xhr.send(fd);
   });
-  return handleResponse<T>(res, path);
 }
 
 export async function del<T>(path: string): Promise<T> {

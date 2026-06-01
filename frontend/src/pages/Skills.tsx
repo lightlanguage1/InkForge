@@ -19,9 +19,11 @@ export function SkillsPage() {
     enabled: !!id,
   });
 
+  const [uploadProgress, setUploadProgress] = useState<number | undefined>();
+
   const importMut = useMutation({
-    mutationFn: (file: File) => uploadSkill(file),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["skills"] }),
+    mutationFn: (file: File) => uploadSkill(file, setUploadProgress),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["skills"] }); setUploadProgress(undefined); },
   });
 
   const deleteMut = useMutation({
@@ -64,6 +66,7 @@ export function SkillsPage() {
         <DropZone
           onFile={(f) => importMut.mutate(f)}
           loading={importMut.isPending}
+          progress={uploadProgress}
           placeholder="拖拽 .txt 小说文件到此处，或点击选择"
         />
       </Card>
