@@ -147,6 +147,18 @@ class StoryAgent:
         from ..utils.file_ops import write_json
         write_json(str(self.project_path / "state.json"), self.state)
 
+    def _auto_checkpoint(self):
+        """Auto-save checkpoint every 3 chapters (ticks)."""
+        tick = self.state["current_tick"]
+        if tick > 0 and tick % 3 == 0:
+            try:
+                from ..memory.checkpoint import create_checkpoint, should_create_checkpoint
+                if should_create_checkpoint(self.project_path, tick):
+                    create_checkpoint(self.project_path, tick, "auto")
+                    logger.info("Auto-checkpoint saved at tick %d", tick)
+            except Exception:
+                logger.debug("Auto-checkpoint skipped at tick %d", tick)
+
     def tick(self, notes: str = "") -> Dict[str, Any]:
         """Execute one story generation tick.
 
@@ -235,6 +247,7 @@ class StoryAgent:
 
             self.state["current_tick"] += 1
             self._save_state()
+            self._auto_checkpoint()
 
             return self._build_tick_result(
                 tick, scene_id, scene_data, execution_results,
@@ -700,6 +713,7 @@ class StoryAgent:
             # Increment tick
             self.state["current_tick"] += 1
             self._save_state()
+            self._auto_checkpoint()
 
             return {
                 "success": True,

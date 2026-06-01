@@ -1,4 +1,4 @@
-import { get } from "./client";
+import { get, post, del } from "./client";
 import type { CharacterItem, CharacterDetail, LocationItem, LocationDetail, SceneItem, SceneDetail, LoopItem, FactionItem, FactionDetail, RelationshipGraph } from "../types/entities";
 
 export function getCharacters(projectId: string) {
@@ -23,6 +23,14 @@ export function getScenes(projectId: string) {
 
 export function getScene(projectId: string, sceneId: string) {
   return get<SceneDetail>(`/v1/project/${projectId}/scenes/${sceneId}`);
+}
+
+export function deleteScene(projectId: string, sceneId: string) {
+  return del<{ deleted: string; tick: number; files: string[] }>(`/v1/project/${projectId}/scenes/${sceneId}`);
+}
+
+export function rewriteScene(projectId: string, sceneId: string) {
+  return post<{ rewrite: string; rollback_to: number; backup: string }>(`/v1/project/${projectId}/scenes/${sceneId}/rewrite`);
 }
 
 export function getLoops(projectId: string) {
