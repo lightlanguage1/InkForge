@@ -7,6 +7,7 @@ System prompts and format functions remain in code.
 import os
 from pathlib import Path
 from functools import lru_cache
+import time
 
 from ..configs.constants import DATA_TEMPLATES_DIR
 
@@ -54,13 +55,20 @@ def split_prompt(template: str, context: dict) -> dict:
 _TEMPLATE_DIR = Path(__file__).resolve().parent.parent / DATA_TEMPLATES_DIR
 
 
-@lru_cache(maxsize=8)
+_template_mtimes: dict = {}
+
 def _load_template(name: str) -> str:
-    """Load a prompt template from data/templates/{name}.md."""
+    """Load a prompt template from data/templates/{name}.md (mtime-cached)."""
     path = _TEMPLATE_DIR / f"{name}.md"
     if not path.exists():
         raise FileNotFoundError(f"Template not found: {path}")
-    return path.read_text(encoding="utf-8")
+    mtime = path.stat().st_mtime
+    cached = _template_mtimes.get(name)
+    if cached and cached[0] == mtime:
+        return cached[1]
+    text = path.read_text(encoding="utf-8")
+    _template_mtimes[name] = (mtime, text)
+    return text
 
 
 def _format(name: str, context: dict) -> str:
