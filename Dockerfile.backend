@@ -7,18 +7,11 @@ ARG PIP_INDEX=https://pypi.org/simple/
 ARG PIP_TRUSTED_HOST=""
 ARG HTTP_PROXY=""
 ARG HTTPS_PROXY=""
-ENV HTTP_PROXY=${HTTP_PROXY}
-ENV HTTPS_PROXY=${HTTPS_PROXY}
 
 # Install system deps + nginx (no proxy — use Debian mirror directly)
 RUN unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy && \
     apt-get update && apt-get install -y --no-install-recommends nginx && \
     rm -rf /var/lib/apt/lists/*
-
-# ── ChromaDB model — early layer, survives all code/req changes ──
-RUN pip install --no-cache-dir chromadb && \
-    python3 -c "from chromadb.utils.embedding_functions import DefaultEmbeddingFunction; DefaultEmbeddingFunction()" && \
-    echo "ChromaDB model cached"
 
 # Install Python dependencies
 COPY requirements.txt .
