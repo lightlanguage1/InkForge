@@ -4,7 +4,7 @@ set -e
 echo "[entrypoint] Starting nginx + uvicorn"
 
 # Start uvicorn on localhost only (not exposed to public)
-uvicorn novel_agent.api.server:app --host 127.0.0.1 --port 9000 &
+uvicorn novel_agent.api.server:app --host 127.0.0.1 --port 9000 --workers 4 &
 UVICORN_PID=$!
 
 # Start nginx in foreground (nginx reverse proxies to uvicorn)

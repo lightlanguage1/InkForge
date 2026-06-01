@@ -70,12 +70,34 @@ async def tick_stream(
         streaming_agent = StreamingStoryAgent(agent, notes=effective_notes)
 
         async def generate():
+            import queue
+            q: queue.Queue = queue.Queue()
+            done = object()
+
+            def _run():
+                try:
+                    for chunk in streaming_agent.tick_stream():
+                        q.put(chunk)
+                    q.put(done)
+                except Exception as exc:
+                    q.put(exc)
+                finally:
+                    _release(project_id)
+
+            loop = asyncio.get_event_loop()
+            loop.run_in_executor(_executor, _run)
             try:
-                for chunk in streaming_agent.tick_stream():
-                    yield chunk
+                while True:
+                    item = await loop.run_in_executor(None, q.get)
+                    if item is done:
+                        break
+                    if isinstance(item, Exception):
+                        logger.exception("Tick generation failed")
+                        yield f"event: tick_error\ndata: {{\"error\": \"{item}\"}}\n\n"
+                        break
+                    yield item
             except asyncio.CancelledError:
                 logger.info("SSE client disconnected, releasing lock for %s", project_id)
-            finally:
                 _release(project_id)
 
         return StreamingResponse(
