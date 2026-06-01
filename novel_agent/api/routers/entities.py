@@ -7,7 +7,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
-from ..deps import resolve_project
+from ..deps import resolve_project, try_lock_generation, release_generation
 from ...cli.commands.list import (
     list_characters, list_locations, list_scenes, list_open_loops, list_factions,
 )
@@ -68,94 +68,120 @@ def get_scene(project_id: str, entity_id: str):
 @router.delete("/project/{project_id}/scenes/{entity_id}")
 def delete_scene(project_id: str, entity_id: str):
     """Delete a single scene — markdown, metadata, and rollback state."""
-    project_dir = resolve_project(project_id)
-    # Find the scene file
-    entity = _get_entity(project_dir, entity_id)
-    scene_tick = entity.get("tick", -1)
-    scene_file = project_dir / "scenes" / f"scene_{scene_tick:03d}.md"
-    meta_file  = project_dir / "memory" / "scenes" / f"{entity_id}.json"
-    plan_file  = project_dir / "plans" / f"plan_{scene_tick:03d}.json"
-
-    deleted = []
-    for f in [scene_file, meta_file, plan_file]:
-        if f.exists():
-            f.unlink()
-            deleted.append(str(f.name))
-
-    # Roll back current_tick if it was the last scene
-    state_file = project_dir / "state.json"
-    if state_file.exists():
+    # Prevent concurrent mutation with generation
+    if not try_lock_generation(project_id):
+        raise HTTPException(status_code=409, detail="该项目正在生成中，请等待完成")
+    try:
+        project_dir = resolve_project(project_id)
+        # Find the scene — handle missing metadata gracefully
         try:
-            state = json.loads(state_file.read_text(encoding="utf-8"))
-        except Exception:
-            state = {}
-        cur_tick = state.get("current_tick", 0)
-        if scene_tick == cur_tick - 1:
-            state["current_tick"] = max(0, scene_tick)
-            state["last_updated"] = Path(state_file).stat().st_mtime if False else ""
-            from datetime import datetime
-            state["last_updated"] = datetime.utcnow().isoformat() + "Z"
-            state_file.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+            entity = _get_entity(project_dir, entity_id)
+        except HTTPException:
+            # Metadata missing — try to reconstruct from filename pattern
+            # Scene IDs are like "S001", extract tick number
+            tick_str = entity_id[1:] if entity_id.startswith("S") else entity_id
+            try:
+                scene_tick = int(tick_str)
+            except ValueError:
+                raise HTTPException(status_code=404, detail=f"无法解析场景ID: {entity_id}")
+            entity = {"tick": scene_tick}
 
-    logger.info("Deleted scene %s (tick %d): %s", entity_id, scene_tick, ", ".join(deleted))
-    return {"deleted": entity_id, "tick": scene_tick, "files": deleted}
+        scene_tick = entity.get("tick", -1)
+        scene_file = project_dir / "scenes" / f"scene_{scene_tick:03d}.md"
+        meta_file  = project_dir / "memory" / "scenes" / f"{entity_id}.json"
+        plan_file  = project_dir / "plans" / f"plan_{scene_tick:03d}.json"
+
+        deleted = []
+        for f in [scene_file, meta_file, plan_file]:
+            if f.exists():
+                f.unlink()
+                deleted.append(str(f.name))
+
+        # Roll back current_tick if it was the last scene
+        state_file = project_dir / "state.json"
+        if state_file.exists():
+            try:
+                state = json.loads(state_file.read_text(encoding="utf-8"))
+            except Exception:
+                state = {}
+            cur_tick = state.get("current_tick", 0)
+            if scene_tick == cur_tick - 1:
+                state["current_tick"] = max(0, scene_tick)
+                from datetime import datetime
+                state["last_updated"] = datetime.utcnow().isoformat() + "Z"
+                state_file.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        logger.info("Deleted scene %s (tick %d): %s", entity_id, scene_tick, ", ".join(deleted) if deleted else "nothing to delete")
+        return {"deleted": entity_id, "tick": scene_tick, "files": deleted}
+    finally:
+        release_generation(project_id)
 
 
 @router.post("/project/{project_id}/scenes/{scene_id}/rewrite")
 def rewrite_scene(project_id: str, scene_id: str):
     """Rewrite a scene — rollback to its tick, backup current, and regenerate."""
-    project_dir = resolve_project(project_id)
-    entity = _get_entity(project_dir, scene_id)
-    scene_tick = entity.get("tick", -1)
-    if scene_tick < 0:
-        raise HTTPException(status_code=400, detail=f"无法确定场景tick: {scene_id}")
+    # Prevent concurrent mutation with generation
+    if not try_lock_generation(project_id):
+        raise HTTPException(status_code=409, detail="该项目正在生成中，请等待完成")
+    try:
+        project_dir = resolve_project(project_id)
+        entity = _get_entity(project_dir, scene_id)
+        scene_tick = entity.get("tick", -1)
+        if scene_tick < 0:
+            raise HTTPException(status_code=400, detail=f"无法确定场景tick: {scene_id}")
 
-    state_file = project_dir / "state.json"
-    state = json.loads(state_file.read_text(encoding="utf-8"))
+        state_file = project_dir / "state.json"
+        state = json.loads(state_file.read_text(encoding="utf-8"))
 
-    # Create a backup checkpoint before rollback
-    from datetime import datetime
-    backup_dir = project_dir / "checkpoints" / f"backup_before_rewrite_{scene_tick:03d}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
-    backup_dir.mkdir(parents=True, exist_ok=True)
-    for sub in ["memory", "scenes", "plans"]:
-        src = project_dir / sub
-        if src.exists():
-            dst = backup_dir / sub
-            if dst.exists():
-                shutil.rmtree(dst)
-            shutil.copytree(src, dst)
-    shutil.copy2(state_file, backup_dir / "state.json")
-    logger.info("Backup saved to %s", backup_dir.name)
+        # Create a backup checkpoint before rollback
+        from datetime import datetime
+        backup_dir = project_dir / "checkpoints" / f"backup_before_rewrite_{scene_tick:03d}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        for sub in ["memory", "scenes", "plans"]:
+            src = project_dir / sub
+            if src.exists():
+                dst = backup_dir / sub
+                if dst.exists():
+                    shutil.rmtree(dst)
+                shutil.copytree(src, dst)
+        shutil.copy2(state_file, backup_dir / "state.json")
+        logger.info("Backup saved to %s", backup_dir.name)
 
-    # Rollback state
-    state["current_tick"] = max(0, scene_tick)
-    state["last_updated"] = datetime.utcnow().isoformat() + "Z"
-    state_file.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+        # Rollback state: set current_tick to rewrite this scene
+        state["current_tick"] = max(0, scene_tick)
+        state["last_updated"] = datetime.utcnow().isoformat() + "Z"
+        state_file.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    # Clean up scenes/plans/memory from this tick onward
-    for f in project_dir.glob("scenes/scene_*.md"):
-        try:
-            tick_num = int(f.stem.split("_")[1])
-            if tick_num > scene_tick:
-                f.unlink()
-        except (ValueError, IndexError):
-            pass
-    for f in project_dir.glob("memory/scenes/S*.json"):
-        try:
-            meta = json.loads(f.read_text(encoding="utf-8"))
-            if meta.get("tick", -1) > scene_tick:
-                f.unlink()
-        except Exception:
-            pass
-    for f in project_dir.glob("plans/plan_*.json"):
-        try:
-            plan_num = int(f.stem.split("_")[1])
-            if plan_num > scene_tick:
-                f.unlink()
-        except (ValueError, IndexError):
-            pass
+        # Clean up scenes/plans/memory from this tick onward
+        for f in project_dir.glob("scenes/scene_*.md"):
+            try:
+                tick_num = int(f.stem.split("_")[1])
+                if tick_num >= scene_tick:
+                    f.unlink()
+                    logger.info("Rewrite cleanup: deleted %s", f.name)
+            except (ValueError, IndexError):
+                pass
+        for f in project_dir.glob("memory/scenes/S*.json"):
+            try:
+                meta = json.loads(f.read_text(encoding="utf-8"))
+                if meta.get("tick", -1) >= scene_tick:
+                    f.unlink()
+                    logger.info("Rewrite cleanup: deleted %s", f.name)
+            except Exception:
+                pass
+        for f in project_dir.glob("plans/plan_*.json"):
+            try:
+                plan_num = int(f.stem.split("_")[1])
+                if plan_num >= scene_tick:
+                    f.unlink()
+                    logger.info("Rewrite cleanup: deleted %s", f.name)
+            except (ValueError, IndexError):
+                pass
 
-    return {"rewrite": scene_id, "rollback_to": scene_tick, "backup": str(backup_dir.name)}
+        logger.info("Rewrite complete for %s, rolled back to tick %d", scene_id, scene_tick)
+        return {"rewrite": scene_id, "rollback_to": scene_tick, "backup": str(backup_dir.name)}
+    finally:
+        release_generation(project_id)
 
 
 # ---- 线索 ----

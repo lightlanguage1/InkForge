@@ -130,8 +130,8 @@ def delete_project(project_id: str):
 
 @router.post("/project/{project_id}/tick", response_model=TickResponse)
 def run_tick(project_id: str, req: TickRequest = None):
-    from .generation import _try_lock, _release
-    if not _try_lock(project_id):
+    from ..deps import try_lock_generation, release_generation
+    if not try_lock_generation(project_id):
         raise HTTPException(status_code=409, detail="该项目正在生成中，请等待完成")
     try:
         if req is None:
@@ -145,13 +145,13 @@ def run_tick(project_id: str, req: TickRequest = None):
         )
         result = agent.tick(notes=req.notes or "")
     except HTTPException:
-        _release(project_id)
+        release_generation(project_id)
         raise
     except Exception:
-        _release(project_id)
+        release_generation(project_id)
         logger.exception("Tick 失败: project=%s", project_id)
         raise HTTPException(status_code=500, detail="故事生成失败，请查看服务端日志")
-    _release(project_id)
+    release_generation(project_id)
     return TickResponse(
         success=True,
         tick=result.get("tick", 0),

@@ -38,7 +38,7 @@ def patch_foundation(project_id: str, patch: FoundationPatch):
 
 @router.get("/project/{project_id}/status")
 def get_status(project_id: str):
-    from .generation import _running
+    from ..deps import is_generation_running
     project_dir = resolve_project(project_id)
     state = load_project_state(str(project_dir))
     memory = MemoryManager(project_dir)
@@ -65,7 +65,7 @@ def get_status(project_id: str):
         "lore_count": len(memory.load_all_lore()),
         "word_count": total,
         "avg_tension": sum(tensions) / len(tensions) if tensions else 0,
-        "generating": project_id in _running,
+        "generating": is_generation_running(project_id),
         "genre": (state.get("story_foundation") or {}).get("genre", ""),
         "tone":  (state.get("story_foundation") or {}).get("tone",  ""),
     }

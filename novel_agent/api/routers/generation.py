@@ -7,34 +7,14 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
-from ..deps import resolve_project, create_agent
+from ..deps import resolve_project, create_agent, try_lock_generation, release_generation
 from ...agent.streaming_agent import StreamingStoryAgent
-from ...user.context import get_current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["生成"])
 
 # 线程池——避免长时间生成阻塞事件循环
 _executor = ThreadPoolExecutor(max_workers=20)
-
-# 并发锁——user_id:project_id 粒度，不同用户互不阻塞
-_running: set[str] = set()
-
-
-def _scope_key(project_id: str) -> str:
-    return f"{get_current_user()}:{project_id}"
-
-
-def _try_lock(project_id: str) -> bool:
-    key = _scope_key(project_id)
-    if key in _running:
-        return False
-    _running.add(key)
-    return True
-
-
-def _release(project_id: str):
-    _running.discard(_scope_key(project_id))
 
 
 _FINALE_INSTRUCTION = (
@@ -56,7 +36,7 @@ async def tick_stream(
     llm_model: str = "",
     finale: bool = False,
 ):
-    if not _try_lock(project_id):
+    if not try_lock_generation(project_id):
         raise HTTPException(status_code=409, detail="该项目正在生成中，请等待完成")
     try:
         project_dir = resolve_project(project_id)
@@ -97,7 +77,7 @@ async def tick_stream(
             except asyncio.CancelledError:
                 logger.info("SSE client disconnected, releasing lock for %s", project_id)
             finally:
-                _release(project_id)
+                release_generation(project_id)
 
         return StreamingResponse(
             generate(),
@@ -109,13 +89,13 @@ async def tick_stream(
             },
         )
     except Exception:
-        _release(project_id)
+        release_generation(project_id)
         raise
 
 
 @router.post("/project/{project_id}/run")
 def run_multiple(project_id: str, n: int = 5):
-    if not _try_lock(project_id):
+    if not try_lock_generation(project_id):
         raise HTTPException(status_code=409, detail="该项目正在生成中，请等待完成")
     try:
         project_dir = resolve_project(project_id)
@@ -134,4 +114,4 @@ def run_multiple(project_id: str, n: int = 5):
                 break
         return {"results": results, "completed": len(results)}
     finally:
-        _release(project_id)
+        release_generation(project_id)
