@@ -12,11 +12,18 @@ export function ReferencesPage() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ReferenceSearchResult[]>([]);
 
-  const [uploadProgress, setUploadProgress] = useState<number | undefined>();
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   const importMut = useMutation({
-    mutationFn: (file: File) => uploadReference(file, setUploadProgress),
-    onSuccess: (d) => { alert(`已导入：${d.title}（${d.chunk_count} 块）`); setUploadProgress(undefined); },
+    mutationFn: async (file: File) => {
+      setUploading(true);
+      setUploadProgress(0);
+      const result = await uploadReference(file, setUploadProgress);
+      setUploading(false);
+      return result;
+    },
+    onSuccess: (d) => { alert(`已导入：${d.title}（${d.chunk_count} 块）`); },
   });
   const searchMut = useMutation({ mutationFn: () => searchReferences({ query, top_k: 5 }), onSuccess: (d) => setResults(d.results) });
 
@@ -28,7 +35,8 @@ export function ReferencesPage() {
         <p className="text-sm mb-3" style={{ color: "var(--text-2)" }}>拖拽外部小说文件，作为写作风格参考</p>
         <DropZone
           onFile={(f) => importMut.mutate(f)}
-          loading={importMut.isPending}
+          uploading={uploading}
+          loading={importMut.isPending && !uploading}
           progress={uploadProgress}
           placeholder="拖拽 .txt 小说文件到此处，或点击选择"
         />

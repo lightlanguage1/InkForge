@@ -7,6 +7,7 @@ import { DropZone } from "../components/DropZone";
 import { Badge } from "../components/ui/Badge";
 import { Spinner } from "../components/ui/Spinner";
 import { listSkills, uploadSkill, deleteSkill, getActiveSkills, applyProjectSkills } from "../api/skills";
+import type { SkillInfo } from "../types/skill";
 
 export function SkillsPage() {
   const { id } = useParams<{ id: string }>();
@@ -19,11 +20,18 @@ export function SkillsPage() {
     enabled: !!id,
   });
 
-  const [uploadProgress, setUploadProgress] = useState<number | undefined>();
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   const importMut = useMutation({
-    mutationFn: (file: File) => uploadSkill(file, setUploadProgress),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["skills"] }); setUploadProgress(undefined); },
+    mutationFn: async (file: File) => {
+      setUploading(true);
+      setUploadProgress(0);
+      const result = await uploadSkill(file, setUploadProgress);
+      setUploading(false);
+      return result;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["skills"] }); },
   });
 
   const deleteMut = useMutation({
@@ -64,8 +72,9 @@ export function SkillsPage() {
       <Card className="p-4">
         <p className="text-sm mb-3" style={{ color: "var(--text-2)" }}>拖拽小说文件，提取写作风格技能</p>
         <DropZone
-          onFile={(f) => importMut.mutate(f)}
-          loading={importMut.isPending}
+          onFile={(f: File) => importMut.mutate(f)}
+          uploading={uploading}
+          loading={importMut.isPending && !uploading}
           progress={uploadProgress}
           placeholder="拖拽 .txt 小说文件到此处，或点击选择"
         />
@@ -78,7 +87,7 @@ export function SkillsPage() {
         <>
           <p className="text-xs" style={{ color: "var(--text-3)" }}>点击技能卡片激活 / 取消激活，可同时激活多个技能进行风格融合</p>
           <div className="space-y-2">
-            {skills.map(s => {
+            {skills.map((s: SkillInfo) => {
               const active = activeIds.has(s.id);
               return (
                 <div
@@ -106,7 +115,7 @@ export function SkillsPage() {
                         {s.genre} · {s.word_count?.toLocaleString()} 字 · {s.source_novel}
                       </p>
                       <div className="flex gap-1 mt-1.5 flex-wrap">
-                        {s.tags?.slice(0, 5).map(t => <Badge key={t} variant="info">{t}</Badge>)}
+                        {s.tags?.slice(0, 5).map((t: string) => <Badge key={t} variant="info">{t}</Badge>)}
                       </div>
                     </div>
                   </div>
