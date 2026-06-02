@@ -196,6 +196,7 @@ class StoryAgent:
                     self._enforce_beat_target(plan, current_beat)
                     self._enforce_pacing(plan, tick)
                     self._enforce_threads(plan, tick)
+                    self._enforce_tool_usage(plan)
                     break
                 except ValueError as e:
                     if plan_attempt < 2:
@@ -330,6 +331,66 @@ class StoryAgent:
                 f"节奏约束：连续 {len(prev_steps)} 章 progress_step 都是 "
                 f"'{current_step}'。本章必须使用不同的 step，"
                 f"建议使用 '{suggestion}'。给故事喘息空间。"
+            )
+
+    def _enforce_tool_usage(self, plan: dict) -> None:
+        """强制校验工具使用——不依赖 LLM 自觉，代码层硬性约束。
+
+        规则：
+        1. memory.search 必须出现（每场景至少1次）
+        2. actions 至少 3 个
+        3. 创建实体前必须先查询（先查后建）
+        4. 存在角色互动的场景必须有 relationship 工具
+        """
+        actions = plan.get("actions", [])
+        tools_called = {a.get("tool", "") for a in actions}
+        reasons = []
+
+        # 规则 1：memory.search 必须调用
+        if "memory.search" not in tools_called:
+            reasons.append(
+                "必须调用 memory.search 搜索当前场景相关的已有角色/地点/阵营。"
+                "不搜索就是凭空编造，会导致故事脱节。"
+            )
+
+        # 规则 2：最少 3 个 actions
+        if len(actions) < 3:
+            reasons.append(
+                f"actions 至少需要 3 个工具调用，当前只有 {len(actions)} 个。"
+                "请补充：查询已有信息 + 维护角色关系 + 创建/更新实体。"
+            )
+
+        # 规则 3：先查后建——如果有 generate 但没有 query/search，拒绝
+        create_tools = {t for t in tools_called if t.endswith(".generate")}
+        query_tools = {t for t in tools_called if t.endswith(".search") or t.endswith(".query")}
+        if create_tools and not query_tools:
+            reasons.append(
+                f"检测到创建工具 {', '.join(create_tools)}，但没有调用任何查询工具。"
+                "必须先查询是否已存在，避免重复创建。请添加查询类工具调用。"
+            )
+
+        # 规则 4：检查场景是否涉及多角色互动——从 plan 文本中检测
+        scene_text = " ".join([
+            plan.get("scene_intention", ""),
+            plan.get("rationale", ""),
+            plan.get("key_change", ""),
+        ])
+        has_relation_tool = "relationship.create" in tools_called or "relationship.update" in tools_called
+        # 检测文本中是否有角色互动信号
+        interaction_signals = ["对话", "互动", "冲突", "合作", "见面", "相遇", "对峙",
+                               "争吵", "和解", "联手", "背叛", "交谈"]
+        has_interaction_signal = any(sig in scene_text for sig in interaction_signals)
+        if has_interaction_signal and not has_relation_tool:
+            reasons.append(
+                "场景涉及角色互动（检测到对话/冲突/合作等信号），"
+                "但未调用 relationship.create 或 relationship.update。"
+                "请添加关系维护工具调用。"
+            )
+
+        if reasons:
+            raise ValueError(
+                "管线工具校验不通过：\n" +
+                "\n".join(f"  ❌ {r}" for r in reasons)
             )
 
     def _enforce_threads(self, plan: dict, tick: int) -> None:
@@ -933,10 +994,17 @@ class StoryAgent:
                 raise ValueError("Could not extract JSON from LLM response")
         
         try:
-            plan = json.loads(json_str)
+            # Sanitize: strip control characters that break JSON (LLM may include raw \n etc)
+            sanitized = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', json_str)
+            plan = json.loads(sanitized)
             return plan
         except json.JSONDecodeError as e:
-            raise ValueError(f"Invalid JSON in plan: {e}")
+            # Provide actionable feedback for LLM retry
+            raise ValueError(
+                f"JSON解析失败: {e}\n"
+                f"请检查：1) 字符串内换行需要用 \\n 转义 "
+                f"2) 引号需要成对出现 3) 不要输出 JSON 之外的内容"
+            )
     
     def _check_goal_promotion(self, tick: int) -> dict:
         """Check if a story goal should be auto-promoted (Phase 7A.2).

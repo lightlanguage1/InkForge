@@ -50,6 +50,11 @@ class MemorySearchTool(Tool):
                     "description": "Optional filter by entity types",
                     "optional": True
                 },
+                "type": {
+                    "type": "string",
+                    "description": "Alias for entity_types — single entity type to filter by",
+                    "optional": True
+                },
                 "limit": {
                     "type": "integer",
                     "description": "Maximum number of results (default: 5)",
@@ -60,18 +65,22 @@ class MemorySearchTool(Tool):
         self.memory_manager = memory_manager
         self.vector_store = vector_store
     
-    def execute(self, query: str, entity_types: Optional[List[str]] = None, 
-                limit: int = 5) -> Dict[str, Any]:
+    def execute(self, query: str, entity_types: Optional[List[str]] = None,
+                limit: int = 5, type: Optional[str] = None) -> Dict[str, Any]:
         """Execute semantic search.
-        
+
         Args:
             query: Search query
             entity_types: Optional filter by entity types
             limit: Max results
-        
+            type: Alias for entity_types (single string → wrapped in list)
+
         Returns:
             Search results with entity info
         """
+        # Accept 'type' as alias for entity_types (LLM often uses 'type' instead)
+        if type and not entity_types:
+            entity_types = [type] if isinstance(type, str) else type
         results = self.vector_store.search(query, entity_types, limit)
         
         # Format results for LLM
@@ -116,11 +125,13 @@ class CharacterGenerateTool(Tool):
                 },
                 "role": {
                     "type": "string",
-                    "description": "Character role (protagonist, antagonist, supporting, minor)"
+                    "description": "Character role (protagonist, antagonist, supporting, minor)",
+                    "optional": True
                 },
                 "description": {
                     "type": "string",
-                    "description": "Brief character description"
+                    "description": "Brief character description",
+                    "optional": True
                 },
                 "traits": {
                     "type": "array",
@@ -141,7 +152,8 @@ class CharacterGenerateTool(Tool):
         self.name_generator = name_generator
         self.beat_mode = beat_mode
     
-    def execute(self, role: str, description: str,
+    def execute(self, description: str = "",
+                role: str = "supporting",
                 name: Optional[str] = None,
                 gender: Optional[str] = None,
                 traits: Optional[List[str]] = None, 
@@ -379,14 +391,16 @@ class RelationshipCreateTool(Tool):
         )
         self.memory_manager = memory_manager
     
+    # _resolve_char_id is now a module-level function (see bottom of file)
+
     def execute(self, character_a: str, character_b: str, relationship_type: str,
                 perspective_a: str, perspective_b: str,
                 status: str = "neutral", intensity: int = 5) -> Dict[str, Any]:
         """Create a new relationship.
-        
+
         Args:
-            character_a: First character ID
-            character_b: Second character ID
+            character_a: First character name or ID
+            character_b: Second character name or ID
             relationship_type: Type of relationship
             perspective_a: How A views B
             perspective_b: How B views A
@@ -396,6 +410,10 @@ class RelationshipCreateTool(Tool):
         Returns:
             Success status and relationship ID
         """
+        # Resolve Chinese names to C### IDs
+        character_a = self._resolve_char_id(character_a)
+        character_b = self._resolve_char_id(character_b)
+
         # Check if relationship already exists
         existing = self.memory_manager.get_relationship_between(character_a, character_b)
         if existing:
@@ -486,8 +504,30 @@ class RelationshipUpdateTool(Tool):
         Returns:
             Success status
         """
+        # Resolve Chinese names to C### IDs (Bug fix: LLM may pass names instead of IDs)
+        a_resolved = character_a
+        b_resolved = character_b
+        if not (character_a.startswith("C") and character_a[1:].isdigit()):
+            for cid in self.memory_manager.list_characters():
+                c = self.memory_manager.load_character(cid)
+                full = ((c.family_name or "") + (c.first_name or "")).strip() if c else ""
+                if full and full == character_a.strip():
+                    a_resolved = cid
+                    break
+        if not (character_b.startswith("C") and character_b[1:].isdigit()):
+            for cid in self.memory_manager.list_characters():
+                c = self.memory_manager.load_character(cid)
+                full = ((c.family_name or "") + (c.first_name or "")).strip() if c else ""
+                if full and full == character_b.strip():
+                    b_resolved = cid
+                    break
+
+        # Flatten nested status dict (Bug fix: LLM may send {old: ..., new: ...})
+        if isinstance(status, dict):
+            status = status.get("new", status.get("status", str(status)))
+
         # Find relationship
-        relationship = self.memory_manager.get_relationship_between(character_a, character_b)
+        relationship = self.memory_manager.get_relationship_between(a_resolved, b_resolved)
         if not relationship:
             # Auto-create minimal relationship before updating
             rel_id = self.memory_manager.generate_id("relationship")
@@ -501,8 +541,8 @@ class RelationshipUpdateTool(Tool):
                 rel_type = "friends"
             relationship = RelationshipGraph(
                 id=rel_id,
-                character_a=character_a,
-                character_b=character_b,
+                character_a=a_resolved,
+                character_b=b_resolved,
                 relationship_type=rel_type,
                 perspective_a="",
                 perspective_b="",

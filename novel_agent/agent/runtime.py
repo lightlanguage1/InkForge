@@ -1,9 +1,12 @@
 """Plan execution runtime for running tool calls."""
 
+import logging
 from typing import Dict, Any
 from ..tools.registry import ToolRegistry
 from ..memory.manager import MemoryManager
 from ..memory.vector_store import VectorStore
+
+logger = logging.getLogger(__name__)
 
 
 class PlanExecutor:
@@ -102,12 +105,10 @@ class PlanExecutor:
                     "success": False
                 })
                 results["success"] = False
-                
-                # STOP EXECUTION - something is seriously wrong
-                raise RuntimeError(
-                    f"Tool execution failed at action {i}: {error_msg}\n"
-                    f"Plan execution halted. Check error log for details."
-                )
+                logger.warning("工具 %d/%d 失败: %s — 继续执行剩余操作",
+                               i + 1, len(plan.get("actions", [])), error_msg)
+                # Don't halt — continue with remaining actions so partial results
+                # are available for the writer phase.
         
         return results
     
@@ -140,7 +141,17 @@ class PlanExecutor:
         if tool_name == "relationship.update":
             args["tick"] = tick
         
-        # Execute tool
-        result = tool.execute(**args)
-        
+        # Execute tool — catch bad params and return helpful error for LLM retry
+        try:
+            result = tool.execute(**args)
+        except (TypeError, ValueError) as e:
+            valid_params = list(tool.parameters.keys()) if hasattr(tool, 'parameters') else []
+            required = [k for k, v in tool.parameters.items() if not v.get('optional', False)] if hasattr(tool, 'parameters') else []
+            raise ValueError(
+                f"工具 {tool_name} 参数错误: {e}\n"
+                f"必填: {', '.join(required) if required else '无'}\n"
+                f"可选: {', '.join(p for p in valid_params if p not in required)}\n"
+                f"你传入: {', '.join(f'{k}={v}' for k, v in args.items())}"
+            )
+
         return result
