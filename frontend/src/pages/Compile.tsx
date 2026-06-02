@@ -6,6 +6,7 @@ import { Button } from "../components/ui/Button";
 import { Select } from "../components/ui/Select";
 import { Spinner } from "../components/ui/Spinner";
 import { compile, summarize, generateTitles } from "../api/compile";
+import { PageHelp } from "../components/PageHelp";
 
 const EXT: Record<string, string> = { markdown: "md", html: "html", prose: "txt" };
 const MIME: Record<string, string> = { markdown: "text/markdown", html: "text/html", prose: "text/plain" };
@@ -34,6 +35,7 @@ export function CompilePage() {
 
   return (
     <div className="space-y-6">
+      <PageHelp>编译导出 — 将完整故事导出为多种格式（Markdown / HTML / TXT）。支持 AI 自动生成书名建议。</PageHelp>
       <h1 className="font-semibold" style={{ fontSize: "1.375rem", color: "var(--text-1)" }}>编译导出</h1>
       <Card className="p-4">
         <div className="flex gap-3 items-end">

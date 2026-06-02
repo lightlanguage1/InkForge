@@ -1,4 +1,4 @@
-import { get, post, del } from "./client";
+import { get, post, patch, del } from "./client";
 import type { CharacterItem, CharacterDetail, LocationItem, LocationDetail, SceneItem, SceneDetail, LoopItem, FactionItem, FactionDetail, RelationshipGraph } from "../types/entities";
 
 export function getCharacters(projectId: string) {
@@ -7,6 +7,10 @@ export function getCharacters(projectId: string) {
 
 export function getCharacter(projectId: string, charId: string) {
   return get<CharacterDetail>(`/v1/project/${projectId}/characters/${charId}`);
+}
+
+export function updateCharacter(projectId: string, charId: string, data: Record<string, unknown>) {
+  return patch<CharacterDetail>(`/v1/project/${projectId}/characters/${charId}`, data);
 }
 
 export function getLocations(projectId: string) {

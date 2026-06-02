@@ -8,6 +8,7 @@ import { Badge } from "../components/ui/Badge";
 import { Spinner } from "../components/ui/Spinner";
 import { listSkills, uploadSkill, deleteSkill, getActiveSkills, applyProjectSkills } from "../api/skills";
 import type { SkillInfo } from "../types/skill";
+import { PageHelp } from "../components/PageHelp";
 
 export function SkillsPage() {
   const { id } = useParams<{ id: string }>();
@@ -59,6 +60,7 @@ export function SkillsPage() {
 
   return (
     <div className="space-y-6">
+      <PageHelp>技能管理 — 上传和管理写作风格技能包（SKILL.md），拖拽文件到虚线框内即可导入。技能会影响 AI 的写作风格和叙事方式。</PageHelp>
       <div className="flex items-center justify-between">
         <h1 className="font-semibold" style={{ fontSize: "1.375rem", color: "var(--text-1)" }}>写作技能</h1>
         {activeIds.size > 0 && (

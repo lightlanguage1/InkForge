@@ -324,7 +324,7 @@ class ContextBuilder:
         candidates = []
         for cid in char_ids:
             char = self.memory.load_character(cid)
-            if char and char.role in ("protagonist", "supporting"):
+            if char:  # 任何角色都可以是POV
                 pov_count = getattr(char, "pov_count", 0)
                 candidates.append(f"  {cid} | {char.display_name} | {char.role} | POV次数={pov_count}")
         if not candidates:
@@ -564,10 +564,16 @@ class ContextBuilder:
         if not open_loops:
             return "No open loops."
 
-        importance_weight = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+        # 数据驱动：稀有度越高权重越大（出现次数少的importance值=更重要）
+        imp_freq: dict[str, int] = {}
+        for loop in open_loops:
+            imp = loop.importance or ""
+            imp_freq[imp] = imp_freq.get(imp, 0) + 1
+        max_freq = max(imp_freq.values()) if imp_freq else 1
+        importance_weight = {imp: max_freq - freq + 1 for imp, freq in imp_freq.items()}
 
         def relevance_score(loop):
-            score = importance_weight.get(loop.importance, 1)
+            score = importance_weight.get(loop.importance or "", 1)
             if pov_character_id and pov_character_id in (loop.related_characters or []):
                 score += 3
             if loop.status == "urgent":
@@ -751,9 +757,14 @@ class ContextBuilder:
             fac = self.memory.load_faction(fid)
             if fac:
                 factions.append(fac)
-        # Sort by importance
-        importance_order = {"critical": 3, "high": 2, "medium": 1, "low": 0}
-        factions.sort(key=lambda f: importance_order.get(getattr(f, 'importance', 'medium'), 1), reverse=True)
+        # 数据驱动：稀有度排序（出现少的importance值=更重要）
+        imp_freq2: dict[str, int] = {}
+        for f in factions:
+            imp = getattr(f, 'importance', '') or ''
+            imp_freq2[imp] = imp_freq2.get(imp, 0) + 1
+        max_freq2 = max(imp_freq2.values()) if imp_freq2 else 1
+        importance_order = {imp: max_freq2 - freq + 1 for imp, freq in imp_freq2.items()}
+        factions.sort(key=lambda f: importance_order.get(getattr(f, 'importance', '') or '', 1), reverse=True)
         lines = []
         for f in factions[:8]:
             imp = getattr(f, 'importance', 'medium')

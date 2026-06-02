@@ -1,7 +1,10 @@
 """情节节拍路由。"""
 
 import logging
-from fastapi import APIRouter, HTTPException
+from typing import Optional, List
+
+from fastapi import APIRouter, HTTPException, Body
+from pydantic import BaseModel
 
 from ..deps import resolve_project
 from ..models import BeatGenerateRequest
@@ -10,9 +13,18 @@ from ...cli.commands.plot import (
 )
 from ...cli.project import get_project_config
 from ...tools.llm_interface import initialize_llm
+from ...plot.manager import PlotOutlineManager
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["节拍"])
+
+
+class BeatUpdate(BaseModel):
+    description: Optional[str] = None
+    characters_involved: Optional[List[str]] = None
+    location: Optional[str] = None
+    tension_target: Optional[int] = None
+    status: Optional[str] = None
 
 
 @router.get("/project/{project_id}/plot")
@@ -42,6 +54,44 @@ def plot_generate(project_id: str, req: BeatGenerateRequest = BeatGenerateReques
             for b in result.get("beats", [])
         ],
     }
+
+
+@router.patch("/project/{project_id}/plot/beats/{beat_id}")
+def plot_update_beat(project_id: str, beat_id: str, patch: BeatUpdate = Body(...)):
+    """Update a single beat's fields."""
+    project_dir = resolve_project(project_id)
+    manager = PlotOutlineManager(project_dir)
+    outline = manager.load_outline()
+    beat = None
+    for b in outline.beats:
+        if b.id == beat_id:
+            beat = b
+            break
+    if not beat:
+        raise HTTPException(status_code=404, detail=f"未找到节拍: {beat_id}")
+
+    updates = patch.model_dump(exclude_none=True)
+    for key, value in updates.items():
+        if hasattr(beat, key):
+            setattr(beat, key, value)
+    manager.save_outline(outline)
+    logger.info("Updated beat %s: %s", beat_id, list(updates.keys()))
+    return {"updated": beat_id, "fields": list(updates.keys())}
+
+
+@router.delete("/project/{project_id}/plot/beats/{beat_id}")
+def plot_delete_beat(project_id: str, beat_id: str):
+    """Delete a single beat."""
+    project_dir = resolve_project(project_id)
+    manager = PlotOutlineManager(project_dir)
+    outline = manager.load_outline()
+    before = len(outline.beats)
+    outline.beats = [b for b in outline.beats if b.id != beat_id]
+    if len(outline.beats) == before:
+        raise HTTPException(status_code=404, detail=f"未找到节拍: {beat_id}")
+    manager.save_outline(outline)
+    logger.info("Deleted beat %s", beat_id)
+    return {"deleted": beat_id}
 
 
 @router.delete("/project/{project_id}/plot")

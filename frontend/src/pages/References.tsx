@@ -7,6 +7,7 @@ import { Input } from "../components/ui/Input";
 import { Spinner } from "../components/ui/Spinner";
 import { uploadReference, searchReferences } from "../api/references";
 import type { ReferenceSearchResult } from "../types/reference";
+import { PageHelp } from "../components/PageHelp";
 
 export function ReferencesPage() {
   const [query, setQuery] = useState("");
@@ -29,6 +30,7 @@ export function ReferencesPage() {
 
   return (
     <div className="space-y-6">
+      <PageHelp>参考文库 — 上传和管理写作参考文档。拖拽文件导入后，AI 生成时可检索相关内容作为背景知识。</PageHelp>
       <h1 className="font-semibold" style={{ fontSize: "1.375rem", color: "var(--text-1)" }}>参考文库</h1>
 
       <Card className="p-4">

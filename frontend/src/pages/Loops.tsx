@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { EntityList } from "../components/EntityList";
 import { Badge } from "../components/ui/Badge";
 import { getLoops } from "../api/entities";
+import { PageHelp } from "../components/PageHelp";
 import type { LoopItem } from "../types/entities";
 
 export function LoopsPage() {
@@ -19,5 +20,10 @@ export function LoopsPage() {
     { key: "status", header: "状态", render: (l: LoopItem) => <Badge variant={l.status === "open" ? "warning" : "success"}>{l.status}</Badge> },
   ];
 
-  return <EntityList title="开放线索" columns={columns} data={data?.loops ?? []} loading={isLoading} />;
+  return (
+    <div>
+      <PageHelp>故事线索 — 追踪已开启和已解决的剧情线索。确保故事连贯不遗漏伏笔，高优先级线索应尽快收束。</PageHelp>
+      <EntityList title="开放线索" columns={columns} data={data?.loops ?? []} loading={isLoading} />
+    </div>
+  );
 }

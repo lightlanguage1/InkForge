@@ -5,6 +5,7 @@ import { EntityDetail } from "../components/EntityDetail";
 import { Spinner } from "../components/ui/Spinner";
 import { getRelationships, getCharacter } from "../api/entities";
 import type { GraphNode, GraphEdge } from "../types/entities";
+import { PageHelp } from "../components/PageHelp";
 
 /* ── simple velocity-verlet layout ── */
 
@@ -196,9 +197,11 @@ export function RelationshipsPage() {
   const highlight = hoveredId ? connected(hoveredId) : new Set<string>();
 
   return (
-    <div className="flex gap-6 h-full">
-      {/* graph */}
-      <div className="flex-1 relative rounded-xl overflow-hidden" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", minHeight: 500 }}>
+    <div className="h-full flex flex-col">
+      <PageHelp>角色关系图 — 可视化角色之间的社交网络。拖拽节点调整位置，滚轮缩放，悬停高亮关联关系。点击节点查看角色详情。</PageHelp>
+      <div className="flex flex-col md:flex-row gap-4 md:gap-6 flex-1 min-h-0">
+        {/* graph */}
+      <div className="flex-1 relative rounded-xl overflow-hidden" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", minHeight: 320 }}>
         <svg
           ref={svgRef}
           width="100%"
@@ -314,6 +317,7 @@ export function RelationshipsPage() {
           title={(detail.family_name || "") + (detail.first_name || "") || detail.id}
         />
       )}
+      </div>
     </div>
   );
 }

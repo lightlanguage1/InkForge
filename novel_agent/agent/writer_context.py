@@ -417,13 +417,12 @@ class WriterContextBuilder:
         metadata = plan.get("metadata", {})
         scene_length = metadata.get("scene_length", "").lower()
         
-        if scene_length == "brief":
+        # 数据驱动：根据长度值中的关键词判断，不硬编码具体值
+        short_keywords = {"短", "brief", "short", "快速", "简"}
+        long_keywords = {"长", "long", "extended", "详细", "丰富", "深入", "重", "大"}
+        if any(k in scene_length for k in short_keywords):
             return "\n\n**Length Guidance:** Keep this scene brief and focused - a quick moment or transition."
-        elif scene_length == "short":
-            return "\n\n**Length Guidance:** Write a short scene - establish the key moment without extensive detail."
-        elif scene_length == "long":
-            return "\n\n**Length Guidance:** Take your time with this scene - develop it fully with rich detail and depth."
-        elif scene_length == "extended":
+        elif any(k in scene_length for k in long_keywords):
             return "\n\n**Length Guidance:** This is a major scene - write extensively, exploring all nuances and implications."
 
         # Fall back to config-based word count targets when no plan-level hint given
@@ -577,12 +576,19 @@ class WriterContextBuilder:
         lore_entries = self.memory.load_all_lore()
         if not lore_entries:
             return ""
-        important = [l for l in lore_entries if l.importance in ("critical", "important")]
+        # 数据驱动：按稀有度排序，条目少的重要性值=高优先级
+        imp_counts: dict[str, int] = {}
+        for l in lore_entries:
+            imp = l.importance or "未知"
+            imp_counts[imp] = imp_counts.get(imp, 0) + 1
+        sorted_imps = sorted(imp_counts, key=lambda k: imp_counts[k])
+        high_imps = set(sorted_imps[:max(1, len(sorted_imps)//2)])
+        important = [l for l in lore_entries if (l.importance or "未知") in high_imps]
         if not important:
             important = lore_entries[:3]
         lines = ["\n## 世界观规则（请遵守）\n"]
         for l in important[:5]:
             cat = l.category or "其他"
-            tag = "规则" if l.lore_type == "rule" else "约束" if l.lore_type == "constraint" else "事实"
+            tag = l.lore_type or "事实"
             lines.append(f"- [{cat}·{tag}] {l.content}")
         return "\n".join(lines)

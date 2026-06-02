@@ -60,18 +60,26 @@ interface Props {
   data: Record<string, unknown>;
   onClose: () => void;
   title?: string;
+  onEdit?: () => void;
 }
 
-export function EntityDetail({ data, onClose, title }: Props) {
+export function EntityDetail({ data, onClose, title, onEdit }: Props) {
   const fields = flattenObject(data);
   return (
-    <Card className="w-96 h-full overflow-y-auto overflow-x-hidden flex-shrink-0 flex flex-col">
-      <div className="px-4 py-3 flex items-center justify-between flex-shrink-0" style={{ borderBottom: "1px solid var(--border)" }}>
+    <Card className="w-full md:w-96 h-full md:max-h-full max-h-[60vh] overflow-y-auto overflow-x-hidden flex-shrink-0 flex flex-col">
+      <div className="px-4 py-3 flex items-center justify-between flex-shrink-0 gap-2" style={{ borderBottom: "1px solid var(--border)" }}>
         <h3 className="font-semibold text-sm truncate mr-2" style={{ color: "var(--text-1)" }}>{title || String(data.name || data.id || "")}</h3>
-        <button onClick={onClose} className="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-md text-lg leading-none transition-colors duration-150" style={{ color: "var(--text-3)" }}
-          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "var(--text-1)"; (e.currentTarget as HTMLElement).style.background = "var(--bg-raised)"; }}
-          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "var(--text-3)"; (e.currentTarget as HTMLElement).style.background = ""; }}
-        >&times;</button>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {onEdit && (
+            <button onClick={onEdit} className="text-xs px-2.5 py-1 rounded-md transition-colors"
+              style={{ color: "var(--accent)", background: "var(--bg-raised)", border: "1px solid rgba(200,151,90,0.3)" }}
+            >✎ 编辑</button>
+          )}
+          <button onClick={onClose} className="w-6 h-6 flex items-center justify-center rounded-md text-lg leading-none transition-colors duration-150" style={{ color: "var(--text-3)" }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "var(--text-1)"; (e.currentTarget as HTMLElement).style.background = "var(--bg-raised)"; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "var(--text-3)"; (e.currentTarget as HTMLElement).style.background = ""; }}
+          >&times;</button>
+        </div>
       </div>
       <div className="p-4 space-y-3 text-sm">
         {fields.map(([key, value]) => (

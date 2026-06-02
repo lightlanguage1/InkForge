@@ -54,7 +54,7 @@ export function DashboardPage() {
   return (
     <Layout>
       <div className="min-h-full" style={{ background: "var(--bg-base)", transition: "background 0.3s ease" }}>
-        <div className="max-w-5xl mx-auto px-8 py-14">
+        <div className="max-w-5xl mx-auto px-4 md:px-8 py-8 md:py-14">
 
           {/* Top bar */}
           <div className="flex items-center justify-between mb-16">

@@ -7,6 +7,7 @@ import { getStatus } from "../api/status";
 import { listSkills } from "../api/skills";
 import { useTheme } from "../ThemeContext";
 import { useGeneration } from "../GenerationContext";
+import { PageHelp } from "../components/PageHelp";
 import type { SkillInfo } from "../types/skill";
 
 export function WritingPage() {
@@ -44,7 +45,9 @@ export function WritingPage() {
   const skills: SkillInfo[] = skillsData?.skills ?? [];
 
   return (
-    <div className="flex gap-5 h-[calc(100vh-4rem)] animate-fade-in -m-8 p-6">
+    <div className="animate-fade-in">
+      <PageHelp>写作工作台 — 控制 AI 生成新章节。左侧设置生成数量、添加指导笔记、切换模型，右侧查看生成过程和结果。</PageHelp>
+      <div className="flex flex-col md:flex-row gap-4 md:gap-5 h-[calc(100vh-4rem)] md:-m-8 mt-3 p-4 md:p-6">
       <WritingControls
         status={status}
         result={result}
@@ -80,6 +83,7 @@ export function WritingPage() {
         onToggleTheme={toggleTheme}
         phase={phase}
       />
+      </div>
     </div>
   );
 }

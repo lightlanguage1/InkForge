@@ -1,8 +1,9 @@
 """项目信息路由 — status / goals / lore。"""
 
+import logging
 from typing import Optional
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, HTTPException
 from pydantic import BaseModel
 
 from ..deps import resolve_project
@@ -10,6 +11,8 @@ from ...cli.project import load_project_state
 from ...cli.commands.goals import get_goals_info
 from ...cli.commands.lore import get_lore_info
 from ...memory.manager import MemoryManager
+
+logger = logging.getLogger(__name__)
 from ...utils.file_ops import write_json
 
 router = APIRouter(prefix="/api/v1", tags=["信息"])
@@ -99,3 +102,74 @@ def get_lore(
         "importance_counts": result.get("importance_counts", {}),
         "lore": lore_list,
     }
+
+
+# ── Lore CRUD ──────────────────────────────────────────────────────────────
+
+class LorePatch(BaseModel):
+    content: Optional[str] = None
+    category: Optional[str] = None
+    lore_type: Optional[str] = None
+    importance: Optional[str] = None
+    tags: Optional[list] = None
+
+
+class LoreCreate(BaseModel):
+    content: str
+    category: str = ""
+    lore_type: str = "rule"
+    importance: str = "normal"
+    tags: list = []
+
+
+@router.patch("/project/{project_id}/lore/{lore_id}")
+def update_lore(project_id: str, lore_id: str, patch: LorePatch):
+    """Update a lore entry's fields."""
+    project_dir = resolve_project(project_id)
+    memory = MemoryManager(project_dir)
+    lore = memory.load_lore(lore_id)
+    if not lore:
+        raise HTTPException(status_code=404, detail=f"未找到世界观条目: {lore_id}")
+
+    updates = patch.model_dump(exclude_none=True)
+    for key, value in updates.items():
+        if hasattr(lore, key):
+            setattr(lore, key, value)
+    memory.save_lore(lore)
+    logger.info("Updated lore %s: %s", lore_id, list(updates.keys()))
+    return lore.to_dict()
+
+
+@router.post("/project/{project_id}/lore")
+def create_lore(project_id: str, body: LoreCreate):
+    """Create a new lore entry."""
+    project_dir = resolve_project(project_id)
+    memory = MemoryManager(project_dir)
+    from ...memory.entities import Lore as LoreEntity
+    lore_id = memory.generate_lore_id()
+    lore = LoreEntity(
+        id=lore_id,
+        lore_type=body.lore_type,
+        content=body.content,
+        category=body.category,
+        importance=body.importance,
+        tags=body.tags or [],
+        source_scene_id="manual",
+        tick=0,
+    )
+    memory.save_lore(lore)
+    logger.info("Created lore %s: %s", lore_id, body.content[:40])
+    return lore.to_dict()
+
+
+@router.delete("/project/{project_id}/lore/{lore_id}")
+def delete_lore(project_id: str, lore_id: str):
+    """Delete a lore entry."""
+    project_dir = resolve_project(project_id)
+    memory = MemoryManager(project_dir)
+    lore = memory.load_lore(lore_id)
+    if not lore:
+        raise HTTPException(status_code=404, detail=f"未找到世界观条目: {lore_id}")
+    memory.delete_lore(lore_id)
+    logger.info("Deleted lore %s", lore_id)
+    return {"deleted": lore_id}

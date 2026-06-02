@@ -2,10 +2,12 @@
 
 import asyncio
 import logging
+from typing import Optional
 from concurrent.futures import ThreadPoolExecutor
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Body
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from ..deps import resolve_project, create_agent, try_lock_generation, release_generation
 from ...agent.streaming_agent import StreamingStoryAgent
@@ -15,6 +17,13 @@ router = APIRouter(prefix="/api/v1", tags=["生成"])
 
 # 线程池——避免长时间生成阻塞事件循环
 _executor = ThreadPoolExecutor(max_workers=20)
+
+
+class TickStreamRequest(BaseModel):
+    notes: str = ""
+    llm_backend: str = ""
+    llm_model: str = ""
+    finale: bool = False
 
 
 _FINALE_INSTRUCTION = (
@@ -28,14 +37,8 @@ _FINALE_INSTRUCTION = (
 )
 
 
-@router.get("/project/{project_id}/tick/stream")
-async def tick_stream(
-    project_id: str,
-    notes: str = "",
-    llm_backend: str = "",
-    llm_model: str = "",
-    finale: bool = False,
-):
+def _stream_tick(project_id: str, notes: str, llm_backend: str, llm_model: str, finale: bool):
+    """Core SSE streaming logic shared by GET and POST endpoints."""
     if not try_lock_generation(project_id):
         raise HTTPException(status_code=409, detail="该项目正在生成中，请等待完成")
     try:
@@ -46,7 +49,7 @@ async def tick_stream(
             effective_notes = _FINALE_INSTRUCTION + ("\n\n附加指导：" + effective_notes if effective_notes else "")
             logger.info("结尾完结模式已启用")
         elif effective_notes:
-            logger.info("场景指导已接收: %s", effective_notes)
+            logger.info("场景指导已接收 (%d 字): %s", len(effective_notes), effective_notes[:80])
         streaming_agent = StreamingStoryAgent(agent, notes=effective_notes)
 
         async def generate():
@@ -91,6 +94,23 @@ async def tick_stream(
     except Exception:
         release_generation(project_id)
         raise
+
+
+@router.get("/project/{project_id}/tick/stream")
+async def tick_stream_get(
+    project_id: str,
+    notes: str = "",
+    llm_backend: str = "",
+    llm_model: str = "",
+    finale: bool = False,
+):
+    return _stream_tick(project_id, notes, llm_backend, llm_model, finale)
+
+
+@router.post("/project/{project_id}/tick/stream")
+async def tick_stream_post(project_id: str, body: TickStreamRequest = Body(...)):
+    """POST variant — accepts notes up to ~10K chars in body, no URL limit."""
+    return _stream_tick(project_id, body.notes, body.llm_backend, body.llm_model, body.finale)
 
 
 @router.post("/project/{project_id}/run")

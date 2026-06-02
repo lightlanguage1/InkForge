@@ -6,6 +6,7 @@ import { EntityDetail } from "../components/EntityDetail";
 import { Badge } from "../components/ui/Badge";
 import { getFactions, getFaction } from "../api/entities";
 import type { FactionItem } from "../types/entities";
+import { PageHelp } from "../components/PageHelp";
 
 export function FactionsPage() {
   const { id } = useParams<{ id: string }>();
@@ -23,9 +24,12 @@ export function FactionsPage() {
     }},
   ];
   return (
-    <div className="flex gap-6 h-full">
-      <EntityList title="势力" columns={columns} data={list?.factions ?? []} loading={isLoading} onRowClick={(f: FactionItem) => setSelected(f.id)} />
-      {detail && <EntityDetail data={detail as unknown as Record<string,unknown>} onClose={() => setSelected(null)} title={detail.name} />}
+    <div className="h-full flex flex-col">
+      <PageHelp>势力管理 — 浏览故事中的组织、门派、阵营等势力实体。点击左侧势力查看详情，包含目标、影响范围、资产等信息。</PageHelp>
+      <div className="flex flex-col md:flex-row gap-4 md:gap-6 flex-1 min-h-0">
+        <EntityList title="势力" columns={columns} data={list?.factions ?? []} loading={isLoading} onRowClick={(f: FactionItem) => setSelected(f.id)} />
+        {detail && <EntityDetail data={detail as unknown as Record<string,unknown>} onClose={() => setSelected(null)} title={detail.name} />}
+      </div>
     </div>
   );
 }

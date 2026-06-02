@@ -68,12 +68,12 @@ export function NewProjectModal({ open, onClose, onSubmit, isLoading, skills }: 
 
   return (
     <Modal open={open} onClose={resetAndClose} wide>
-      <div className="flex min-h-[420px]">
+      <div className="flex flex-col md:flex-row min-h-[420px]">
 
         {/* Left: step sidebar */}
         <div
-          className="w-52 flex-shrink-0 flex flex-col justify-between p-6 transition-colors duration-300"
-          style={{ background: "rgba(240,236,226,0.03)", borderRight: "1px solid rgba(240,236,226,0.06)" }}
+          className="w-full md:w-52 flex-shrink-0 flex md:flex-col justify-between p-4 md:p-6 transition-colors duration-300 flex-row gap-3 md:border-r border-b md:border-b-0"
+          style={{ background: "rgba(240,236,226,0.03)", borderColor: "rgba(240,236,226,0.06)" }}
         >
           <div>
             <p className="text-[9px] font-semibold uppercase tracking-[0.2em] mb-6" style={{ color: accent, opacity: 0.7 }}>

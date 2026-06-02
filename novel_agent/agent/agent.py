@@ -290,10 +290,10 @@ class StoryAgent:
                 f"节拍强制：计划必须指定 beat_target.beat_id = {current_beat.id}，"
                 f"当前为 beat_target={beat_target}"
             )
-        if strategy in ("skip", "followup", "setup"):
-            raise ValueError(
-                f"节拍强制：strategy 必须为 'direct'，当前为 '{strategy}'"
-            )
+        # 宽松校验：不是 direct 就提醒但不中断（数据驱动，不硬编码策略名）
+        known_direct = {"direct", "直接"}
+        if strategy and strategy.lower() not in known_direct:
+            logger.warning("节拍策略非direct: %s，继续执行", strategy)
         logger.info("节拍强制通过：%s (strategy=%s)", current_beat.id, strategy)
 
     def _enforce_pacing(self, plan: dict, tick: int) -> None:

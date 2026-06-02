@@ -1,9 +1,31 @@
 """Scene committer for saving scenes to disk and memory."""
 
+import re
 from pathlib import Path
 from typing import Dict, Any, List
 
 from novel_agent.memory.entities import Scene
+
+
+def strip_markdown(text: str) -> str:
+    """Remove common markdown artifacts from LLM-generated prose."""
+    # Remove bold markers (but keep the text)
+    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+    # Remove italic markers
+    text = re.sub(r'\*(.+?)\*', r'\1', text)
+    # Remove inline code
+    text = re.sub(r'`([^`]+)`', r'\1', text)
+    # Remove heading markers (###, ##, # at line start)
+    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+    # Remove horizontal rules
+    text = re.sub(r'^-{3,}\s*$', '', text, flags=re.MULTILINE)
+    # Remove strikethrough
+    text = re.sub(r'~~(.+?)~~', r'\1', text)
+    # Remove blockquote markers
+    text = re.sub(r'^>\s?', '', text, flags=re.MULTILINE)
+    # Clean up excess whitespace from removals
+    text = re.sub(r'\n{4,}', '\n\n\n', text)
+    return text.strip()
 
 
 class SceneCommitter:
@@ -109,9 +131,10 @@ class SceneCommitter:
         filepath = self.scenes_dir / filename
         
         # Write markdown file with metadata header
+        cleaned_text = strip_markdown(text)
         with open(filepath, 'w', encoding='utf-8') as f:
             f.write(f"# 第{tick+1}章 {title}\n\n")
-            f.write(text)
+            f.write(cleaned_text)
             f.write("\n")
         
         return filepath

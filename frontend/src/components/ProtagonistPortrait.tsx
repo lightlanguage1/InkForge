@@ -2,7 +2,7 @@ import { useRef, useEffect, useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { get } from "../api/client";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ── Types ──
 type ShapeEllipse = { type:"ellipse"; cx:number; cy:number; rx:number; ry:number; width:number; density:number };
 type ShapeRing    = { type:"ring";   cx:number; cy:number; r:number;  width:number; density:number };
 type ShapeLine    = { type:"line";   x1:number; y1:number; x2:number; y2:number; width:number; density:number };
@@ -23,7 +23,7 @@ const STEP = 3.5;
 const DOT_R = 1.6;
 const FOV = 600, DEPTH = 600;
 
-// ── Geometry ──────────────────────────────────────────────────────────────────
+// ── Geometry ──
 function distSeg(px:number,py:number,x1:number,y1:number,x2:number,y2:number):number {
   const dx=x2-x1,dy=y2-y1,l2=dx*dx+dy*dy;
   if(l2===0) return Math.hypot(px-x1,py-y1);
@@ -45,7 +45,6 @@ function inArc(px:number,py:number,s:ShapeArc):boolean {
   return a1<=a2?(a>=a1&&a<=a2):(a>=a1||a<=a2);
 }
 
-// ── Dot placement per shape ───────────────────────────────────────────────────
 type Dot3 = { hx:number; hy:number; hz:number; r:number; x:number; y:number; vx:number; vy:number };
 
 function densityToHz(s:Shape):number {
@@ -55,7 +54,6 @@ function densityToHz(s:Shape):number {
   return 15;
 }
 
-// hit-test: is grid point (px,py) inside shape s?
 function hitShape(px:number,py:number,s:Shape):boolean {
   switch(s.type){
     case"ellipse":{
@@ -104,13 +102,11 @@ function hitShape(px:number,py:number,s:Shape):boolean {
   }
 }
 
-// ── Build + center all dots ───────────────────────────────────────────────────
 function buildDots(data:PortraitData|null):Dot3[] {
   if(!data?.shapes?.length) return [];
-
   let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity;
   for(const s of data.shapes){
-    const pts:number[][] =
+    const pts:number[][]=
       s.type==="ellipse"||s.type==="scatter"?[[s.cx-s.rx,s.cy],[s.cx+s.rx,s.cy],[s.cx,s.cy-s.ry],[s.cx,s.cy+s.ry]]:
       (s.type==="ring"||s.type==="arc")?[[s.cx-s.r,s.cy],[s.cx+s.r,s.cy],[s.cx,s.cy-s.r],[s.cx,s.cy+s.r]]:
       s.type==="line"||s.type==="zigzag"?[[s.x1,s.y1],[s.x2,s.y2]]:
@@ -121,7 +117,6 @@ function buildDots(data:PortraitData|null):Dot3[] {
     for(const [px,py] of pts){if(px<x0)x0=px;if(px>x1)x1=px;if(py<y0)y0=py;if(py>y1)y1=py;}
   }
   const ox=W/2-(x0+x1)/2, oy=H/2-(y0+y1)/2;
-
   const shifted:Shape[]=data.shapes.map(s=>{
     if(s.type==="ellipse"||s.type==="scatter") return {...s,cx:s.cx+ox,cy:s.cy+oy};
     if(s.type==="ring"||s.type==="arc")       return {...s,cx:s.cx+ox,cy:s.cy+oy};
@@ -131,7 +126,6 @@ function buildDots(data:PortraitData|null):Dot3[] {
     if(s.type==="poly")                         return {...s,points:s.points.map(([px,py]:[number,number])=>[px+ox,py+oy] as [number,number])};
     return s;
   });
-
   const all:Dot3[]=[];
   for(let gy=STEP/2;gy<H;gy+=STEP){
     for(let gx=STEP/2;gx<W;gx+=STEP){
@@ -145,7 +139,6 @@ function buildDots(data:PortraitData|null):Dot3[] {
   return all;
 }
 
-// ── 3D projection ─────────────────────────────────────────────────────────────
 function project(hx:number,hy:number,hz:number,rx:number,ry:number){
   const cosY=Math.cos(ry),sinY=Math.sin(ry);
   const rx1=hx*cosY-hz*sinY,rz1=hx*sinY+hz*cosY;
@@ -155,7 +148,7 @@ function project(hx:number,hy:number,hz:number,rx:number,ry:number){
   return {sx:W/2+rx1*scale,sy:H/2+ry2*scale,sz:rz2,scale};
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
+// ── Component ──
 export function ProtagonistPortrait({projectId,currentTick}:Props){
   const canvasRef=useRef<HTMLCanvasElement>(null);
   const mouseRef =useRef({x:-9999,y:-9999});
@@ -177,14 +170,12 @@ export function ProtagonistPortrait({projectId,currentTick}:Props){
     const canvas=canvasRef.current;if(!canvas)return;
     const ctx=canvas.getContext("2d")!;
     const SPRING=0.22,DAMP=0.60,REP_R=45,REP_F=6;
-
     const frame=()=>{
       ctx.clearRect(0,0,W,H);
       const color=data?.color??"#FFB74D";
       const {x:mx,y:my}=mouseRef.current;
       const {x:rotX,y:rotY}=rotRef.current;
       const use3D=is3D;
-
       const dots=dotsRef.current;
       type Entry={d:Dot3;sx:number;sy:number;sz:number;scale:number};
       const proj:Entry[]=dots.map(d=>{
@@ -192,7 +183,6 @@ export function ProtagonistPortrait({projectId,currentTick}:Props){
         return{d,sx:d.hx+W/2,sy:d.hy+H/2,sz:0,scale:1};
       });
       if(use3D) proj.sort((a,b)=>b.sz-a.sz);
-
       for(const{d,sx,sy,sz,scale}of proj){
         const tx=use3D?sx:d.hx+W/2,ty=use3D?sy:d.hy+H/2;
         d.vx+=(tx-d.x)*SPRING;d.vy+=(ty-d.y)*SPRING;
@@ -203,22 +193,14 @@ export function ProtagonistPortrait({projectId,currentTick}:Props){
           d.vx+=dx/dist*f;d.vy+=dy/dist*f;
         }
         d.vx*=DAMP;d.vy*=DAMP;d.x+=d.vx;d.y+=d.vy;
-
         const depthA=use3D?Math.min(1,Math.max(0.25,FOV/Math.max(sz+DEPTH,1))):1;
         const dotR=d.r*Math.min(scale,1.5);
-        ctx.beginPath();
-        ctx.arc(d.x,d.y,dotR,0,Math.PI*2);
-        ctx.fillStyle=color;
-        ctx.globalAlpha=depthA*0.88;
-        ctx.fill();
+        ctx.beginPath();ctx.arc(d.x,d.y,dotR,0,Math.PI*2);ctx.fillStyle=color;ctx.globalAlpha=depthA*0.88;ctx.fill();
       }
       ctx.globalAlpha=1;
-
       const vg=ctx.createRadialGradient(W/2,H/2,H*0.2,W/2,H/2,W*0.65);
-      vg.addColorStop(0,"rgba(0,0,0,0)");
-      vg.addColorStop(1,"rgba(10,8,6,0.70)");
+      vg.addColorStop(0,"rgba(0,0,0,0)");vg.addColorStop(1,"rgba(10,8,6,0.70)");
       ctx.fillStyle=vg;ctx.fillRect(0,0,W,H);
-
       rafRef.current=requestAnimationFrame(frame);
     };
     rafRef.current=requestAnimationFrame(frame);
@@ -269,7 +251,7 @@ export function ProtagonistPortrait({projectId,currentTick}:Props){
       {isLoading&&(
         <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",
           justifyContent:"center",pointerEvents:"none"}}>
-          <span style={{fontSize:"11px",color:"var(--text-3)",letterSpacing:"0.1em"}}>正在生成图腾…</span>
+          <span style={{fontSize:"11px",color:"var(--text-3)",letterSpacing:"0.1em"}}>正在生成点阵…</span>
         </div>
       )}
     </div>

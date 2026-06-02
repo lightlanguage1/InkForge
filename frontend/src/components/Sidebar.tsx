@@ -8,6 +8,7 @@ const GROUPS = [
     items: [
       { label: "概览", path: ".", icon: "◈" },
       { label: "阅读", path: "read", icon: "▶" },
+      { label: "主角设定", path: "protagonist", icon: "★" },
       { label: "写作", path: "writing", icon: "✦" },
     ],
   },
@@ -53,7 +54,7 @@ function getAvatarGradient(name: string) {
   return AVATAR_HUES[(name.codePointAt(0) ?? 0) % AVATAR_HUES.length];
 }
 
-export function Sidebar({ projectName, tick }: { projectName: string; tick?: number }) {
+export function Sidebar({ projectName, tick, onNavigate }: { projectName: string; tick?: number; onNavigate?: () => void }) {
   const { id } = useParams();
   const initials = (projectName || "?").slice(0, 2).toUpperCase();
   const avatarGrad = getAvatarGradient(projectName);
@@ -61,7 +62,7 @@ export function Sidebar({ projectName, tick }: { projectName: string; tick?: num
 
   return (
     <aside
-      className="w-56 flex flex-col select-none flex-shrink-0 transition-colors duration-300"
+      className="w-56 flex flex-col select-none flex-shrink-0 transition-colors duration-300 h-full overflow-y-auto"
       style={{ background: "var(--bg-surface)", borderRight: "1px solid var(--border)" }}
     >
       {/* 项目头部 */}
@@ -104,6 +105,7 @@ export function Sidebar({ projectName, tick }: { projectName: string; tick?: num
                   key={item.path}
                   to={item.path}
                   end={item.path === "."}
+                  onClick={onNavigate}
                   className={({ isActive }) =>
                     isActive
                       ? "flex items-center gap-2.5 py-1.5 text-[13px] rounded-md font-medium pr-3 pl-[10px] border-l-2 transition-colors duration-150"
@@ -137,15 +139,16 @@ export function Sidebar({ projectName, tick }: { projectName: string; tick?: num
       </nav>
 
       {/* Footer */}
-      <div className="p-2 transition-colors duration-300" style={{ borderTop: "1px solid var(--border)" }}>
+      <div className="p-3 transition-colors duration-300" style={{ borderTop: "1px solid var(--border)" }}>
         <a
           href="/"
-          className="flex items-center gap-2 px-3 py-1.5 text-[11px] rounded-md transition-colors duration-150"
-          style={{ color: "var(--text-3)" }}
-          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "var(--text-2)"; }}
-          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = "var(--text-3)"; }}
+          onClick={onNavigate}
+          className="flex items-center gap-2.5 px-3 py-2.5 text-[13px] font-medium rounded-lg transition-all duration-150"
+          style={{ color: "var(--text-2)", background: "var(--bg-raised)", border: "1px solid var(--border)" }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "var(--accent)"; (e.currentTarget as HTMLElement).style.borderColor = "var(--accent)"; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = "var(--text-2)"; (e.currentTarget as HTMLElement).style.borderColor = "var(--border)"; }}
         >
-          <span>←</span>
+          <span className="text-base">←</span>
           <span>返回项目列表</span>
         </a>
       </div>

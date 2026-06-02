@@ -43,3 +43,18 @@
 - Users: 8 (+1), 8/22 码已用
 - Projects: 转生异世界成为猫娘靠哈气攻略迷宫(tick 2, 在生成中), 其他项目正常
 - Logs: ✅ 干净，无异常
+
+### #4 — 2026-06-01 20:41 CST (12:41 UTC)
+- Health: ✅ 200 (5ms)
+- Docker: ✅ frontend Up 4h, backend Up 14min
+- Users: 9 (+1), 9/22 码已用
+- Projects: 1 个项目 (7017f4a1，tick=2)
+- Logs: ✅ 干净，无异常
+
+### #5 — 2026-06-02 10:27 CST (02:27 UTC)
+- Health: ✅ 200 (5ms)
+- Docker: ✅ frontend Up 8h, backend 刚重启
+- Users: 9（未变）, 9/22 码已用
+- Projects: 2 个项目（转生猫娘 tick=2, 鼠的故事）
+- Portrait: GLM-4.5V + Pillow 服务端渲染 + 视觉评分校验流水线已上线
+- Logs: ✅ 干净，无异常

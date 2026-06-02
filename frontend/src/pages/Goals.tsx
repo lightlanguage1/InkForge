@@ -5,6 +5,7 @@ import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
 import { ProgressBar } from "../components/ui/ProgressBar";
 import { getGoals } from "../api/status";
+import { PageHelp } from "../components/PageHelp";
 
 export function GoalsPage() {
   const { id } = useParams<{ id: string }>();
@@ -14,6 +15,7 @@ export function GoalsPage() {
 
   return (
     <div className="space-y-6">
+      <PageHelp>角色目标 — 查看主角的即时目标、角色弧线目标和故事终极目标。追踪目标完成进度，了解当前叙事驱动力。</PageHelp>
       <h1 className="text-xl font-semibold tracking-tight" style={{ color: "var(--text-1)" }}>目标层级</h1>
 
       {data.story_goal && (

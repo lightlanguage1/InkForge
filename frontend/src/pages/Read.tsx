@@ -6,6 +6,7 @@ import { Modal } from "../components/ui/Modal";
 import { compile } from "../api/compile";
 import { getScenes, deleteScene, rewriteScene } from "../api/entities";
 import { useGeneration } from "../GenerationContext";
+import { PageHelp } from "../components/PageHelp";
 
 function splitScenes(md: string): { title: string; body: string[] }[] {
   // Only split at chapter markers like "## 第 N 幕"; scene content may contain
@@ -119,8 +120,9 @@ export function ReadPage() {
 
   return (
     <div className="h-full flex flex-col" style={{ fontFamily: "Georgia, 'Noto Serif SC', 'Source Han Serif SC', serif" }}>
+      <PageHelp>阅读模式 — 翻页阅读已生成的章节。使用 ← → 方向键翻页。翻到最新章可点击「重写」或「删除」按钮管理场景。</PageHelp>
       {/* page area */}
-      <div className="flex-1 overflow-auto px-8">
+      <div className="flex-1 overflow-auto px-4 md:px-8">
         <div className="max-w-xl w-full mx-auto py-10">
           {s.title && (
             <h2 className="text-xl font-bold mb-8 text-center tracking-wide"
@@ -138,7 +140,7 @@ export function ReadPage() {
       </div>
 
       {/* navigation bar */}
-      <div className="flex items-center justify-between px-6 py-4 flex-shrink-0"
+      <div className="flex items-center justify-between px-3 md:px-6 py-3 md:py-4 flex-shrink-0 gap-2 flex-wrap"
         style={{ borderTop: "1px solid var(--border)", background: "var(--bg-surface)" }}>
         <button onClick={goPrev} disabled={page === 0}
           className="text-sm px-4 py-2 rounded-lg transition-colors disabled:opacity-20"

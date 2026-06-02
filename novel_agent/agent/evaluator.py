@@ -287,12 +287,21 @@ class SceneEvaluator:
                 char_name = char.display_name or char_name
                 char_age = str(char.physical_traits.age) if char.physical_traits and char.physical_traits.age else "未知"
 
-        # 收集世界观规则 — more context for better consistency checks
+        # 收集世界观规则 — 数据驱动重要性排序
+        # 按每个importance值的条目数排序：条目越少的越重要（稀有=高优先级）
         lore_items = self.memory.load_all_lore()
-        critical = [l for l in lore_items if getattr(l, "importance", "") == "critical"]
-        important = [l for l in lore_items if getattr(l, "importance", "") == "important"]
-        normal = [l for l in lore_items if getattr(l, "importance", "") not in ("critical", "important")]
-        selected = critical + important[-5:] + normal[-5:]
+        imp_counts: dict[str, int] = {}
+        for l in lore_items:
+            imp = getattr(l, "importance", "") or "未知"
+            imp_counts[imp] = imp_counts.get(imp, 0) + 1
+        # 稀有度排序：条目少的importance值排前面
+        sorted_imps = sorted(imp_counts, key=lambda k: imp_counts[k])
+        # 前一半importance值=高优先级，后一半=普通
+        split = max(1, len(sorted_imps) // 2)
+        high_imps = set(sorted_imps[:split])
+        top = [l for l in lore_items if (getattr(l, "importance", "") or "未知") in high_imps]
+        rest = [l for l in lore_items if (getattr(l, "importance", "") or "未知") not in high_imps]
+        selected = top + rest[-5:]
         lore_text = "; ".join(f"[{getattr(l, 'importance', '?')}] {l.content[:100]}" for l in selected[-15:]) if selected else "暂无"
 
         prompt = _LOGIC_QA_PROMPT.format(

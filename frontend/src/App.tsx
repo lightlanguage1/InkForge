@@ -19,6 +19,7 @@ import { ReferencesPage } from "./pages/References";
 import { RelationshipsPage } from "./pages/Relationships";
 import { ReadPage } from "./pages/Read";
 import { CompilePage } from "./pages/Compile";
+import { ProtagonistSettingsPage } from "./pages/ProtagonistSettings";
 
 export function App() {
   const [token, setToken] = useState<string | null>(getToken);
@@ -45,6 +46,7 @@ export function App() {
         <Route path="skills" element={<SkillsPage />} />
         <Route path="references" element={<ReferencesPage />} />
         <Route path="compile" element={<CompilePage />} />
+        <Route path="protagonist" element={<ProtagonistSettingsPage />} />
       </Route>
     </Routes>
   );

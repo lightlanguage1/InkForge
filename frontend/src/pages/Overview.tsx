@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Spinner } from "../components/ui/Spinner";
 import { getStatus } from "../api/status";
 import { ProtagonistPortrait } from "../components/ProtagonistPortrait";
+import { PageHelp } from "../components/PageHelp";
 
 const STATS = [
   { key: "ticks",   label: "总幕数",   accent: "#8b7fd4" },
@@ -46,8 +47,9 @@ export function OverviewPage() {
         .ov-statcard:hover { border-color: var(--accent) !important; transform: translateY(-1px); }
       `}</style>
 
-      <div className="relative" style={{ maxWidth: "700px" }}>
+      <div className="relative max-w-[700px]">
 
+        <PageHelp>项目仪表盘 — 查看故事进度、字数统计、主角画像。所有数据随 AI 生成自动更新。点击左侧导航切换功能模块。</PageHelp>
 
         {/* Header */}
         <div className="ov-in relative z-10 flex items-start justify-between mb-10" style={{ animationDelay: "0ms" }}>
@@ -93,9 +95,9 @@ export function OverviewPage() {
         <div className="ov-in relative z-10 mb-8" style={{ animationDelay: "60ms", height: "1px", background: "var(--border)" }} />
 
         {/* Primary hero stats: 幕数 (large) + 字数 (large), asymmetric */}
-        <div className="ov-in relative z-10 mb-8" style={{ animationDelay: "120ms", display: "grid", gridTemplateColumns: "5fr 7fr", gap: "0" }}>
+        <div className="ov-in relative z-10 mb-8 grid grid-cols-1 md:grid-cols-[5fr_7fr]" style={{ animationDelay: "120ms" }}>
           {/* 幕数 — left, most dominant */}
-          <div style={{ paddingRight: "32px", borderRight: "1px solid var(--border)" }}>
+          <div className="pr-0 md:pr-8 md:border-r mb-4 md:mb-0" style={{ borderColor: "var(--border)" }}>
             <div
               className="font-mono tabular-nums"
               style={{ fontSize: "80px", fontWeight: 800, lineHeight: 0.9, color: "var(--text-1)", letterSpacing: "-0.04em" }}
@@ -124,7 +126,7 @@ export function OverviewPage() {
         </div>
 
         {/* Secondary stat cards — 角色数 + 平均张力 */}
-        <div className="ov-in relative z-10 mb-6" style={{ animationDelay: "240ms", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+        <div className="ov-in relative z-10 mb-6 grid grid-cols-1 sm:grid-cols-2 gap-3" style={{ animationDelay: "240ms" }}>
           {(["chars", "tension"] as const).map((key) => {
             const s = STATS.find((x) => x.key === key)!;
             return (

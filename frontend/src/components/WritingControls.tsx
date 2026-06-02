@@ -55,7 +55,7 @@ export function WritingControls({
 }: Props) {
   const [runCount, setRunCount] = useState(5);
   return (
-    <div className="w-64 flex-shrink-0 flex flex-col gap-3">
+    <div className="w-full md:w-64 flex-shrink-0 flex flex-col gap-3">
 
       {/* Control card */}
       <div

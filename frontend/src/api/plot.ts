@@ -1,4 +1,4 @@
-import { get, post, del } from "./client";
+import { get, post, patch, del } from "./client";
 import type { PlotStatus, BeatGenReq, BeatGenResult } from "../types/plot";
 
 export function getPlotStatus(projectId: string) {
@@ -7,6 +7,14 @@ export function getPlotStatus(projectId: string) {
 
 export function generateBeats(projectId: string, req?: BeatGenReq) {
   return post<BeatGenResult>(`/v1/project/${projectId}/plot/generate`, req);
+}
+
+export function updateBeat(projectId: string, beatId: string, patch: Record<string, unknown>) {
+  return patch<{ updated: string }>(`/v1/project/${projectId}/plot/beats/${beatId}`, patch);
+}
+
+export function deleteBeat(projectId: string, beatId: string) {
+  return del<{ deleted: string }>(`/v1/project/${projectId}/plot/beats/${beatId}`);
 }
 
 export function clearBeats(projectId: string) {

@@ -6,6 +6,7 @@ import { Button } from "../components/ui/Button";
 import { Badge } from "../components/ui/Badge";
 import { Spinner } from "../components/ui/Spinner";
 import { listCheckpoints, createCheckpoint, restoreCheckpoint, deleteCheckpoint } from "../api/checkpoints";
+import { PageHelp } from "../components/PageHelp";
 
 export function CheckpointsPage() {
   const { id } = useParams<{ id: string }>();
@@ -20,6 +21,7 @@ export function CheckpointsPage() {
 
   return (
     <div className="space-y-6">
+      <PageHelp>存档管理 — 查看和恢复自动存档点。每 3 章自动存档一次，也可手动创建。恢复存档会将故事回滚到存档时的状态。</PageHelp>
       <div className="flex items-center justify-between">
         <h1 className="font-semibold" style={{ fontSize: "1.375rem", color: "var(--text-1)" }}>存档管理</h1>
         <Button onClick={() => createMut.mutate()} loading={createMut.isPending}>创建存档</Button>

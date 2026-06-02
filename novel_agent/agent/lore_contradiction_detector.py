@@ -83,16 +83,11 @@ class LoreContradictionDetector:
         if lore1.category != lore2.category:
             return False
         
-        # If both are rules or constraints in the same category, they might contradict
-        if lore1.lore_type in ['rule', 'constraint'] and lore2.lore_type in ['rule', 'constraint']:
+        # 数据驱动：同类别下类型相同或相近的可能矛盾（不硬编码类型名）
+        if lore1.lore_type and lore2.lore_type and lore1.lore_type == lore2.lore_type:
             return True
-        
-        # If both are capabilities/limitations, they might contradict
-        if lore1.lore_type in ['capability', 'limitation'] and lore2.lore_type in ['capability', 'limitation']:
-            return True
-        
-        # Facts are less likely to contradict unless they're very similar
-        return False
+        # 任一方没有类型标注也不跳过——有类型可能矛盾
+        return bool(lore1.lore_type or lore2.lore_type)
     
     def update_contradictions(self, lore_id: str):
         """Update contradiction links for a lore item.

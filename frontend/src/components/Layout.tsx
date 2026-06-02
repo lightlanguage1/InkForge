@@ -7,7 +7,7 @@ export function Layout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen" style={{ background: "var(--bg-base)" }}>
       <header
-        className="h-14 flex items-center px-6 sticky top-0 z-40"
+        className="h-14 flex items-center px-4 md:px-6 sticky top-0 z-40"
         style={{
           background: "var(--header-bg)",
           borderBottom: "1px solid var(--border)",

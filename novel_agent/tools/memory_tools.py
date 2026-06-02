@@ -219,20 +219,20 @@ class CharacterGenerateTool(Tool):
                                 "duplicate": True
                             }
                 
-                # Check for duplicate unique roles (Protagonist, Antagonist)
-                unique_roles = ["protagonist", "antagonist"]
-                existing_role = (existing.role or "").lower()
-                new_role = role.lower()
-                
-                if new_role in unique_roles and existing_role == new_role:
-                    # Duplicate unique role found - return existing character
-                    return {
-                        "success": True,
-                        "character_id": char_id,
-                        "message": f"A {role} already exists ({char_id}: {existing.first_name} {existing.family_name}). Cannot create another.",
-                        "duplicate": True,
-                        "existing_role": existing_role
-                    }
+                # Check for duplicate: if this project already has an active_character,
+                # and someone tries to create another with the same role, block it.
+                # Data-driven — compares the actual role strings in the data.
+                active_id = self.memory_manager.get_active_character()
+                if active_id and char_id == active_id:
+                    existing_role = (existing.role or "").strip()
+                    new_role = (role or "").strip()
+                    if existing_role and new_role and existing_role == new_role:
+                        return {
+                            "success": True,
+                            "character_id": char_id,
+                            "message": f"项目已有 {existing_role}({char_id}: {existing.first_name} {existing.family_name})，不重复创建",
+                            "duplicate": True,
+                        }
         
         # Generate ID for new character
         character_id = self.memory_manager.generate_id("character")
