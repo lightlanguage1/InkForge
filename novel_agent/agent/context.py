@@ -169,9 +169,10 @@ class ContextBuilder:
             self.recent_scenes_count
         )
         
-        # Get open loops (filtered by active character relevance)
-        context["open_loops_list"] = self._format_open_loops(
-            pov_character_id=context["active_character_id"]
+        # 动态排序线索（时间衰减 + POV关联 + 优先级权重）
+        context["open_loops_list"] = self._rank_loops(
+            tick=context["current_tick"],
+            pov_id=context["active_character_id"],
         )
         
         # Get tension history (Phase 7A.3)
@@ -189,8 +190,11 @@ class ContextBuilder:
         # QA feedback (last tick summary + recent history)
         context["qa_feedback"] = self._get_qa_summary() + "\n" + self._get_qa_feedback()
 
-        # List all existing characters so planner doesn't recreate them
-        context["existing_characters_summary"] = self._format_all_characters()
+        # 动态排序角色（时间衰减 + 连接度 + active加权）
+        context["existing_characters_summary"] = self._rank_characters(
+            tick=context["current_tick"],
+            active_id=context["active_character_id"],
+        )
 
         # Next plot beat - use passed beat if available, otherwise query
         if current_beat:
@@ -835,3 +839,88 @@ If a Next Plot Beat is shown above, you may choose how to relate to it:
 The beat is a suggestion to maintain forward momentum. You may deviate if story needs require it.
 
 Do not invent beat IDs. Only use the ID shown in Next Plot Beat, or null."""
+
+    # ═══════════════════════════════════════════════════════════════
+    # 动态打分 + Token 分配（长篇小说上下文优化）
+    # ═══════════════════════════════════════════════════════════════
+
+    def _entity_time_decay(self, tick: int, last_seen: int) -> float:
+        gap = max(0, tick - last_seen)
+        return 1.0 / (1.0 + gap * 0.08)
+
+    def _rank_characters(self, tick: int, active_id: str, pov_intent: str = "") -> str:
+        chars = []
+        for cid in self.memory.list_characters():
+            c = self.memory.load_character(cid)
+            if not c:
+                continue
+            last = getattr(c, "last_scene_tick", -1)
+            deg = len(getattr(c, "relationships", [])) if hasattr(c, "relationships") else 0
+            is_active = 1.5 if cid == active_id else 1.0
+            score = self._entity_time_decay(tick, last) * is_active * (1.0 + deg * 0.05)
+            chars.append((score, c))
+        chars.sort(key=lambda x: -x[0])
+        if not chars:
+            return "无角色"
+
+        scores = [s for s, _ in chars]
+        max_s = max(scores) if scores else 1
+        exp_scores = [2.718 ** ((s - max_s) * 3) for s in scores]
+        total = sum(exp_scores) or 1
+        normalized = [e / total for e in exp_scores]
+
+        lines = []
+        for i, ((_, c), norm) in enumerate(zip(chars, normalized)):
+            name = c.display_name or c.id
+            if i < 6 and norm > 0.02:
+                lines.append(f"  {c.id} | {name} | {c.role or '?'} | {getattr(c,'status','active')} | {getattr(c,'description','')[:60]}")
+            elif i < 12 and norm > 0.005:
+                lines.append(f"  {c.id} | {name} | {c.role or '?'}({getattr(c,'status','active')})")
+            else:
+                lines.append(f"  {c.id} | {name}")
+        return "\n".join(lines)
+
+    def _rank_loops(self, tick: int, pov_id: str) -> str:
+        loops = self.memory.get_open_loops()
+        if not loops:
+            return "No open loops."
+        scored = []
+        for lp in loops:
+            # created_in_scene 可能是场景ID字符串（如"S001"）或tick数字
+            created_scene = getattr(lp, "created_in_scene", 0)
+            if isinstance(created_scene, str):
+                age = 0  # 字符串场景ID无法计算tick差，视为新创建
+            else:
+                age = tick - int(created_scene) if created_scene else 0
+            is_pov = 2.0 if pov_id and pov_id in (getattr(lp, "related_characters", []) or []) else 1.0
+            imp = getattr(lp, "importance", "normal") or "normal"
+            imp_w = {"critical": 4, "high": 3, "urgent": 3}.get(imp, 1)
+            score = self._entity_time_decay(tick, max(0, tick - age)) * is_pov * imp_w
+            scored.append((score, lp))
+        scored.sort(key=lambda x: -x[0])
+        lines = []
+        for i, (s, lp) in enumerate(scored[:12]):
+            lines.append(f"  {i+1}. [{getattr(lp,'status','open')}] {getattr(lp,'description',str(lp))[:80]}")
+        return "\n".join(lines) if lines else "No open loops."
+
+    def _rank_lore(self, tick: int, scene_intent: str = "") -> str:
+        items = self.memory.load_all_lore() if hasattr(self.memory, 'load_all_lore') else []
+        if not items:
+            return "暂无世界观规则"
+        scored = []
+        for l in items:
+            imp = getattr(l, "importance", "normal") or "normal"
+            score = 2.0 if imp in ("critical", "important", "关键", "重要") else 1.0
+            scored.append((score, l))
+        scored.sort(key=lambda x: -x[0])
+        seen = set()
+        unique = []
+        for s, l in scored:
+            key = getattr(l, "content", "")[:30]
+            if key not in seen:
+                seen.add(key)
+                unique.append((s, l))
+        lines = []
+        for i, (s, l) in enumerate(unique[:8]):
+            lines.append(f"  [{getattr(l,'importance','?')}] {getattr(l,'content',str(l))[:100]}")
+        return "\n".join(lines) if lines else "暂无世界观规则"

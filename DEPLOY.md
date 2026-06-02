@@ -1,58 +1,88 @@
 # InkForge 部署文档
 
-**版本**: beta (内测)
-**域名**: `https://inkforge.irynekoneko.club`
-**服务器**: 腾讯云 106.54.6.71 (Ubuntu 24.04)
-**日期**: 2026-06-01
-
----
+**服务器**: `ssh InkForge` (ubuntu@106.54.6.71)  
+**项目路径**: `/home/ubuntu/InkForge`  
+**容器**: `ubuntu-backend-1` / `ubuntu-frontend-1`
 
 ## 架构
 
 ```
-用户 → Nginx (:443) → /api/* → Backend Nginx (:8000) → Uvicorn (:9000, 4 workers)
-                     → /*     → 静态文件 (React SPA)
+用户 → Nginx (:443) → /api/* → Backend Nginx (:8000) → Uvicorn (:9000)
+                     → /*     → 前端静态文件
 
-数据: Docker 卷 inkforge_data (/app/work) 持久化 SQLite + 项目文件
-模型: Docker 卷 chroma_cache 持久化 ChromaDB 79MB ONNX 模型
-证书: Docker 卷 certs 持久化 Let's Encrypt 证书
+数据: inkforge_data volume → /app/work（持久化）
+代码: 在 Docker 镜像内，非挂载 → 更新用 docker cp
 ```
 
-## 部署命令
+## 日常部署（只改代码，不改依赖）
+
+代码在镜像内，**不要 rebuild**，直接 `docker cp` 注入 + 重启（2秒）：
 
 ```bash
-# 首次部署 (代码已有，镜像已构建)
-cd ~ && docker compose -f docker-compose.prod.yml up -d
+# 1. SCP 文件到服务器
+scp -i ~/.ssh/inkforge.pem local.py ubuntu@106.54.6.71:/home/ubuntu/InkForge/path/to/file.py
 
-# 日常更新 (推代码后)
-scp 改动的文件 ubuntu@106.54.6.71:/tmp/
-ssh ubuntu@106.54.6.71 "docker cp /tmp/xxx.py ubuntu-backend-1:/app/... && docker restart ubuntu-backend-1"
+# 2. 注入运行中的容器
+ssh InkForge "docker cp /home/ubuntu/InkForge/path/to/file.py ubuntu-backend-1:/app/path/to/file.py"
 
-# 完整重建 (仅当 Dockerfile 或依赖变化时)
-docker compose -f docker-compose.prod.yml build backend
-docker compose -f docker-compose.prod.yml up -d
+# 3. 重启
+ssh InkForge "docker restart ubuntu-backend-1"
+
+# 4. 验证
+ssh InkForge "docker logs --tail=5 ubuntu-backend-1"
+# 看到 "Application startup complete." = 成功
 ```
 
-## 性能配置
+多文件批量注入：
+```bash
+ssh InkForge "
+  docker cp /home/ubuntu/InkForge/novel_agent/agent/agent.py ubuntu-backend-1:/app/novel_agent/agent/agent.py &&
+  docker cp /home/ubuntu/InkForge/novel_agent/data/templates/planner_prompt.md ubuntu-backend-1:/app/novel_agent/data/templates/planner_prompt.md &&
+  docker restart ubuntu-backend-1
+"
+```
 
-| 配置 | 值 | 说明 |
-|------|-----|------|
-| uvicorn workers | 4 | 并发处理请求 |
-| SSE 生成 | 线程池 (max 20) | 不阻塞 event loop |
-| ChromaDB SQLite timeout | 60s | 防 upsert 超时 |
-| LLM 模型 | deepseek-chat (V4 Flash) | DeepSeek API 直连 |
-| API key | 见服务器 .env 文件 | 轮询池 |
+## 前端更新
 
-## 邀请码
+```bash
+cd frontend && npm run build
+scp -r dist/* ubuntu@106.54.6.71:/home/ubuntu/InkForge/frontend/dist/
+ssh InkForge "docker cp /home/ubuntu/InkForge/frontend/dist/. ubuntu-frontend-1:/usr/share/nginx/html/"
+```
 
-一码一人，max_uses=1，过期 2026-06-06。
+## 完整重建（仅改 Dockerfile / requirements.txt 时需要）
 
-管理员: IF-0E617B72 (咕咕嘎嘎)
+```bash
+ssh InkForge "cd /home/ubuntu/InkForge && docker compose build backend && docker compose up -d backend"
+```
 
-已使用 (7个): IF-0E617B72, IF-4F15C8A8, IF-C7631AEF, IF-BA04D104, IF-A3E749A6, IF-01437914, IF-141FA023
+## 路径映射
 
-未使用 (15个): IF-06F14158, IF-4BF02BCD, IF-50B4C1D2, IF-5C73868D, IF-6F1F415A, IF-84847F78, IF-98DB1AF2, IF-C4C2DEAC, IF-C5F6ED9A, IF-CB23D8F9, IF-D0212E80, IF-DDBE95E7, IF-E0BAAC06, IF-EB10A6F3, IF-F29AA375
+| 容器内 | 宿主机 | 更新方式 |
+|---|---|---|
+| `/app/novel_agent/` | `/home/ubuntu/InkForge/novel_agent/` | `docker cp` 注入 |
+| `/app/work/` | `inkforge_data` volume | 持久化，不删 |
+| `/usr/share/nginx/html/` | 前端构建产物 | `docker cp` 注入 |
 
-## 监控
+## 常用命令
 
-每 30 分钟自动检查：Health / 容器状态 / 用户数 / 项目数。记录在 BETA_MONITOR.md
+```bash
+# 容器状态
+ssh InkForge "docker ps"
+
+# 后端日志（最近30行）
+ssh InkForge "docker logs --tail=30 ubuntu-backend-1"
+
+# 错误日志
+ssh InkForge "docker logs ubuntu-backend-1 2>&1 | grep -i error"
+
+# 健康检查
+curl -s -o /dev/null -w '%{http_code}' https://inkforge.irynekoneko.club/api/v1/projects
+```
+
+## 注意事项
+
+- `docker cp` 注入的文件在 `docker compose down && up` 后会丢失（镜像恢复），需重新注入
+- `docker restart` 保留注入文件，是日常更新正确方式
+- `/app/work/` 是 volume，项目数据不会丢失
+- 不要为了更新代码而 `docker compose build`——那会走完整 pip install + apt 流程，浪费几分钟

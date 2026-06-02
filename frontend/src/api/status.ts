@@ -14,8 +14,8 @@ export function getLore(projectId: string, params?: Record<string, string>) {
   return get<LoreResult>(`/v1/project/${projectId}/lore${qs}`);
 }
 
-export function updateLore(projectId: string, loreId: string, patch: Record<string, unknown>) {
-  return patch<LoreItem>(`/v1/project/${projectId}/lore/${loreId}`, patch);
+export function updateLore(projectId: string, loreId: string, data: Record<string, unknown>) {
+  return patch<LoreItem>(`/v1/project/${projectId}/lore/${loreId}`, data);
 }
 
 export function createLore(projectId: string, body: { content: string; category: string; lore_type: string; importance: string; tags: string[] }) {

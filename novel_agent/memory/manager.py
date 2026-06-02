@@ -9,7 +9,7 @@ from ..configs.constants import (
     OPEN_LOOPS_FILE, RELATIONSHIPS_FILE, LORE_FILE, COUNTERS_FILE, STATE_FILE,
 )
 from .entities import (
-    Character, Location, Scene, OpenLoop, RelationshipGraph, Lore, Faction, StoryThread,
+    Character, Location, Scene, OpenLoop, RelationshipGraph, Relationship, Lore, Faction, StoryThread,
     HistoryEntry, RelationshipHistoryEntry
 )
 
@@ -353,6 +353,59 @@ class MemoryManager:
         """List all character IDs."""
         return [f.stem for f in self.characters_path.glob("*.json")]
 
+    def rebuild_all_after_scene_delete(self, deleted_scene_id: str):
+        """删除场景后重建所有实体的动态状态。
+
+        以磁盘上存在的场景文件为准，过滤掉引用已删场景的 history 条目，
+        然后重放剩余条目重建 current_state。不留幽灵数据。
+        """
+        active_ids = {s.id for s in self.list_scenes()}
+        logger.info("重建实体数据（已删场景=%s，活场景=%d）", deleted_scene_id, len(active_ids))
+
+        for char_id in self.list_characters():
+            self._rebuild_entity(char_id, "character", active_ids)
+        for loc_id in self.list_locations():
+            self._rebuild_entity(loc_id, "location", active_ids)
+        self._cleanup_lore_by_scenes(active_ids)
+        self._cleanup_loops_by_scenes(active_ids, deleted_scene_id)
+        self.invalidate_cache()
+
+    def _rebuild_entity(self, entity_id: str, entity_type: str, active_scene_ids: set):
+        """重建单个实体的动态状态。"""
+        if entity_type == "character":
+            entity = self.load_character(entity_id)
+        elif entity_type == "location":
+            entity = self.load_location(entity_id)
+        else:
+            return
+        if not entity:
+            return
+        remaining = [h for h in entity.history if h.scene_id in active_scene_ids]
+        entity.reset_dynamic_state()
+        entity.replay_history(remaining)
+        if entity_type == "character":
+            self.save_character(entity)
+        else:
+            self.save_location(entity)
+
+    def _cleanup_lore_by_scenes(self, active_scene_ids: set):
+        """移除 source_scene_id 指向已删除场景的 lore 条目。"""
+        lore_list = self.load_all_lore()
+        filtered = [l for l in lore_list if getattr(l, "source_scene_id", "") in active_scene_ids]
+        if len(filtered) != len(lore_list):
+            self._write_json(self.lore_file, {"lore": [l.to_dict() for l in filtered]})
+            logger.info("清理了 %d 条幽灵 lore", len(lore_list) - len(filtered))
+
+    def _cleanup_loops_by_scenes(self, active_scene_ids: set, deleted_scene_id: str):
+        """清理 open_loops 中对已删场景的引用。"""
+        loops = self.load_open_loops()
+        for loop in loops:
+            if getattr(loop, "created_in_scene", "") == deleted_scene_id:
+                loop.created_in_scene = ""
+            if getattr(loop, "resolved_in_scene", "") == deleted_scene_id:
+                loop.resolved_in_scene = ""
+        self.save_open_loops(loops)
+
     def get_all_characters(self) -> List[Character]:
         """Load all characters (with tick cache)."""
         return self._cache_get("all_characters", lambda: [
@@ -390,6 +443,13 @@ class MemoryManager:
         
         self.save_location(location)
     
+    def delete_location(self, location_id: str):
+        """Delete a location file."""
+        path = self.locations_path / f"{location_id}.json"
+        if path.exists():
+            path.unlink()
+            self.invalidate_cache()
+
     def list_locations(self) -> List[str]:
         """List all location IDs."""
         return [f.stem for f in self.locations_path.glob("*.json")]
@@ -633,7 +693,23 @@ class MemoryManager:
                 break
         self.save_open_loops(loops)
         self.invalidate_cache()
-    
+
+    def update_open_loop(self, loop_id: str, changes: Dict[str, Any]):
+        """Update specific fields of an open loop."""
+        loops = self.load_open_loops()
+        for loop in loops:
+            if loop.id == loop_id:
+                for key, value in changes.items():
+                    if hasattr(loop, key):
+                        setattr(loop, key, value)
+                break
+        self.save_open_loops(loops)
+
+    def delete_open_loop(self, loop_id: str):
+        """Remove an open loop from the list."""
+        loops = self.load_open_loops()
+        self.save_open_loops([l for l in loops if l.id != loop_id])
+
     def get_open_loops(self, status: str = "open") -> List[OpenLoop]:
         loops = self.load_open_loops()
         if not loops:
@@ -657,12 +733,33 @@ class MemoryManager:
         self._write_json(self.relationships_file, data)
     
     def add_relationship(self, relationship: RelationshipGraph):
-        """Add a new relationship."""
+        """Add a new relationship and sync to character files."""
         relationships = self.load_relationships()
         relationships.append(relationship)
         self.save_relationships(relationships)
+        self._sync_rel_to_characters(relationship)
         self.invalidate_cache()
-    
+
+    def _sync_rel_to_characters(self, rel: RelationshipGraph):
+        """Sync relationship data into individual character JSON files."""
+        for char_id in (rel.character_a, rel.character_b):
+            c = self.load_character(char_id)
+            if not c:
+                continue
+            # Remove existing entry for this relationship
+            c.relationships = [r for r in (c.relationships or [])
+                               if not (hasattr(r, 'character_id') and r.character_id
+                                       in (rel.character_a, rel.character_b))]
+            # Add synced entry
+            other = rel.character_b if char_id == rel.character_a else rel.character_a
+            c.relationships.append(Relationship(
+                character_id=other,
+                relationship_type=rel.relationship_type or "unknown",
+                status=rel.status or "active",
+                description=rel.perspective_a if char_id == rel.character_a else rel.perspective_b or "",
+            ))
+            self.save_character(c)
+
     def update_relationship(self, relationship_id: str, changes: Dict[str, Any]):
         """Update a relationship.
 
@@ -673,15 +770,15 @@ class MemoryManager:
         relationships = self.load_relationships()
         for rel in relationships:
             if rel.id == relationship_id:
-                # Update fields
                 for key, value in changes.items():
                     if hasattr(rel, key):
                         setattr(rel, key, value)
                 rel.updated_at = datetime.utcnow().isoformat() + "Z"
+                self._sync_rel_to_characters(rel)
                 break
         self.save_relationships(relationships)
         self.invalidate_cache()
-    
+
     def get_character_relationships(self, character_id: str) -> List[RelationshipGraph]:
         """Get all relationships involving a character.
         

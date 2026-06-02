@@ -53,6 +53,7 @@ def create_project(req: ProjectCreateRequest):
             genre=req.genre, premise=req.premise,
             protagonist=req.protagonist, setting=req.setting,
             tone=req.tone, themes=req.themes,
+            primary_goal=req.primary_goal,
             use_plot_first=req.use_plot_first,
         )
     except Exception:
@@ -107,7 +108,13 @@ def resume():
             "current_tick": p["current_tick"],
         }
 
-    raise HTTPException(status_code=404, detail="没有找到任何项目，请先创建项目或运行 novel tick")
+    # 无项目时不报错，前端空状态
+    return {
+        "project_path": "",
+        "project_id": "",
+        "novel_name": "",
+        "current_tick": 0,
+    }
 
 
 # ---- 删除 ----

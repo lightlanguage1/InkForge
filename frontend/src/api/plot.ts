@@ -9,8 +9,8 @@ export function generateBeats(projectId: string, req?: BeatGenReq) {
   return post<BeatGenResult>(`/v1/project/${projectId}/plot/generate`, req);
 }
 
-export function updateBeat(projectId: string, beatId: string, patch: Record<string, unknown>) {
-  return patch<{ updated: string }>(`/v1/project/${projectId}/plot/beats/${beatId}`, patch);
+export function updateBeat(projectId: string, beatId: string, data: Record<string, unknown>) {
+  return patch<{ updated: string }>(`/v1/project/${projectId}/plot/beats/${beatId}`, data);
 }
 
 export function deleteBeat(projectId: string, beatId: string) {

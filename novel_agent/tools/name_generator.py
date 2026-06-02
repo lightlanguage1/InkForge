@@ -54,10 +54,18 @@ class NameGenerator:
         
         Returns:
             Dictionary with full_name, first_name, last_name, title
-        
+
         Raises:
             ValueError: If unable to generate unique name after max_attempts
         """
+        # Normalize Chinese gender values to English for internal lookups
+        _MALE = {"男", "男性", "male"}
+        _FEMALE = {"女", "女性", "female"}
+        if gender and gender in _MALE:
+            gender = "male"
+        elif gender and gender in _FEMALE:
+            gender = "female"
+
         # Validate and correct gender-specific titles
         if title:
             title = self._validate_title_gender(title, gender)
@@ -250,13 +258,11 @@ class NameGeneratorTool(Tool):
             parameters={
                 "gender": {
                     "type": "string",
-                    "enum": ["male", "female"],
-                    "description": "Character gender for name generation"
+                    "description": "角色性别，如 男/女/male/female（用于名字生成）"
                 },
                 "genre": {
                     "type": "string",
-                    "enum": ["scifi"],
-                    "description": "Genre style for name generation (default: scifi)",
+                    "description": "风格类型，如 scifi/科幻/玄幻/武侠 等（默认 scifi）",
                     "optional": True
                 },
                 "title": {

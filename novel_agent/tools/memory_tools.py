@@ -46,8 +46,8 @@ class MemorySearchTool(Tool):
                 },
                 "entity_types": {
                     "type": "array",
-                    "items": {"type": "string", "enum": ["character", "location", "scene", "faction", "loop"]},
-                    "description": "Optional filter by entity types",
+                    "items": {"type": "string"},
+                    "description": "可选的实体类型过滤，如 character/角色、location/地点、scene/场景、faction/阵营、loop/线索",
                     "optional": True
                 },
                 "type": {
@@ -119,8 +119,7 @@ class CharacterGenerateTool(Tool):
                 },
                 "gender": {
                     "type": "string",
-                    "enum": ["male", "female"],
-                    "description": "Character gender for name generation (defaults to random 50/50 if not specified)",
+                    "description": "角色性别，如 男/女/male/female（用于名字生成，不传则随机）",
                     "optional": True
                 },
                 "role": {

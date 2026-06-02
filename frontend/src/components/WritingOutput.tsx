@@ -83,7 +83,7 @@ export function WritingOutput({ text, result, running, streamMode, tickPending, 
           </pre>
 
         ) : running ? (
-          /* Generating state */
+          /* Generating — show current pipeline phase */
           <div className="flex flex-col items-center justify-center h-full gap-5 text-center">
             <div
               className="w-12 h-12 rounded-xl flex items-center justify-center text-xl animate-pulse transition-all duration-300"
@@ -93,10 +93,10 @@ export function WritingOutput({ text, result, running, streamMode, tickPending, 
             </div>
             <div>
               <p className="text-sm font-medium transition-colors duration-300" style={{ color: t.text2 }}>
-                AI 正在创作中...
+                {phase ? `管线中：${phase}` : "AI 正在创作中..."}
               </p>
               <p className="text-xs mt-1 transition-colors duration-300" style={{ color: t.text3 }}>
-                请稍候
+                {phase ? "请稍候，当前阶段完成后自动进入下一步" : "请稍候"}
               </p>
             </div>
           </div>

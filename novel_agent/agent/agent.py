@@ -663,11 +663,11 @@ class StoryAgent:
                 f"为以下故事设定生成初始世界观规则。\n\n"
                 f"类型：{genre}\n前提：{premise}\n背景：{setting}\n基调：{tone}\n\n"
                 f"请生成 3-5 条核心世界观规则，每条包含：\n"
-                f"- 类别（magic/technology/society/physics/biology/other）\n"
-                f"- 类型（rule/fact/constraint/capability/limitation）\n"
-                f"- 内容（一句话描述，中文）\n"
-                f"- 重要性（critical/important/normal）\n\n"
-                f"返回JSON：{{\"lore\":[{{\"type\":\"rule\",\"category\":\"...\",\"content\":\"...\",\"importance\":\"normal\"}},...]}}\n"
+                f"- 类别：根据故事语境自行取名（如 魔法体系/科技水平/社会结构 等），不要用固定枚举\n"
+                f"- 类型：根据本条目的性质自行归类（如 规则/事实/约束/能力/限制 等）\n"
+                f"- 内容：一句话描述，中文\n"
+                f"- 重要性：关键/重要/普通/次要\n\n"
+                f"返回JSON：{{\"lore\":[{{\"type\":\"规则\",\"category\":\"...\",\"content\":\"...\",\"importance\":\"重要\"}},...]}}\n"
                 f"只返回JSON。"
             )
             try:

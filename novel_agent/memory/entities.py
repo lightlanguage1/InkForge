@@ -373,6 +373,57 @@ class Character:
             ]
         return cls(**data)
 
+    def reset_dynamic_state(self):
+        """清空由场景累积的动态状态，保留角色身份属性不变。"""
+        self.history = []
+        self.current_state.inventory = []
+        self.current_state.goals = []
+        self.current_state.beliefs = []
+        self.current_state.emotional_state = ""
+        self.current_state.physical_state = ""
+        self.current_state.emotion_history = []
+        self.current_state.location_id = None
+        self.appearance_ticks = []
+        self.last_scene_tick = -1
+
+    @staticmethod
+    def _parse_added(change) -> list:
+        """解析 changes 中的列表追加记录，兼容新旧格式。"""
+        if isinstance(change, list):
+            return change
+        if isinstance(change, str) and change.startswith("added:"):
+            import ast
+            try:
+                return ast.literal_eval(change[6:].strip())
+            except (ValueError, SyntaxError):
+                return []
+        return []
+
+    def replay_history(self, entries):
+        """按 tick 顺序重放 history 条目，重建 dynamic_state。"""
+        sorted_entries = sorted(entries, key=lambda e: e.tick)
+        for entry in sorted_entries:
+            for field, change in entry.changes.items():
+                if field in ("inventory", "goals", "beliefs"):
+                    added = self._parse_added(change)
+                    current = getattr(self.current_state, field, [])
+                    for item in added:
+                        if item not in current:
+                            current.append(item)
+                    setattr(self.current_state, field, current)
+                elif field == "emotional_state":
+                    val = change.get("new", change) if isinstance(change, dict) else change
+                    if val:
+                        self.current_state.emotional_state = str(val)
+                elif field == "physical_state":
+                    val = change.get("new", change) if isinstance(change, dict) else change
+                    if val:
+                        self.current_state.physical_state = str(val)
+                elif field == "location_id":
+                    val = change.get("new", change) if isinstance(change, dict) else change
+                    if val:
+                        self.current_state.location_id = str(val)
+
 
 @dataclass
 class Location:
@@ -429,6 +480,32 @@ class Location:
                 for h in data['history']
             ]
         return cls(**data)
+
+    def reset_dynamic_state(self):
+        """清空由场景累积的动态状态。"""
+        self.history = []
+        self.current_state.tension_level = 0
+        self.current_state.time_of_day = ""
+        self.current_state.weather = ""
+        self.current_state.occupants = []
+        self.current_state.notable_objects = []
+
+    def replay_history(self, entries):
+        """按 tick 顺序重放 history 条目，重建 current_state。"""
+        sorted_entries = sorted(entries, key=lambda e: e.tick)
+        for entry in sorted_entries:
+            for field, change in entry.changes.items():
+                if field in ("occupants", "notable_objects"):
+                    added = Character._parse_added(change)
+                    current = getattr(self.current_state, field, [])
+                    for item in added:
+                        if item not in current:
+                            current.append(item)
+                    setattr(self.current_state, field, current)
+                elif field in ("tension_level", "time_of_day", "weather", "atmosphere"):
+                    val = change.get("new", change) if isinstance(change, dict) else change
+                    if val is not None:
+                        setattr(self.current_state, field, val)
 
 
 @dataclass

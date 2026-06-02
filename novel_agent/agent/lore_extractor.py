@@ -215,15 +215,8 @@ class LoreExtractor:
             if field not in item or not item[field]:
                 return False
         
-        # Validate type
-        valid_types = ['rule', 'fact', 'constraint', 'capability', 'limitation']
-        if item['type'] not in valid_types:
-            return False
-        
-        # Validate importance
-        valid_importance = ['critical', 'important', 'normal', 'minor']
-        if item['importance'] not in valid_importance:
-            return False
+        # type 和 importance 根据故事语境自由取值，不硬编码枚举
+        # LLM 可能输出中英文混合值，全部接受
         
         # Ensure tags is a list
         if 'tags' not in item:

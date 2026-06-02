@@ -58,3 +58,30 @@
 - Projects: 2 个项目（转生猫娘 tick=2, 鼠的故事）
 - Portrait: GLM-4.5V + Pillow 服务端渲染 + 视觉评分校验流水线已上线
 - Logs: ✅ 干净，无异常
+
+### #6 — 2026-06-02 13:30 CST (05:30 UTC)
+- Health: ✅ 200 (5ms)
+- Docker: ✅ frontend Up 21h, backend Up 14min（planner prompt + 工具容错已部署）
+- Users: 11 (+2), 11/22 码已用
+- Projects: 13 个（青云洗剑录 tick=10, 女捕头 tick=12 最长）
+- Logs: ✅ 干净，无异常（planner prompt 强制工具调用刚上线，待观察新 tick）
+
+**智能体工具使用率分析（36 ticks / 98 次调用）：**
+
+| 工具 | 调用 | 占比 | 状态 |
+|------|------|------|------|
+| location.generate | 33 | 34% | ████████ |
+| character.generate | 23 | 23% | ██████ |
+| relationship.create | 20 | 20% | █████ |
+| relationship.update | 13 | 13% | ███ |
+| memory.search | 8 | 8% | ██ |
+| faction.generate | 1 | 1% | ▏ |
+| character.update | 0 | 0% | ❌ 从未调用 |
+| location.update | 0 | 0% | ❌ 从未调用 |
+| faction.update | 0 | 0% | ❌ 从未调用 |
+| lore.extract | 0 | 0% | ❌ 从未调用 |
+| lore.contradiction_check | 0 | 0% | ❌ 从未调用 |
+| loop.create | 0 | 0% | ❌ 从未调用 |
+| loop.resolve | 0 | 0% | ❌ 从未调用 |
+
+**使用率: 6/13 (46%) | 平均/tick: 2.7 | 已部署强制工具调用 prompt，下个监控周期对比**

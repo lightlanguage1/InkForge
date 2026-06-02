@@ -295,6 +295,29 @@ class VectorStore:
         if entity_types is None:
             entity_types = ["character", "location", "scene", "faction", "loop"]
 
+        # 动态匹配实体类型——能对上就用，对不上的搜全部
+        # 不硬编码映射表，防止 LLM 输出新类型时被静默丢弃
+        _KNOWN = {"character", "location", "scene", "faction", "loop"}
+        resolved = set()
+        unknown_found = False
+        for t in entity_types:
+            if t in _KNOWN:
+                resolved.add(t)
+                continue
+            # 尝试子串匹配（如 "characters" 匹配 "character"）
+            matched = False
+            for k in _KNOWN:
+                if k in t or t in k:
+                    resolved.add(k)
+                    matched = True
+                    break
+            if not matched:
+                unknown_found = True
+        if unknown_found:
+            entity_types = list(_KNOWN)  # 全搜，不丢数据
+        else:
+            entity_types = list(resolved)
+
         all_results = []
 
         if "character" in entity_types:

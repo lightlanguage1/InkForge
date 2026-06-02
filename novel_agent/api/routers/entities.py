@@ -96,6 +96,68 @@ def update_character(project_id: str, entity_id: str, patch: Dict[str, Any] = Bo
     return character.to_dict()
 
 
+@router.delete("/project/{project_id}/characters/{entity_id}")
+def delete_character(project_id: str, entity_id: str):
+    """Delete a character and clean up all references."""
+    if not try_lock_generation(project_id):
+        raise HTTPException(status_code=409, detail="该项目正在生成中，请等待完成")
+    try:
+        project_dir = resolve_project(project_id)
+        memory = MemoryManager(project_dir)
+        character = memory.load_character(entity_id)
+        if not character:
+            raise HTTPException(status_code=404, detail=f"未找到角色: {entity_id}")
+
+        char_name = (character.family_name or "") + (character.first_name or "")
+        cleaned = {"relationships": 0, "state": False, "character_file": False}
+
+        # 1. Remove this character from all other characters' relationships
+        for cid in memory.list_characters():
+            if cid == entity_id:
+                continue
+            other = memory.load_character(cid)
+            if not other or not other.relationships:
+                continue
+            before = len(other.relationships)
+            other.relationships = [r for r in other.relationships if r.character_id != entity_id]
+            if len(other.relationships) < before:
+                memory.save_character(other)
+                cleaned["relationships"] += 1
+
+        # 2. Clean relationships.json global file
+        all_rels = memory.load_relationships()
+        before_rels = len(all_rels)
+        all_rels = [r for r in all_rels if r.character_a != entity_id and r.character_b != entity_id]
+        if len(all_rels) < before_rels:
+            from ...memory.manager import MemoryManager as MM
+            data = {"relationships": [r.to_dict() for r in all_rels]}
+            (project_dir / "memory" / "relationships.json").write_text(
+                json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        # 3. Update state.json if deleted character was active
+        state_file = project_dir / "state.json"
+        if state_file.exists():
+            state = json.loads(state_file.read_text(encoding="utf-8"))
+            if state.get("active_character") == entity_id:
+                state["active_character"] = None
+                from datetime import datetime
+                state["last_updated"] = datetime.utcnow().isoformat() + "Z"
+                state_file.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+                cleaned["state"] = True
+
+        # 4. Delete character JSON file
+        char_file = project_dir / "memory" / "characters" / f"{entity_id}.json"
+        if char_file.exists():
+            char_file.unlink()
+            cleaned["character_file"] = True
+
+        memory.invalidate_cache()
+        logger.info("Deleted character %s (%s): cleaned=%s", entity_id, char_name, cleaned)
+        return {"deleted": entity_id, "name": char_name, "cleaned": cleaned}
+    finally:
+        release_generation(project_id)
+
+
 def _merge_into_dataclass(target, updates: dict):
     """Merge dict values into a dataclass instance's attributes."""
     for k, v in updates.items():
@@ -288,6 +350,27 @@ def get_location(project_id: str, entity_id: str):
     return _get_entity(resolve_project(project_id), entity_id)
 
 
+@router.patch("/project/{project_id}/locations/{entity_id}")
+def update_location(project_id: str, entity_id: str, patch: Dict[str, Any] = Body(...)):
+    project_dir = resolve_project(project_id)
+    memory = MemoryManager(project_dir)
+    try:
+        memory.update_location(entity_id, patch)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return memory.load_location(entity_id).to_dict()
+
+
+@router.delete("/project/{project_id}/locations/{entity_id}")
+def delete_location(project_id: str, entity_id: str):
+    project_dir = resolve_project(project_id)
+    memory = MemoryManager(project_dir)
+    if not memory.load_location(entity_id):
+        raise HTTPException(status_code=404, detail=f"未找到地点: {entity_id}")
+    memory.delete_location(entity_id)
+    return {"deleted": entity_id}
+
+
 # ---- 场景 ----
 
 @router.get("/project/{project_id}/scenes")
@@ -345,6 +428,10 @@ def delete_scene(project_id: str, entity_id: str):
                 from datetime import datetime
                 state["last_updated"] = datetime.utcnow().isoformat() + "Z"
                 state_file.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        # 用剩余场景重建所有实体的动态状态，不留幽灵数据
+        memory = MemoryManager(project_dir)
+        memory.rebuild_all_after_scene_delete(entity_id)
 
         logger.info("Deleted scene %s (tick %d): %s", entity_id, scene_tick, ", ".join(deleted) if deleted else "nothing to delete")
         return {"deleted": entity_id, "tick": scene_tick, "files": deleted}
@@ -424,6 +511,31 @@ def rewrite_scene(project_id: str, scene_id: str):
 @router.get("/project/{project_id}/loops")
 def get_loops(project_id: str, verbose: bool = False):
     return {"loops": list_open_loops(resolve_project(project_id), verbose=verbose)}
+
+
+@router.get("/project/{project_id}/loops/{entity_id}")
+def get_loop(project_id: str, entity_id: str):
+    return _get_entity(resolve_project(project_id), entity_id)
+
+
+@router.patch("/project/{project_id}/loops/{entity_id}")
+def update_loop(project_id: str, entity_id: str, patch: Dict[str, Any] = Body(...)):
+    project_dir = resolve_project(project_id)
+    memory = MemoryManager(project_dir)
+    memory.update_open_loop(entity_id, patch)
+    loops = memory.load_open_loops()
+    loop = next((l for l in loops if l.id == entity_id), None)
+    if not loop:
+        raise HTTPException(status_code=404, detail=f"未找到线索: {entity_id}")
+    return loop.to_dict()
+
+
+@router.delete("/project/{project_id}/loops/{entity_id}")
+def delete_loop(project_id: str, entity_id: str):
+    project_dir = resolve_project(project_id)
+    memory = MemoryManager(project_dir)
+    memory.delete_open_loop(entity_id)
+    return {"deleted": entity_id}
 
 
 # ---- 势力 ----

@@ -182,7 +182,7 @@ class EntityUpdater:
                                 added_items.append(item)
                         if added_items:
                             setattr(character.current_state, field, current)
-                            history_changes[field] = f"added: {added_items}"
+                            history_changes[field] = added_items  # 结构化列表，方便重放
                 else:
                     # Simple fields - replace
                     setattr(character.current_state, field, new_value)

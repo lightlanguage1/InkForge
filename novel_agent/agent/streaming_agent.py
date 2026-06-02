@@ -43,16 +43,32 @@ class StreamingStoryAgent:
         current_beat = self.agent._resolve_plot_beat(tick)
 
         yield self._event("phase", {"name": "context", "tick": tick})
-        context = self.agent.context_builder.build_planner_context(
-            self.agent.state, current_beat=current_beat,
-            notes=getattr(self.agent, '_tick_notes', ''),
-        )
 
-        yield self._event("phase", {"name": "planning", "tick": tick})
-        plan = self.agent._generate_plan(context)
-        from .schemas import validate_plan
-        validate_plan(plan)
-        self.agent._enforce_threads(plan, tick)
+        # Plan with retry loop (same as agent._normal_tick)
+        rejection_feedback = ""
+        for plan_attempt in range(3):
+            try:
+                context = self.agent.context_builder.build_planner_context(
+                    self.agent.state, current_beat=current_beat,
+                    notes=getattr(self.agent, '_tick_notes', ''),
+                    rejection_feedback=rejection_feedback if plan_attempt > 0 else "",
+                )
+
+                yield self._event("phase", {"name": "planning", "tick": tick})
+                plan = self.agent._generate_plan(context)
+                from .schemas import validate_plan
+                validate_plan(plan)
+                self.agent._enforce_beat_target(plan, current_beat)
+                self.agent._enforce_pacing(plan, tick)
+                self.agent._enforce_threads(plan, tick)
+                self.agent._enforce_tool_usage(plan)
+                break
+            except ValueError as e:
+                if plan_attempt < 2:
+                    logger.warning("计划被拒 (尝试%d/3): %s", plan_attempt + 1, e)
+                    rejection_feedback = str(e)
+                else:
+                    raise
 
         yield self._event("phase", {"name": "execution", "tick": tick})
         execution_results = self.agent.executor.execute_plan(plan, tick)
@@ -85,16 +101,21 @@ class StreamingStoryAgent:
 
         yield self._event("phase", {"name": "post_commit", "tick": tick})
         self.agent._save_qa(scene_id, tick, eval_result, plan)
-        self.agent._verify_beat(scene_id, plan, current_beat, scene_data)
+        self.agent._verify_beat(scene_id, plan, current_beat, scene_data, tick=tick)
         self.agent._save_tension(scene_id, tension_result)
 
         yield self._event("phase", {"name": "memory", "tick": tick})
         self.agent._update_memory(scene_data["text"], scene_id, tick)
+
+        yield self._event("phase", {"name": "finalizing", "tick": tick})
+        self.agent._bump_loop_mentions(plan)
+        self.agent._advance_threads(plan, scene_id, tick)
         self.agent._check_goal_promotion(tick)
         self.agent._maybe_audit_threads(tick)
 
         self.agent.state["current_tick"] += 1
         self.agent._save_state()
+        self.agent._auto_checkpoint()
 
         result = self.agent._build_tick_result(
             tick, scene_id, scene_data, execution_results,

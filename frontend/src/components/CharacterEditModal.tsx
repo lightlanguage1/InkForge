@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Modal } from "./ui/Modal";
-import { updateCharacter } from "../api/entities";
+import { updateCharacter, deleteCharacter } from "../api/entities";
 import type { CharacterDetail } from "../types/entities";
 
 const inputStyle: React.CSSProperties = {
@@ -181,11 +181,30 @@ export function CharacterEditModal({ open, projectId, character, onClose }: Prop
         </div>
 
         {/* Buttons */}
-        <div className="flex justify-end gap-3 pt-2" style={{ borderTop: "1px solid var(--border)" }}>
-          <button onClick={onClose} disabled={saving} className="text-sm px-4 py-2 rounded-lg" style={{ color: "var(--text-2)", background: "var(--bg-raised)", border: "1px solid var(--border)" }}>取消</button>
-          <button onClick={handleSave} disabled={saving} className="text-sm px-5 py-2 rounded-lg font-medium disabled:opacity-40" style={{ background: "#c8975a", color: "#0e0c09" }}>
-            {saving ? "保存中…" : "保存并全局替换"}
+        <div className="flex justify-between pt-2" style={{ borderTop: "1px solid var(--border)" }}>
+          <button onClick={() => {
+            if (!projectId || !character) return;
+            const name = (character.family_name || "") + (character.first_name || "") || character.id;
+            if (!confirm(`确定删除角色「${name}」？\n\n删除后会清理所有关联关系，旧章节保留原样，仅影响最新章节和后续生成。`)) return;
+            setSaving(true);
+            deleteCharacter(projectId, character.id).then(() => {
+              setToast({ type: "success", text: `已删除「${name}」，关联关系已清理` });
+              qc.invalidateQueries({ queryKey: ["characters", projectId] });
+              qc.invalidateQueries({ queryKey: ["character", projectId, character.id] });
+              onClose();
+            }).catch((e: any) => {
+              setToast({ type: "error", text: `删除失败: ${e?.message ?? e}` });
+            }).finally(() => setSaving(false));
+          }} disabled={saving} className="text-sm px-4 py-2 rounded-lg disabled:opacity-40"
+            style={{ color: "#e88c8c", background: "rgba(180,40,40,0.08)", border: "1px solid rgba(200,80,80,0.3)" }}>
+            {saving ? "处理中…" : "🗑 删除角色"}
           </button>
+          <div className="flex gap-3">
+            <button onClick={onClose} disabled={saving} className="text-sm px-4 py-2 rounded-lg" style={{ color: "var(--text-2)", background: "var(--bg-raised)", border: "1px solid var(--border)" }}>取消</button>
+            <button onClick={handleSave} disabled={saving} className="text-sm px-5 py-2 rounded-lg font-medium disabled:opacity-40" style={{ background: "#c8975a", color: "#0e0c09" }}>
+              {saving ? "保存中…" : "保存并全局替换"}
+            </button>
+          </div>
         </div>
       </div>
       {toast && (

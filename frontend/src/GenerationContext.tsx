@@ -6,7 +6,7 @@ const PHASE_LABELS: Record<string, string> = {
   context: "收集上下文", planning: "规划情节", execution: "执行工具",
   writing: "准备写作", generating: "正在生成", evaluation: "评估质量",
   tension: "张力分析", committing: "保存场景", post_commit: "提交后处理",
-  memory: "更新记忆", entity_generation: "生成实体",
+  memory: "更新记忆", finalizing: "整理收尾", entity_generation: "生成实体",
 };
 const MAX_URL_LENGTH = 1900; // safe limit for URL (nginx default is ~8KB, but be conservative)
 
@@ -31,6 +31,7 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
   const abortRef = useRef<AbortController | null>(null);
   const runCountRef = useRef(0);
   const pendingCountRef = useRef(0);
+  const runOneRef = useRef<(() => void) | null>(null);
   const paramsRef = useRef<{ notes?: string; backend?: string; model?: string; finale?: boolean }>({});
 
   const [session, setSession] = useState<GenerationSession | null>(null);
@@ -94,7 +95,7 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
               qc.invalidateQueries({ queryKey: ["scenes", projectId] });
               qc.invalidateQueries({ queryKey: ["read", projectId] });
               if (runCountRef.current < pendingCountRef.current) {
-                setTimeout(runOne, 500);
+                setTimeout(() => runOneRef.current?.(), 500);
               } else {
                 setSession(prev => prev ? { ...prev, running: false, phase: "" } : prev);
               }
@@ -124,7 +125,7 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
     paramsRef.current = params;
     setSession({ projectId, running: true, text: "", phase: "", result: null });
 
-    const runOne = () => {
+    runOneRef.current = () => {
       const { notes, backend, model, finale } = paramsRef.current;
       const token = localStorage.getItem("inkforge_token");
       const headers: Record<string, string> = {};
@@ -154,7 +155,7 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    runOne();
+    runOneRef.current();
   }, [streamSSE]);
 
   return (

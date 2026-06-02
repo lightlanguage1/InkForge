@@ -14,7 +14,7 @@ interface Vec2 { x: number; y: number }
 function layout(nodes: GraphNode[], edges: GraphEdge[], w: number, h: number): Map<string, Vec2> {
   const pos = new Map<string, Vec2>();
   const vel = new Map<string, Vec2>();
-  const cx = w / 2, cy = h / 2, r = Math.min(w, h) * 0.35;
+  const cx = w / 2, cy = h / 2, r = Math.min(w, h) * 0.40;
   nodes.forEach((n, i) => {
     const a = (2 * Math.PI * i) / nodes.length - Math.PI / 2;
     pos.set(n.id, { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) });
@@ -32,8 +32,8 @@ function layout(nodes: GraphNode[], edges: GraphEdge[], w: number, h: number): M
         const q = pos.get(m.id)!;
         const dx = p.x - q.x, dy = p.y - q.y;
         const d = Math.max(1, Math.sqrt(dx * dx + dy * dy));
-        fx += (dx / d) * (r * 3) / (d * d);
-        fy += (dy / d) * (r * 3) / (d * d);
+        fx += (dx / d) * (r * 5) / (d * d);
+        fy += (dy / d) * (r * 5) / (d * d);
       }
       for (const e of edges) {
         const other = e.source === n.id ? e.target : e.target === n.id ? e.source : null;
@@ -42,7 +42,7 @@ function layout(nodes: GraphNode[], edges: GraphEdge[], w: number, h: number): M
         const dx = q.x - p.x, dy = q.y - p.y;
         const d = Math.sqrt(dx * dx + dy * dy);
         const deg = edges.filter(e2 => e2.source === n.id || e2.target === n.id).length;
-        const ideal = 80 + 15 * deg;
+        const ideal = 130 + 20 * deg;
         const force = (d - ideal) * 0.02;
         fx += (dx / Math.max(1, d)) * force;
         fy += (dy / Math.max(1, d)) * force;
@@ -89,6 +89,10 @@ export function RelationshipsPage() {
   const [panning, setPanning] = useState(false);
   const panStart = useRef<Vec2>({ x: 0, y: 0 });
   const panAnchor = useRef<Vec2>({ x: 0, y: 0 });
+  const scaleRef = useRef(1);
+  const panRef = useRef<Vec2>({ x: 0, y: 0 });
+  scaleRef.current = scale;
+  panRef.current = pan;
 
   const { data, isLoading } = useQuery({
     queryKey: ["relationships", id],
@@ -179,18 +183,27 @@ export function RelationshipsPage() {
     setPanning(false);
   };
 
-  /* zoom */
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    const pt = svgPoint(e as unknown as React.PointerEvent);
-    const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale * delta));
-    // zoom toward cursor
-    const sx = (pt.x - pan.x) / scale;
-    const sy = (pt.y - pan.y) / scale;
-    setPan({ x: pt.x - sx * newScale, y: pt.y - sy * newScale });
-    setScale(newScale);
-  };
+  /* zoom — native listener for passive:false support */
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      if (!svgRef.current) return;
+      const r = svgRef.current.getBoundingClientRect();
+      const pt = { x: e.clientX - r.left, y: e.clientY - r.top };
+      const curScale = scaleRef.current;
+      const curPan = panRef.current;
+      const delta = e.deltaY > 0 ? 0.9 : 1.1;
+      const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, curScale * delta));
+      const sx = (pt.x - curPan.x) / curScale;
+      const sy = (pt.y - curPan.y) / curScale;
+      setPan({ x: pt.x - sx * newScale, y: pt.y - sy * newScale });
+      setScale(newScale);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
 
   if (isLoading) return <Spinner />;
 
@@ -211,7 +224,6 @@ export function RelationshipsPage() {
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onPointerLeave={handlePointerUp}
-          onWheel={handleWheel}
         >
           {/* viewport group */}
           <g transform={`translate(${pan.x},${pan.y}) scale(${scale})`}>
@@ -223,40 +235,27 @@ export function RelationshipsPage() {
               const mx = (sp.x + tp.x) / 2, my = (sp.y + tp.y) / 2;
               const dx = tp.x - sp.x, dy = tp.y - sp.y;
               const d = Math.sqrt(dx * dx + dy * dy) || 1;
-              const nx = (-dy / d) * 24, ny = (dx / d) * 24;
+              const nx = (-dy / d) * 28, ny = (dx / d) * 28;
               const faded = hoveredId && !(e.source === hoveredId || e.target === hoveredId);
+              // Color by relationship sentiment
+              const typeStr = (e.type || "关联").toLowerCase();
+              const isPositive = /友|信任|合作|爱|亲密|师徒|救助|恩/.test(typeStr);
+              const isNegative = /敌|仇|冲突|恨|背叛|杀|威胁/.test(typeStr);
+              const edgeColor = isPositive ? "#8cc88c" : isNegative ? "#e8948c" : "#9ca3af";
+              const label = e.type || e.status || "关联";
+              const labelW = Math.min(label.length * 12 + 16, 200);
               return (
                 <g key={i}>
-                  {/* edge line */}
-                  <path
-                    d={`M${sp.x},${sp.y} Q${mx + nx},${my + ny} ${tp.x},${tp.y}`}
-                    fill="none"
-                    stroke="var(--text-3)"
-                    strokeWidth={1.5}
-                    opacity={faded ? 0.08 : 0.4}
-                  />
-                  {/* arrow at target end */}
-                  <polygon
-                    points={`${tp.x},${tp.y} ${tp.x - 4},${tp.y - 6} ${tp.x + 4},${tp.y - 6}`}
-                    fill="var(--text-3)"
-                    opacity={faded ? 0.08 : 0.4}
-                    transform={`rotate(${Math.atan2(dy, dx) * (180 / Math.PI) - 90}, ${tp.x}, ${tp.y})`}
-                  />
-                  {/* relationship label — pill background */}
-                  <rect
-                    x={mx + nx - (e.type.length * 5 + 12)}
-                    y={my + ny - 20}
-                    width={e.type.length * 10 + 24}
-                    height={18}
-                    rx={9}
-                    fill="var(--bg-surface)"
-                    stroke="var(--border)"
-                    strokeWidth={0.5}
-                    opacity={faded ? 0.08 : 0.85}
-                  />
-                  <text x={mx + nx} y={my + ny - 7} textAnchor="middle" fontSize="10"
-                    fill="var(--text-2)" opacity={faded ? 0.1 : 0.9}>
-                    {e.type}
+                  <path d={`M${sp.x},${sp.y} Q${mx + nx},${my + ny} ${tp.x},${tp.y}`}
+                    fill="none" stroke={edgeColor} strokeWidth={faded ? 0.5 : 2}
+                    opacity={faded ? 0.06 : 0.55} strokeLinecap="round" />
+                  <circle cx={mx + nx} cy={my + ny} r={2.5} fill={edgeColor} opacity={faded ? 0.06 : 0.4} />
+                  <rect x={mx + nx - labelW / 2} y={my + ny - 22} width={labelW} height={20}
+                    rx={10} fill="var(--bg-surface)" stroke={edgeColor} strokeWidth={0.8}
+                    opacity={faded ? 0.05 : 0.92} />
+                  <text x={mx + nx} y={my + ny - 8} textAnchor="middle" fontSize="11"
+                    fill={edgeColor} fontWeight={500} opacity={faded ? 0.08 : 0.95}>
+                    {label.length > 12 ? label.slice(0, 11) + "…" : label}
                   </text>
                 </g>
               );
@@ -267,22 +266,27 @@ export function RelationshipsPage() {
               const p = positions.get(n.id);
               if (!p) return null;
               const faded = hoveredId && !(n.id === hoveredId || highlight.has(n.id));
-              const r = 12 + Math.min((n.degree || 0) * 3, 10);
+              const deg = n.degree || 0;
+              const r = 14 + Math.min(deg * 4, 18);
+              const nameW = n.name.length * 14 + 8;
               return (
-                <g key={n.id}
-                  style={{ cursor: "pointer" }}
-                  opacity={faded ? 0.25 : 1}
+                <g key={n.id} style={{ cursor: "pointer" }}
+                  opacity={faded ? 0.2 : 1}
                   onPointerDown={(e) => handleNodeDown(n.id, e)}
                   onClick={() => setSelectedId(n.id)}
                   onPointerEnter={() => setHoveredId(n.id)}
                   onPointerLeave={() => setHoveredId(null)}
                 >
+                  <circle cx={p.x} cy={p.y} r={r + 4} fill={nodeColor(n)}
+                    opacity={hoveredId === n.id ? 0.3 : 0} style={{ transition: "opacity 0.2s" }} />
                   <circle cx={p.x} cy={p.y} r={r} fill={nodeColor(n)}
-                    stroke="var(--bg-base)" strokeWidth={2.5}
-                    style={{ transition: "r 0.15s" }}
-                  />
-                  <text x={p.x} y={p.y + r + 12} textAnchor="middle" fontSize="11"
-                    fill="var(--text-2)">
+                    stroke="var(--bg-base)" strokeWidth={3}
+                    style={{ transition: "r 0.15s", filter: `brightness(${hoveredId === n.id ? 1.3 : 1})` }} />
+                  <rect x={p.x - nameW / 2} y={p.y + r + 6} width={nameW} height={22}
+                    rx={11} fill="var(--bg-surface)" stroke="var(--border)" strokeWidth={0.5}
+                    opacity={faded ? 0.1 : 0.9} />
+                  <text x={p.x} y={p.y + r + 20} textAnchor="middle" fontSize="12"
+                    fontWeight={600} fill="var(--text-1)" opacity={faded ? 0.15 : 0.95}>
                     {n.name}
                   </text>
                 </g>
@@ -291,6 +295,12 @@ export function RelationshipsPage() {
           </g>
         </svg>
 
+        {/* legend */}
+        <div className="absolute bottom-3 left-3 flex items-center gap-4 text-[10px]" style={{ color: "var(--text-3)" }}>
+          <span className="flex items-center gap-1"><span className="inline-block w-3 h-0.5 rounded" style={{ background: "#8cc88c" }} /> 正向</span>
+          <span className="flex items-center gap-1"><span className="inline-block w-3 h-0.5 rounded" style={{ background: "#e8948c" }} /> 冲突</span>
+          <span className="flex items-center gap-1"><span className="inline-block w-3 h-0.5 rounded" style={{ background: "#9ca3af" }} /> 中立</span>
+        </div>
         {/* zoom controls */}
         <div className="absolute bottom-3 right-3 flex items-center gap-1"
           style={{ color: "var(--text-3)", fontSize: "11px" }}>
