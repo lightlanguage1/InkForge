@@ -7,6 +7,7 @@ import { ProjectCard } from "../components/ProjectCard";
 import { NewProjectModal } from "../components/NewProjectModal";
 import { listProjects, resume, createProject, deleteProject } from "../api/projects";
 import { listSkills } from "../api/skills";
+import { clearToken, getSavedName, isAdmin } from "../components/LoginGate";
 import type { CreateProjectReq } from "../types/project";
 
 const FEATURE_ITEMS = [
@@ -62,6 +63,15 @@ export function DashboardPage() {
               InkForge
             </p>
             <div className="flex items-center gap-3">
+              <span className="text-[12px]" style={{ color: "var(--text-2)" }}>{getSavedName() || "用户"}</span>
+              {isAdmin() && <span className="text-[10px] px-2 py-0.5 rounded" style={{ background: "rgba(200,151,90,0.15)", color: "var(--accent)" }}>管理员</span>}
+              <button onClick={() => { clearToken(); window.location.reload(); }}
+                className="text-[11px] px-3 py-1.5 rounded-lg transition-colors"
+                style={{ color: "var(--text-3)", border: "1px solid var(--border)" }}
+                onMouseEnter={e => { e.currentTarget.style.color = "#f87171"; e.currentTarget.style.borderColor = "rgba(248,113,113,0.4)"; }}
+                onMouseLeave={e => { e.currentTarget.style.color = "var(--text-3)"; e.currentTarget.style.borderColor = "var(--border)"; }}
+              >退出</button>
+              <span style={{ color: "var(--border)" }}>|</span>
               <button
                 onClick={() => resumeMut.mutate()}
                 disabled={resumeMut.isPending}

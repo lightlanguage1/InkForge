@@ -118,7 +118,7 @@
 | 7 | 本场景推进或解决了哪些线索？ | → 填入 `loops_addressed` |
 | 8 | 本场景推进了哪些支线？ | → 填入 `threads_addressed` |
 
-每个场景的 actions 至少应涵盖 3 个以上检查项。空 actions 意味着管线没有执行任何维护操作，故事状态将逐渐脱节。
+每个场景的 actions 至少需要 2 个工具：memory.search（必调）+ 至少一个实体维护操作。空 actions 意味着管线没有执行任何维护操作，故事状态将逐渐脱节。
 
 {plan_rejection_feedback}
 ## 你的任务：推进故事

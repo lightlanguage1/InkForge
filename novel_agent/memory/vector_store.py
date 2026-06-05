@@ -1,5 +1,8 @@
 """Vector store for semantic search using ChromaDB."""
 
+import functools
+import logging
+import os
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import chromadb
@@ -7,20 +10,70 @@ from chromadb.config import Settings
 
 from .entities import Character, Location, Scene, Lore, Faction, OpenLoop
 
+logger = logging.getLogger(__name__)
+
+
+def _repair_sqlite_wal(index_path: Path):
+    """修复上次异常关闭导致的 SQLite WAL 锁死 / DBMOVED。
+
+    容器重启后 Volume inode 变化会导致 SQLITE_READONLY_DBMOVED。
+    解决方案：删掉所有 WAL/SHM 残留文件，清空缓存，让 SQLite 重新初始化。
+    """
+    removed = 0
+    for suffix in ("-wal", "-shm"):
+        for f in index_path.rglob(f"*.sqlite3{suffix}"):
+            try:
+                os.remove(str(f))
+                removed += 1
+            except OSError:
+                pass
+    if removed:
+        logger.warning("已清理 %d 个 WAL/SHM 残留文件", removed)
+
+
+def _retry_on_readonly(method):
+    """装饰器：捕获 SQLite readonly (1032) 错误，自动修复并重试一次。"""
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        try:
+            return method(self, *args, **kwargs)
+        except Exception as e:
+            if _is_readonly_error(e):
+                logger.warning("SQLite readonly 检测到，尝试修复后重试 %s", method.__name__)
+                self._repair_and_reconnect()
+                return method(self, *args, **kwargs)
+            raise
+    return wrapper
+
+
+def _is_readonly_error(exc: Exception) -> bool:
+    """检测是否为 SQLite readonly (1032) 错误。"""
+    msg = str(exc)
+    if "1032" in msg and "readonly" in msg.lower():
+        return True
+    if "readonly database" in msg.lower():
+        return True
+    if "SQLITE_READONLY" in msg:
+        return True
+    return False
+
 
 class VectorStore:
     """Manages semantic search using ChromaDB."""
     
     def __init__(self, project_path: Path):
         """Initialize vector store.
-        
+
         Args:
             project_path: Path to the novel project directory
         """
         self.project_path = Path(project_path)
         self.index_path = self.project_path / "memory" / "index"
         self.index_path.mkdir(parents=True, exist_ok=True)
-        
+
+        # 启动自愈：修复上次异常关闭导致的 WAL 锁死
+        _repair_sqlite_wal(self.index_path)
+
         # Initialize ChromaDB client
         self.client = chromadb.PersistentClient(
             path=str(self.index_path),
@@ -52,11 +105,60 @@ class VectorStore:
             name="loops",
             metadata={"description": "Open loop / story thread entities"}
         )
+
+    def _repair_and_reconnect(self):
+        """运行时自愈：清理 WAL 残留并重建 ChromaDB 客户端连接。
+
+        容器重启 / Volume inode 变化后 SQLite 会进入 readonly 状态。
+        此方法删除 WAL/SHM、重建客户端和所有 collection 引用。
+        """
+        # 先关闭旧客户端
+        try:
+            del self.client
+        except Exception:
+            pass
+
+        # 清理 WAL/SHM
+        _repair_sqlite_wal(self.index_path)
+
+        # 重建客户端
+        self.client = chromadb.PersistentClient(
+            path=str(self.index_path),
+            settings=Settings(anonymized_telemetry=False, chroma_sqlite_timeout=60000)
+        )
+
+        # 重新获取所有 collection
+        self.characters_collection = self.client.get_or_create_collection(
+            name="characters",
+            metadata={"description": "Character entities"}
+        )
+        self.locations_collection = self.client.get_or_create_collection(
+            name="locations",
+            metadata={"description": "Location entities"}
+        )
+        self.scenes_collection = self.client.get_or_create_collection(
+            name="scenes",
+            metadata={"description": "Scene summaries"}
+        )
+        self.lore_collection = self.client.get_or_create_collection(
+            name="lore",
+            metadata={"description": "World rules and lore (Phase 7A.4)"}
+        )
+        self.factions_collection = self.client.get_or_create_collection(
+            name="factions",
+            metadata={"description": "Faction/organization entities"}
+        )
+        self.loops_collection = self.client.get_or_create_collection(
+            name="loops",
+            metadata={"description": "Open loop / story thread entities"}
+        )
+        logger.info("ChromaDB 客户端已重建（SQLite readonly 自愈）")
     
     # ========================================================================
     # Indexing Methods
     # ========================================================================
-    
+
+    @_retry_on_readonly
     def index_character(self, character: Character):
         """Add or update character in vector index.
         
@@ -97,6 +199,7 @@ class VectorStore:
             metadatas=[metadata]
         )
     
+    @_retry_on_readonly
     def index_location(self, location: Location):
         """Add or update location in vector index.
         
@@ -130,6 +233,7 @@ class VectorStore:
             metadatas=[metadata]
         )
     
+    @_retry_on_readonly
     def index_scene(self, scene: Scene):
         """Add or update scene in vector index.
         
@@ -160,6 +264,7 @@ class VectorStore:
             metadatas=[metadata]
         )
 
+    @_retry_on_readonly
     def index_faction(self, faction: Faction):
         """Add or update faction in vector index.
         
@@ -192,6 +297,7 @@ class VectorStore:
             metadatas=[metadata]
         )
     
+    @_retry_on_readonly
     def index_loop(self, loop: OpenLoop):
         """Add or update open loop in vector index.
 
@@ -407,6 +513,7 @@ class VectorStore:
     # Utility Methods
     # ========================================================================
     
+    @_retry_on_readonly
     def delete_entity(self, entity_id: str):
         """Delete an entity from all collections.
         
@@ -447,6 +554,7 @@ class VectorStore:
     # Lore Methods (Phase 7A.4)
     # ========================================================================
     
+    @_retry_on_readonly
     def index_lore(self, lore: Lore):
         """Add or update lore in vector index (Phase 7A.4).
         

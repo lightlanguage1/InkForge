@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException, Body
+from pydantic import BaseModel
 
 from ..deps import resolve_project, try_lock_generation, release_generation
 from ...cli.commands.list import (
@@ -15,6 +16,7 @@ from ...cli.commands.list import (
 from ...cli.commands.inspect import find_entity_file, load_entity
 from ...memory.manager import MemoryManager
 from ...memory.entities import Character, PhysicalTraits, Personality, CurrentState, EmotionState
+from ...tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -378,6 +380,23 @@ def get_scenes(project_id: str, verbose: bool = False):
     return {"scenes": list_scenes(resolve_project(project_id), verbose=verbose)}
 
 
+@router.post("/project/{project_id}/switch-branch/{branch_name}")
+def switch_branch(project_id: str, branch_name: str):
+    """切换到指定分支——git checkout <branch>"""
+    from ...memory.branch_manager import switch_branch as do_switch
+    try:
+        return do_switch(resolve_project(project_id), branch_name)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/project/{project_id}/timeline")
+def get_timeline(project_id: str):
+    """返回完整时间线——主干 + 分支 + 存档点，git graph 结构。"""
+    from ...memory.branch_manager import build_timeline
+    return build_timeline(resolve_project(project_id))
+
+
 @router.get("/project/{project_id}/scenes/{entity_id}")
 def get_scene(project_id: str, entity_id: str):
     return _get_entity(resolve_project(project_id), entity_id)
@@ -429,9 +448,12 @@ def delete_scene(project_id: str, entity_id: str):
                 state["last_updated"] = datetime.utcnow().isoformat() + "Z"
                 state_file.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
-        # 用剩余场景重建所有实体的动态状态，不留幽灵数据
-        memory = MemoryManager(project_dir)
-        memory.rebuild_all_after_scene_delete(entity_id)
+        # 用剩余场景重建所有实体的动态状态
+        try:
+            memory = MemoryManager(project_dir)
+            memory.rebuild_all_after_scene_delete(entity_id)
+        except Exception as e:
+            logger.warning("场景 %s 已删除，但重建实体数据失败（不影响删除结果）: %s", entity_id, e)
 
         logger.info("Deleted scene %s (tick %d): %s", entity_id, scene_tick, ", ".join(deleted) if deleted else "nothing to delete")
         return {"deleted": entity_id, "tick": scene_tick, "files": deleted}
@@ -631,3 +653,86 @@ def get_relationships(project_id: str):
         n["colorGroup"] = component.get(n["id"], 0)
 
     return {"nodes": nodes, "edges": edges}
+
+
+# ---- 设定导入 ----
+
+class ImportRequest(BaseModel):
+    content: str = ""          # MD/TXT 文本内容
+    confirm: bool = False      # false=仅预览, true=执行导入
+    entities: list = []        # confirm=true 时传入用户编辑后的实体列表
+
+
+def _parse_document(content: str) -> list:
+    """用 LLM 解析文档，返回识别到的实体列表。"""
+    prompt = (
+        "你是一个小说设定解析器。分析以下文档，提取所有角色、地点、阵营组织。\n\n"
+        "为每个实体生成一个 JSON 对象：\n"
+        '- 角色: {"type":"character","args":{"name":"中文名","role":"主角/配角/反派","description":"...","traits":[],"goals":[]}}\n'
+        '- 地点: {"type":"location","args":{"name":"","description":"","atmosphere":"","features":[]}}\n'
+        '- 阵营: {"type":"faction","args":{"name":"","org_type":"","summary":""}}\n\n'
+        "返回纯 JSON 数组，不要解释：\n"
+        '[{"type":"character","args":{...}},{"type":"location","args":{...}}]\n\n'
+        f"文档内容：\n{content}"
+    )
+    import re
+    from ...tools.llm_interface import send_prompt
+    response = send_prompt(prompt, max_tokens=3000)
+    json_match = re.search(r'\[[\s\S]*\]', response)
+    if not json_match:
+        raise ValueError("LLM 返回格式异常，无法解析")
+    return json.loads(json_match.group())
+
+
+@router.post("/project/{project_id}/import")
+def import_settings(project_id: str, req: ImportRequest = Body(...)):
+    """导入设定——preview 模式返回识别结果，confirm 模式执行导入。"""
+    project_dir = resolve_project(project_id)
+    memory = MemoryManager(project_dir)
+
+    # === Preview 模式：仅解析，不导入 ===
+    if not req.confirm:
+        if not req.content.strip():
+            raise HTTPException(status_code=400, detail="内容为空")
+        if len(req.content) > 50000:
+            raise HTTPException(status_code=400, detail="内容过长（最多50000字符）")
+        try:
+            entities = _parse_document(req.content)
+        except Exception as e:
+            raise HTTPException(status_code=422, detail=f"LLM 解析失败: {e}")
+        return {"preview": True, "entities": entities}
+
+    # === Confirm 模式：执行导入 ===
+    if not req.entities:
+        return {"imported": [], "message": "没有要导入的实体"}
+
+    actions = []
+    for e in req.entities:
+        tool_map = {"character": "character.generate", "location": "location.generate", "faction": "faction.generate"}
+        tool = tool_map.get(e.get("type", ""))
+        if tool:
+            actions.append({"tool": tool, "args": e.get("args", {})})
+
+    from ...agent.runtime import PlanExecutor
+    from ...memory.vector_store import VectorStore
+    from ...tools.memory_tools import CharacterGenerateTool, LocationGenerateTool, FactionGenerateTool
+    vs = VectorStore(project_dir)
+    executor = PlanExecutor(ToolRegistry(), memory, vs)
+    executor.tools.register(CharacterGenerateTool(memory, vs))
+    executor.tools.register(LocationGenerateTool(memory, vs))
+    executor.tools.register(FactionGenerateTool(memory, vs))
+
+    results = executor.execute_plan({"actions": actions}, tick=0)
+
+    imported = []
+    for r in results.get("actions_executed", []):
+        if r.get("success") and r.get("result", {}).get("success"):
+            res = r["result"]
+            imported.append({
+                "tool": r["tool"],
+                "id": res.get("character_id") or res.get("location_id") or res.get("faction_id") or "",
+                "name": res.get("name", ""),
+            })
+
+    logger.info("导入设定: %d/%d 个实体创建成功", len(imported), len(actions))
+    return {"preview": False, "imported": imported, "total": len(actions), "message": f"成功导入 {len(imported)}/{len(actions)} 个实体"}

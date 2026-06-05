@@ -72,9 +72,17 @@ def _load_template(name: str) -> str:
 
 
 def _format(name: str, context: dict) -> str:
-    """Load template and interpolate context variables."""
+    """Load template and interpolate context variables.
+
+    使用 str.replace 而非 str.format——避免 JSON 例子中的 { } 被误解析为占位符。
+    同时兼容旧模板的 {{ }} 转义写法。
+    """
     template = _load_template(name)
-    return template.format(**context)
+    for key, value in context.items():
+        template = template.replace("{" + key + "}", str(value))
+    # 兼容旧模板的 {{ }} 转义
+    template = template.replace("{{", "{").replace("}}", "}")
+    return template
 
 
 # === Public format functions ===

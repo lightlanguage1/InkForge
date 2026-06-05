@@ -1,7 +1,9 @@
-"""Activation & JWT logic — pure stdlib, no third-party JWT library."""
+"""Auth logic — activation, registration, login, JWT — pure stdlib."""
 import hashlib
 import hmac
 import json
+import os
+import secrets
 import time
 from base64 import urlsafe_b64encode, urlsafe_b64decode
 from typing import Optional
@@ -9,6 +11,21 @@ from typing import Optional
 from .db import Database
 
 _SECRET = "INKFORGE_INTERNAL_SIGNING_KEY_2026_v1"  # keep this stable across restarts
+
+# ── password hashing ──────────────────────────────────────────────────────────
+
+def hash_password(password: str, salt: str = "") -> tuple[str, str]:
+    """Hash a password with pbkdf2_hmac. Returns (hash_hex, salt_hex)."""
+    if not salt:
+        salt = secrets.token_hex(16)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 100_000)
+    return dk.hex(), salt
+
+
+def verify_password(password: str, salt: str, stored_hash: str) -> bool:
+    """Check password against stored hash."""
+    dk, _ = hash_password(password, salt)
+    return hmac.compare_digest(dk, stored_hash)
 
 # ── JWT helpers ───────────────────────────────────────────────────────────────
 
@@ -97,3 +114,79 @@ def activate(db: Database, invite_code: str, display_name: str, ip: str = "") ->
         "user_id": user_id,
         "display_name": display_name,
     }
+
+
+# ── Registration / Login ──────────────────────────────────────────────────────
+
+class AuthError(Exception):
+    pass
+
+
+def register(db: Database, invite_code: str, display_name: str, password: str, ip: str = "") -> dict:
+    """Register a new user with invite code + password. Returns {token, user_id, display_name}."""
+    display_name = display_name.strip()
+    if not display_name or len(display_name) > 30:
+        raise AuthError("用户名需在1-30个字符之间")
+    if not invite_code.strip():
+        raise AuthError("请输入邀请码")
+    if not password or len(password) < 4:
+        raise AuthError("密码至少4个字符")
+
+    # Check name uniqueness
+    existing = db.get_user_by_name(display_name)
+    if existing:
+        raise AuthError("用户名已被使用")
+
+    err = db.validate_code(invite_code)
+    if err:
+        raise AuthError(err)
+
+    if not db.consume_code(invite_code):
+        raise AuthError("邀请码已达使用上限")
+
+    pw_hash, salt = hash_password(password)
+    user_id = db.register_user(invite_code, display_name, pw_hash, salt, ip=ip)
+    user = db.get_user(user_id)
+    token = create_token(user_id)
+    return {"token": token, "user_id": user_id, "display_name": display_name, "is_admin": user.get("is_admin", 0)}
+
+
+def login(db: Database, display_name: str, password: str, ip: str = "") -> dict:
+    """Login with display name + password. Returns {token, user_id, display_name}."""
+    display_name = display_name.strip()
+    if not display_name or not password:
+        raise AuthError("请输入用户名和密码")
+
+    user = db.get_user_by_name(display_name)
+    if not user:
+        raise AuthError("用户名不存在")
+
+    if user.get("disabled"):
+        raise AuthError("账户已被禁用")
+
+    if not user.get("password_hash"):
+        raise AuthError("账户未设置密码，请联系管理员重置")
+
+    if not verify_password(password, user["salt"], user["password_hash"]):
+        raise AuthError("密码错误")
+
+    db.touch_user(user["user_id"], ip=ip)
+    token = create_token(user["user_id"])
+    return {"token": token, "user_id": user["user_id"], "display_name": user["display_name"], "is_admin": user.get("is_admin", 0)}
+
+
+def reset_password(db: Database, display_name: str, invite_code: str, new_password: str) -> None:
+    """Reset password by verifying invite code ownership."""
+    display_name = display_name.strip()
+    if not new_password or len(new_password) < 4:
+        raise AuthError("新密码至少4个字符")
+
+    user = db.get_user_by_name(display_name)
+    if not user:
+        raise AuthError("用户名不存在")
+
+    if user["invite_code"] != invite_code.strip().upper():
+        raise AuthError("邀请码不匹配")
+
+    pw_hash, salt = hash_password(new_password)
+    db.set_password(user["user_id"], pw_hash, salt)

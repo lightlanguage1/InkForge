@@ -34,7 +34,13 @@ export function CheckpointsPage() {
           {checkpoints.map(c => (
             <Card key={c.checkpoint_id} className="p-4 flex items-center justify-between">
               <div>
-                <p className="font-semibold text-sm" style={{ color: "var(--text-1)" }}>{c.checkpoint_id}</p>
+                <p className="font-semibold text-sm flex items-center gap-2" style={{ color: "var(--text-1)" }}>
+                  {c.checkpoint_id}
+                  <span className="text-[10px] px-1.5 py-0.5 rounded font-normal" style={{
+                    background: c.created_by === "auto" ? "rgba(77,170,133,0.12)" : "rgba(200,151,90,0.12)",
+                    color: c.created_by === "auto" ? "#4daa85" : "var(--accent)"
+                  }}>{c.created_by === "auto" ? "自动" : "手动"}</span>
+                </p>
                 <p className="text-xs mt-0.5" style={{ color: "var(--text-3)" }}>
                   第 {c.tick} 幕 · {c.scenes_count} 场景 · {c.characters_count} 角色 · {c.locations_count} 地点
                 </p>

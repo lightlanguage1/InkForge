@@ -1,7 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Routes, Route } from "react-router-dom";
-import { InviteGate, getToken, clearToken } from "./components/InviteGate";
+import { LoginGate, getToken } from "./components/LoginGate";
 import { DashboardPage } from "./pages/Dashboard";
+import { AdminPage } from "./pages/AdminPage";
+import { get } from "./api/client";
+
+const LS_ADMIN = "inkforge_admin";
 import { ProjectLayout } from "./pages/ProjectLayout";
 import { OverviewPage } from "./pages/Overview";
 import { WritingPage } from "./pages/Writing";
@@ -20,15 +24,25 @@ import { RelationshipsPage } from "./pages/Relationships";
 import { ReadPage } from "./pages/Read";
 import { CompilePage } from "./pages/Compile";
 import { ProtagonistSettingsPage } from "./pages/ProtagonistSettings";
+import { TimelinePage } from "./pages/Timeline";
 
 export function App() {
   const [token, setToken] = useState<string | null>(getToken);
 
-  if (!token) return <InviteGate onActivated={setToken} />;
+  // 启动时从服务端同步 is_admin（单一数据源，所有组件读 localStorage）
+  useEffect(() => {
+    if (!token) return;
+    get<{ is_admin: number }>("/v1/auth/me").then(r => {
+      localStorage.setItem(LS_ADMIN, String(r.is_admin ?? 0));
+    }).catch(() => {});
+  }, [token]);
+
+  if (!token) return <LoginGate onActivated={setToken} />;
 
   return (
     <Routes>
       <Route path="/" element={<DashboardPage />} />
+      <Route path="/admin" element={<AdminPage />} />
       <Route path="/project/:id" element={<ProjectLayout />}>
         <Route index element={<OverviewPage />} />
         <Route path="read" element={<ReadPage />} />
@@ -47,6 +61,7 @@ export function App() {
         <Route path="references" element={<ReferencesPage />} />
         <Route path="compile" element={<CompilePage />} />
         <Route path="protagonist" element={<ProtagonistSettingsPage />} />
+        <Route path="timeline" element={<TimelinePage />} />
       </Route>
     </Routes>
   );

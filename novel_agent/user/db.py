@@ -55,13 +55,24 @@ class Database:
 
     def _init(self):
         with self._connect() as conn:
+            # 启动自愈：修复上次异常关闭导致的 WAL 锁死
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
             conn.executescript(_SCHEMA)
-            # Migration: add IP tracking columns for existing databases
+            # Migrations for existing databases
             for col in ("activate_ip", "last_ip"):
                 try:
                     conn.execute(f"ALTER TABLE users ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
                 except sqlite3.OperationalError:
-                    pass  # column already exists
+                    pass
+            for col in ("password_hash", "salt"):
+                try:
+                    conn.execute(f"ALTER TABLE users ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
+                except sqlite3.OperationalError:
+                    pass
+            try:
+                conn.execute("ALTER TABLE users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass
             conn.commit()
 
     # ── invite codes ──────────────────────────────────────────────────────
@@ -163,6 +174,90 @@ class Database:
                 "FROM users WHERE invite_code = ?", (code.strip().upper(),)
             ).fetchone()
         return dict(row) if row else None
+
+    def register_user(self, invite_code: str, display_name: str, password_hash: str, salt: str, ip: str = "") -> str:
+        """Create a new user with password. Returns user_id."""
+        now = datetime.utcnow().isoformat()
+        user_id = secrets.token_hex(6)
+        code = invite_code.strip().upper()
+        with self._connect() as conn:
+            row = conn.execute("SELECT is_admin FROM invite_codes WHERE code = ?", (code,)).fetchone()
+            is_admin = row["is_admin"] if row else 0
+            conn.execute(
+                "INSERT INTO users (user_id, invite_code, display_name, created_at, last_seen, "
+                "is_admin, activate_ip, last_ip, password_hash, salt, disabled) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
+                (user_id, code, display_name.strip(), now, now, is_admin, ip, ip, password_hash, salt)
+            )
+            conn.commit()
+        return user_id
+
+    def get_user_by_name(self, display_name: str) -> Optional[dict]:
+        """Find user by display name (for login)."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT user_id, invite_code, display_name, is_admin, password_hash, salt, "
+                "disabled, created_at, last_seen FROM users WHERE display_name = ?",
+                (display_name.strip(),)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def set_password(self, user_id: str, password_hash: str, salt: str):
+        """Reset password for a user."""
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE users SET password_hash = ?, salt = ? WHERE user_id = ?",
+                (password_hash, salt, user_id)
+            )
+            conn.commit()
+
+    def update_display_name(self, user_id: str, display_name: str):
+        with self._connect() as conn:
+            conn.execute("UPDATE users SET display_name = ? WHERE user_id = ?",
+                         (display_name.strip(), user_id))
+            conn.commit()
+
+    def set_user_disabled(self, user_id: str, disabled: bool):
+        with self._connect() as conn:
+            conn.execute("UPDATE users SET disabled = ? WHERE user_id = ?",
+                         (1 if disabled else 0, user_id))
+            conn.commit()
+
+    def list_all_users(self) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT u.user_id, u.display_name, u.is_admin, u.disabled, u.created_at, u.last_seen, "
+                "COUNT(p.id) as project_count "
+                "FROM users u LEFT JOIN projects p ON u.user_id = p.user_id "
+                "GROUP BY u.user_id ORDER BY u.created_at DESC"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def list_codes(self) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT c.*, u.display_name as used_by FROM invite_codes c "
+                "LEFT JOIN users u ON c.code = u.invite_code "
+                "ORDER BY c.created_at DESC"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def revoke_code(self, code: str):
+        with self._connect() as conn:
+            conn.execute("DELETE FROM invite_codes WHERE code = ?", (code.strip().upper(),))
+            conn.commit()
+
+    def get_stats(self) -> dict:
+        with self._connect() as conn:
+            users = conn.execute("SELECT COUNT(*) as n FROM users").fetchone()["n"]
+            active = conn.execute("SELECT COUNT(*) as n FROM users WHERE disabled=0").fetchone()["n"]
+            projects = conn.execute("SELECT COUNT(*) as n FROM projects").fetchone()["n"]
+            codes = conn.execute(
+                "SELECT COUNT(*) as n FROM invite_codes WHERE used < max_uses "
+                "AND (expires_at IS NULL OR expires_at > ?)",
+                (datetime.utcnow().isoformat(),)
+            ).fetchone()["n"]
+        return {"total_users": users, "active_users": active, "total_projects": projects, "available_codes": codes}
 
     # ── projects ─────────────────────────────────────────────────────────
 

@@ -21,7 +21,11 @@ def _load_plot_template(name: str) -> str:
 
 
 def format_plot_generation_prompt(context: dict) -> str:
-    return _load_plot_template("plot_generation_prompt").format(**context)
+    template = _load_plot_template("plot_generation_prompt")
+    for key, value in context.items():
+        template = template.replace("{" + key + "}", str(value))
+    template = template.replace("{{", "{").replace("}}", "}")
+    return template
 
 
 class PlotOutlineManager:

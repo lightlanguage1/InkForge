@@ -10,24 +10,22 @@ InkForge 通过自治 Agent 逐幕规划、写作、评估、提交，让叙事�
 
 ## 功能特性
 
-- 🤖 **Agent 自治架构** — LLM 驱动的 Agent 通过结构化工具自主决策
-- 📖 **深度 POV 写作** — 严格的视点规范，沉浸式叙事
-- 🧠 **演化记忆系统** — 角色、地点、线索、世界观随故事推进动态更新
-- 🎯 **涌现式结构** — 无预置大纲，故事在逐幕迭代中自然成型
-- 📚 **故事基础设定** — 可选类型、背景、主角设定、基调引导涌现方向
-- 🎯 **目标层级** — 主角目标（即时/弧线/故事）自动浮现或手动指定
-- 📋 **Plot-First 模式** — 可选涌现式情节节拍引导场景生成，保持推进力
-- ⚡ **张力追踪** — 自动评估每幕张力（0-10 分），感知故事节奏
-- 💰 **多后端混跑** — 五种 LLM 后端：Codex CLI、API（OpenAI/Gemini/Claude/DeepSeek）、Gemini CLI、Claude Code CLI、Ollama
-- 🔧 **可扩展工具系统** — 10 个注册工具：角色/地点/势力生成、记忆搜索、关系管理
-- 🔍 **丰富检查命令** — status、list、inspect、goals、lore 全面了解项目状态
-- 💾 **自动存档** — 项目快照与恢复，支持按需存档
-- 📝 **手稿编译** — 导出 Markdown / HTML / 纯文本格式，支持场景范围筛选
-- 🎲 **随机名字生成** — 音节式中文名生成器
-- 🔄 **恢复工作流** — `novel resume` 一键回到最近项目
-- 🆔 **UUID 安全** — 项目自动分配唯一 ID，防止误操作
-- 📊 **写作技能系统** — 从已有小说提取风格/模式/角色原型，注入到新项目
-- 🌐 **HTTP 服务模式** — `novel serve` 启动 REST API
+- 🤖 **Agent 自治架构** — LLM 驱动的 Agent 通过 10 个注册工具自主决策
+- 🌐 **Web 前端** — React 18 + TypeScript + Vite，深色/浅色主题，侧边栏导航
+- 👤 **用户系统** — 注册/登录/密码重置，邀请码，管理员面板，日志查看
+- 📡 **SSE 流式生成** — 实时显示 Pipeline 各阶段（规划→写作→评估→记忆→定稿）
+- 📖 **深度 POV 写作** — 严格视点规范，双模型混跑（写作/评估分派不同 LLM）
+- 🧠 **演化记忆系统** — 9 种实体类型（角色/地点/场景/线索/世界观/阵营/关系/节拍/存档），随故事推进动态更新
+- 🎯 **情节节拍** — Plot-First 模式，LLM 生成节拍 → 执行 → 语义验证
+- ⚡ **张力追踪** — 自动评估每幕张力（0-10 分）
+- 🔍 **语义搜索** — ChromaDB 向量索引，跨实体自然语言检索
+- 🎨 **角色肖像** — 点云自由生成 + 硅基流动 API
+- 📝 **设定导入** — 粘贴 MD/TXT 文档，LLM 识别角色/地点/阵营，预览确认后导入
+- 💾 **存档系统** — 自动存档（每 3 幕）+ 手动存档（时间戳），支持回滚恢复
+- 🌳 **时间线** — SVG 大树视图，主干+分支，点击节点查看详情/回滚
+- 📚 **手稿编译** — 导出完整 Markdown
+- 📊 **写作技能** — 从已有小说提取风格/模式，注入到新项目
+- 🐳 **Docker 部署** — docker compose 一键启动，Nginx 反向代理
 
 ## 快速开始
 
@@ -139,22 +137,21 @@ novel tick --notes "本幕描写两位主角在月光下的温泉中互诉衷肠
 
 ## 工作原理
 
-每次 Tick 生成一幕场景，完整流程：
+每次 Tick 生成一幕场景，完整管线（SSE 流式推送各阶段进度）：
 
 ```
 第 0 幕（两阶段初始化）
-├── 阶段一：先生成实体（角色、地点）→ 确保实体先于场景存在
+├── 阶段一：生成实体（角色、地点）→ 实体先于场景存在
 └── 阶段二：实体 ID 写入 Plan → 写场景正文
 
-第 N 幕（四阶段标准循环）
-├── Plan   — ContextBuilder 收集 25+ 上下文字段 → LLM 生成 Plan JSON
-│            → 校验 → 节拍/节奏约束 → PlanExecutor 执行工具
-├── Write  — WriterContextBuilder 构建上下文 → SceneWriter 生成正文
-│            → 拒止检测自动回落 → 段落润色
-├── Eval   — POV 检测（快速路径+LLM确认）→ 连续性检查 → QA 指标
-│            未通过则带反馈重写（最多 N 次）
-├── Commit — 持久化场景 → 张力评估 0-10 → 节拍验证（语义相似度）
-└── Update — 事实提取+实体更新 → 世界观提取+冲突检测 → 新角色检测
+第 N 幕（标准管线）
+├── Plan      — 上下文构建 → LLM 生成 Plan JSON → 校验 → 工具强制执行
+├── Write     — Writer 上下文 → 生成正文 → 拒止回落 → 润色
+├── Eval      — POV 检测 → 连续性检查 → QA 指标 → 未通过则重写
+├── Commit    — 持久化场景 → 张力 0-10 → 节拍语义验证
+├── Memory    — 事实提取 → 实体更新 → 世界观提取 → 冲突检测
+├── Finalize  — 线索推进 → 支线审计 → 目标浮现 → 自动存档
+└── Complete  — 返回结果 → 前端刷新
 ```
 
 ### 记忆系统
@@ -175,97 +172,136 @@ novel tick --notes "本幕描写两位主角在月光下的温泉中互诉衷肠
 
 ```
 InkForge/
-├── novel_agent/              # 核心代码包
-│   ├── agent/                # 核心引擎（Tick 循环 + 写作 + 评估）
+├── novel_agent/              # 后端核心
+│   ├── agent/                # Agent 引擎（Tick 管线/写作/评估/提取）
 │   │   ├── agent.py                  # StoryAgent 主编排器
-│   │   ├── context.py                # ContextBuilder — Planner 上下文（~25字段）
+│   │   ├── streaming_agent.py        # SSE 流式 Agent
+│   │   ├── context.py                # ContextBuilder — Planner 上下文
 │   │   ├── writer_context.py         # WriterContextBuilder — Writer 上下文
 │   │   ├── writer.py                 # SceneWriter — 写作+拒止回落+润色
-│   │   ├── evaluator.py              # SceneEvaluator — POV/连续性+QA指标
+│   │   ├── evaluator.py              # SceneEvaluator — POV/连续性+QA
 │   │   ├── prompts.py                # System Prompt + 模板加载
 │   │   ├── schemas.py                # Plan JSON 校验
 │   │   ├── runtime.py                # PlanExecutor — 工具调用执行
 │   │   ├── scene_committer.py        # 场景提交
 │   │   ├── tension_evaluator.py      # 张力评估
 │   │   ├── plan_manager.py           # 计划持久化
-│   │   ├── streaming_agent.py        # SSE 流式 Agent
 │   │   ├── fact_extractor.py         # 事实提取
 │   │   ├── entity_updater.py         # 事实→实体变更
 │   │   ├── lore_extractor.py         # 世界观提取
 │   │   ├── lore_contradiction_detector.py  # 设定冲突检测
 │   │   └── character_detector.py     # 新角色检测
-│   ├── memory/                # 持久化与向量检索
+│   ├── memory/               # 持久化与向量检索
 │   │   ├── manager.py                 # MemoryManager — JSON CRUD
-│   │   ├── entities.py                # 数据类定义（9个实体）
-│   │   ├── vector_store.py            # ChromaDB 向量索引
-│   │   ├── update.py                  # 场景后处理管道总入口
-│   │   ├── summarizer.py             # 摘要生成
-│   │   └── checkpoint.py             # 项目存档
-│   ├── plot/                  # 情节节拍管理
+│   │   ├── entities.py                # 数据类定义（9 个实体）
+│   │   ├── vector_store.py            # ChromaDB 向量索引 + 运行时自愈
+│   │   ├── update.py                  # 场景后处理管道入口
+│   │   ├── summarizer.py              # 摘要生成
+│   │   ├── checkpoint.py              # 项目存档
+│   │   └── thread_manager.py          # 支线管理器
+│   ├── plot/                 # 情节节拍管理
 │   │   └── manager.py                 # PlotOutlineManager — 节拍CRUD+LLM生成
-│   ├── tools/                 # LLM 后端 + 工具注册
-│   │   ├── llm_interface.py           # 5种后端统一入口
-│   │   ├── multi_provider_llm.py      # 多供应商API注册表
-│   │   ├── provider.py                # LLMProvider — generate/chat封装
-│   │   ├── router.py                  # ModelRouter — 按任务路由模型
+│   ├── tools/                # LLM 后端 + 工具注册
 │   │   ├── registry.py                # ToolRegistry — 工具注册表
-│   │   ├── memory_tools.py            # 10个工具实现
-│   │   ├── name_generator.py          # 随机中文名
-│   │   ├── codex_interface.py         # Codex CLI 后端
-│   │   ├── gemini_cli_interface.py    # Gemini CLI 后端
-│   │   ├── claude_cli_interface.py    # Claude Code CLI 后端
+│   │   ├── memory_tools.py            # 10 个工具实现
+│   │   ├── name_generator.py          # 随机中文名生成器
+│   │   ├── provider.py                # LLMProvider — generate/chat 封装
+│   │   ├── router.py                  # ModelRouter — 按任务路由模型
+│   │   ├── multi_provider_llm.py      # 多供应商 API 注册表
+│   │   ├── llm_interface.py           # 多后端统一入口
 │   │   ├── ollama_stream.py           # Ollama 流式
 │   │   └── llm_pool.py                # LLM 连接池
-│   ├── skill/                 # 写作技能系统
-│   │   ├── importer.py                # 小说→SKILL.yaml（分层采样+角色去重）
+│   ├── user/                 # 用户认证
+│   │   ├── db.py                      # SQLite 用户库（注册/登录/管理）
+│   │   ├── auth.py                    # pbkdf2 密码哈希 + JWT
+│   │   └── middleware.py              # FastAPI 认证中间件
+│   ├── api/                  # REST API
+│   │   ├── server.py                  # FastAPI 应用入口
+│   │   ├── deps.py                    # 依赖注入（get_current_user/require_admin）
+│   │   └── routers/
+│   │       ├── auth.py                # 注册/登录/重置密码
+│   │       ├── admin.py               # 管理员面板（用户/邀请码/统计/日志）
+│   │       ├── projects.py            # 项目 CRUD
+│   │       ├── entities.py            # 角色/地点/场景/线索/势力/关系/导入
+│   │       ├── plot.py                # 节拍管理
+│   │       ├── status.py              # 状态/目标/世界观
+│   │       └── portrait.py            # 角色肖像生成
+│   ├── skill/                # 写作技能系统
+│   │   ├── importer.py                # 小说→SKILL.yaml
 │   │   ├── injector.py                # SKILL→写作上下文注入
-│   │   ├── models.py                  # Skill/StyleProfile等数据类
+│   │   ├── models.py                  # 数据类
 │   │   └── store.py                   # YAML 持久化
-│   ├── engine/                # 常驻进程引擎
-│   │   ├── core.py                    # EngineCore — LLMPool+ProjectManager
+│   ├── engine/               # 常驻进程引擎
+│   │   ├── core.py                    # EngineCore
 │   │   └── project_manager.py         # 项目管理器
-│   ├── api/                   # REST API
-│   │   └── server.py                  # FastAPI 服务（12个端点+SSE）
-│   ├── reference/             # 外部参考小说索引
+│   ├── reference/            # 外部参考小说索引
 │   │   └── indexer.py                 # 分块+向量搜索
-│   ├── cli/                   # 命令行界面
-│   │   ├── main.py                    # 全部命令注册
-│   │   ├── project.py                 # 项目创建/查找
-│   │   ├── foundation.py              # 故事设定向导
-│   │   ├── recent_projects.py         # 最近项目追踪
+│   ├── cli/                  # 命令行界面
+│   │   ├── main.py                    # 命令注册
 │   │   └── commands/                  # 各命令实现
-│   │       ├── skill.py               # 技能管理
-│   │       ├── plot.py                # 情节节拍管理
-│   │       ├── checkpoint.py          # 存档管理
-│   │       ├── compile.py             # 手稿编译
-│   │       ├── summarize.py           # 摘要生成
-│   │       ├── status.py              # 状态查看
-│   │       ├── list.py                # 实体列表
-│   │       ├── inspect.py             # 实体详情
-│   │       ├── goals.py               # 目标层级
-│   │       ├── lore.py                # 世界观浏览
-│   │       ├── plan.py                # 计划预览
-│   │       └── titles.py              # 标题生成
-│   ├── configs/               # 配置
+│   ├── configs/              # 配置
 │   │   ├── config.py                  # 全局配置管理
-│   │   ├── constants.py               # 所有魔法数字
-│   │   └── api_keys.py                # API Key 统一解析
-│   ├── data/                  # 静态数据
+│   │   ├── constants.py               # 魔法数字
+│   │   └── api_keys.py                # API Key 解析
+│   ├── data/                 # 静态数据
 │   │   ├── names/                     # 中文姓名库
-│   │   ├── templates/                 # Prompt 模板（可热更新）
-│   │   └── skills/                    # 已导入的写作技能
-│   └── utils/                 # 工具函数
-├── examples/                 # 示例小说项目
-├── docs/                     # 设计文档
-│   ├── ARCHITECTURE.md                # 架构设计（最新）
-│   ├── ARCHITECTURE_DEEP_ANALYSIS.md  # 架构改进方案
-│   ├── IMPLEMENTATION_PLAN.md         # 实施计划
-│   ├── IMPLEMENTATION_ISSUES.md       # 技术债清单
-│   ├── IMPROVEMENT_PLAN.md            # 优化方案
-│   ├── API_REFERENCE.md               # API 参考
-│   ├── PLOT_FIRST_MODE_GUIDE.md       # Plot-First 用户指南
-│   └── spec.md                        # 原始规格文档
-└── scripts/                  # 辅助脚本
+│   │   └── templates/                 # Prompt 模板（可热更新）
+│   └── utils/                # 工具函数
+├── frontend/                 # React 18 前端
+│   ├── src/
+│   │   ├── pages/                    # 页面组件
+│   │   │   ├── Dashboard.tsx         #   项目仪表盘
+│   │   │   ├── Overview.tsx          #   项目概览
+│   │   │   ├── Writing.tsx           #   写作（SSE 流式生成+导入+重置）
+│   │   │   ├── Read.tsx              #   阅读
+│   │   │   ├── Characters.tsx        #   角色管理
+│   │   │   ├── Locations.tsx         #   地点管理
+│   │   │   ├── Scenes.tsx            #   场景列表
+│   │   │   ├── Loops.tsx             #   线索管理
+│   │   │   ├── Factions.tsx          #   势力管理
+│   │   │   ├── Relationships.tsx     #   关系图谱
+│   │   │   ├── Goals.tsx             #   目标层级
+│   │   │   ├── Lore.tsx              #   世界观
+│   │   │   ├── Plot.tsx              #   节拍管理
+│   │   │   ├── Checkpoints.tsx       #   存档管理
+│   │   │   ├── Timeline.tsx          #   🌳 时间线大树
+│   │   │   ├── Skills.tsx            #   写作技能
+│   │   │   ├── References.tsx        #   参考小说
+│   │   │   ├── Compile.tsx           #   手稿编译
+│   │   │   ├── ProtagonistSettings.tsx # 主角设定
+│   │   │   ├── AdminPage.tsx         #   管理员面板
+│   │   │   └── ProjectLayout.tsx     #   项目布局（侧边栏+Outlet）
+│   │   ├── components/               # UI 组件
+│   │   │   ├── Sidebar.tsx           #   侧边栏导航
+│   │   │   ├── LoginGate.tsx         #   登录/注册门禁
+│   │   │   ├── NewProjectModal.tsx   #   新建项目
+│   │   │   ├── ImportModal.tsx       #   设定导入
+│   │   │   ├── WritingOutput.tsx     #   流式输出显示
+│   │   │   ├── GenerationContext.tsx #   生成状态管理
+│   │   │   ├── PageHelp.tsx          #   页面帮助提示
+│   │   │   ├── ThemeContext.tsx      #   主题切换
+│   │   │   └── ui/                   #   基础组件（Card/Modal/Button/Spinner…）
+│   │   ├── api/                      # API 客户端
+│   │   │   ├── client.ts             #   HTTP 客户端（Bearer 认证）
+│   │   │   ├── entities.ts           #   实体 CRUD
+│   │   │   ├── checkpoints.ts        #   存档 API
+│   │   │   ├── projects.ts           #   项目 API
+│   │   │   ├── status.ts             #   状态/世界观 API
+│   │   │   ├── plot.ts               #   节拍 API
+│   │   │   ├── generation.ts         #   生成/SSE API
+│   │   │   ├── compile.ts            #   编译 API
+│   │   │   ├── references.ts         #   参考小说 API
+│   │   │   └── skills.ts             #   技能 API
+│   │   └── types/                    # TypeScript 类型
+│   └── dist/                         # Vite 构建产物
+├── docker-compose.yml
+├── Dockerfile
+├── nginx.conf                 # Nginx 反向代理配置
+├── deploy.ps1                 # 部署脚本
+├── DEPLOY.md                  # 部署文档
+├── docs/                      # 设计文档
+├── examples/                  # 示例项目
+└── scripts/                   # 辅助脚本
 ```
 
 ## CLI 命令参考

@@ -1,8 +1,12 @@
 """Scene committer for saving scenes to disk and memory."""
 
+import logging
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List
+
+logger = logging.getLogger(__name__)
 
 from novel_agent.memory.entities import Scene
 
@@ -102,7 +106,11 @@ class SceneCommitter:
         
         # 7. Index in vector database
         self.vector.index_scene(scene)
-        
+
+        # 8. 分支指针前移（git commit）
+        from ..memory.branch_manager import advance_branch
+        advance_branch(self.memory.project_path)
+
         return scene_id
     
     def _save_markdown(
@@ -113,30 +121,28 @@ class SceneCommitter:
         tick: int
     ) -> Path:
         """Save scene text to markdown file.
-        
-        Args:
-            scene_id: Scene ID
-            text: Scene prose
-            title: Scene title
-            tick: Tick number
-        
-        Returns:
-            Path to saved file
+
+        如果该 tick 的旧场景文件已存在（回滚后重写），
+        自动将旧文件归档带时间戳后缀，不丢失历史节点。
         """
-        # Ensure scenes directory exists
         self.scenes_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Create filename
+
         filename = f"scene_{tick:03d}.md"
         filepath = self.scenes_dir / filename
-        
-        # Write markdown file with metadata header
+
+        # 回滚后重写：旧文件归档，不覆盖（git 模型）
+        if filepath.exists():
+            ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            archived = self.scenes_dir / f"scene_{tick:03d}.md.{ts}.bak"
+            filepath.rename(archived)
+            logger.info("归档旧场景: %s → %s", filename, archived.name)
+
         cleaned_text = strip_markdown(text)
         with open(filepath, 'w', encoding='utf-8') as f:
             f.write(f"# 第{tick+1}章 {title}\n\n")
             f.write(cleaned_text)
             f.write("\n")
-        
+
         return filepath
     
     def _extract_characters(self, plan: Dict[str, Any]) -> List[str]:

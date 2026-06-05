@@ -2,11 +2,14 @@
 
 import json
 import logging
+import shutil
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
 from ...utils.log_manager import rmtree_force
+from ...memory.manager import MemoryManager
 
 from ..deps import get_engine, get_novels_dir, resolve_project, create_agent
 from ..models import ProjectCreateRequest, TickRequest, TickResponse
@@ -45,7 +48,6 @@ def _list_filesystem_projects() -> list[dict]:
 @router.post("/project")
 def create_project(req: ProjectCreateRequest):
     engine = get_engine()
-    # Force user-scoped directory, never use legacy global novels_dir
     user_novels_dir = str(get_novels_dir())
     try:
         path = engine.create_project(
@@ -56,6 +58,13 @@ def create_project(req: ProjectCreateRequest):
             primary_goal=req.primary_goal,
             use_plot_first=req.use_plot_first,
         )
+        # 记录到用户项目表
+        from ...user.context import get_current_user
+        from ...user.db import Database as UserDB
+        uid = get_current_user()
+        if uid:
+            pid = Path(path).name
+            UserDB().upsert_project(uid, pid, req.name)
     except Exception:
         logger.exception("创建项目失败: %s", req.name)
         raise HTTPException(status_code=500, detail="创建项目失败")
@@ -115,6 +124,78 @@ def resume():
         "novel_name": "",
         "current_tick": 0,
     }
+
+
+# ---- 重置 ----
+
+@router.post("/project/{project_id}/reset")
+def reset_project(project_id: str):
+    """重置项目进度——清空场景和动态数据，保留设定和角色身份。"""
+    from ..deps import try_lock_generation, release_generation
+    if not try_lock_generation(project_id):
+        raise HTTPException(status_code=409, detail="该项目正在生成中，请等待完成")
+    try:
+        project_dir = resolve_project(project_id)
+        memory = MemoryManager(project_dir)
+
+        # 1. 删除所有场景文件
+        scenes_dir = project_dir / "scenes"
+        if scenes_dir.exists():
+            for f in scenes_dir.glob("*.md"):
+                f.unlink()
+        meta_dir = project_dir / "memory" / "scenes"
+        if meta_dir.exists():
+            for f in meta_dir.glob("*.json"):
+                f.unlink()
+        plans_dir = project_dir / "plans"
+        if plans_dir.exists():
+            for f in plans_dir.glob("*.json"):
+                f.unlink()
+        # QA files
+        qa_dir = project_dir / "memory" / "qa"
+        if qa_dir.exists():
+            for f in qa_dir.glob("*.json"):
+                f.unlink()
+
+        # 2. 重置所有角色动态状态
+        for char_id in memory.list_characters():
+            char = memory.load_character(char_id)
+            if char:
+                char.reset_dynamic_state()
+                memory.save_character(char)
+
+        # 3. 清空 lore / loops / relationships
+        memory._write_json(memory.lore_file, {"lore": []})
+        memory.save_open_loops([])
+        memory._write_json(memory.relationships_file, {"relationships": []})
+        # 清空 story threads
+        threads_dir = project_dir / "memory" / "story_threads"
+        if threads_dir.exists():
+            for f in threads_dir.glob("*.json"):
+                f.unlink()
+
+        # 4. 重置 current_tick
+        state_file = project_dir / "state.json"
+        if state_file.exists():
+            state = json.loads(state_file.read_text(encoding="utf-8"))
+            state["current_tick"] = 0
+            state["last_updated"] = datetime.utcnow().isoformat() + "Z"
+            state_file.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        # 5. 清理 plot beats
+        plot_file = project_dir / "plot_outline.json"
+        if plot_file.exists():
+            plot_file.unlink()
+
+        # 6. 清理 vector store 索引
+        index_dir = project_dir / "memory" / "index"
+        if index_dir.exists():
+            shutil.rmtree(index_dir, ignore_errors=True)
+
+        logger.info("项目已重置: %s", project_id)
+        return {"reset": project_id, "message": "项目进度已重置，保留故事设定和角色身份"}
+    finally:
+        release_generation(project_id)
 
 
 # ---- 删除 ----

@@ -53,9 +53,10 @@ export function NewProjectModal({ open, onClose, onSubmit, isLoading, skills }: 
     onClose();
   }
 
-  function selectGenre(g: string) {
-    setForm({ ...form, genre: g });
-    setShowCustomGenre(false);
+  function toggleGenre(g: string) {
+    const current = (form.genre ?? "").split("、").filter(Boolean);
+    const next = current.includes(g) ? current.filter(s => s !== g) : [...current, g];
+    setForm({ ...form, genre: next.join("、") });
   }
 
   function toggleSkill(slug: string) {
@@ -124,7 +125,7 @@ export function NewProjectModal({ open, onClose, onSubmit, isLoading, skills }: 
             <StepBasics
               form={form} setForm={setForm}
               showCustomGenre={showCustomGenre} setShowCustomGenre={setShowCustomGenre}
-              selectGenre={selectGenre}
+              toggleGenre={toggleGenre} formGenre={form.genre ?? ""}
               onNext={() => setStep(1)}
               onSkip={() => onSubmit(form)}
               loading={isLoading}
@@ -159,13 +160,15 @@ interface StepBasicsProps {
   setForm: (f: CreateProjectReq) => void;
   showCustomGenre: boolean;
   setShowCustomGenre: (v: boolean) => void;
-  selectGenre: (g: string) => void;
+  toggleGenre: (g: string) => void;
+  formGenre: string;
   onNext: () => void;
   onSkip: () => void;
   loading: boolean;
 }
 
-function StepBasics({ form, setForm, showCustomGenre, setShowCustomGenre, selectGenre, onNext, onSkip, loading }: StepBasicsProps) {
+function StepBasics({ form, setForm, showCustomGenre, setShowCustomGenre, toggleGenre, formGenre, onNext, onSkip, loading }: StepBasicsProps) {
+  const selectedGenres = formGenre.split("、").filter(Boolean);
   return (
     <div className="p-6 space-y-5 animate-fade-in">
       <div>
@@ -191,11 +194,11 @@ function StepBasics({ form, setForm, showCustomGenre, setShowCustomGenre, select
         </label>
         <div className="flex flex-wrap gap-2">
           {GENRES.map((g) => (
-            <GenrePill key={g} label={g} selected={form.genre === g} onSelect={() => selectGenre(g)} />
+            <GenrePill key={g} label={g} selected={selectedGenres.includes(g)} onSelect={() => toggleGenre(g)} />
           ))}
           <button
             type="button"
-            onClick={() => { setShowCustomGenre(!showCustomGenre); if (!showCustomGenre) setForm({ ...form, genre: "" }); }}
+            onClick={() => setShowCustomGenre(!showCustomGenre)}
             className="px-3.5 py-1.5 rounded-full text-xs font-medium transition-all duration-150"
             style={showCustomGenre
               ? { background: "rgba(240,236,226,0.1)", color: "var(--text-1)", border: "1px solid rgba(240,236,226,0.2)" }
@@ -208,14 +211,22 @@ function StepBasics({ form, setForm, showCustomGenre, setShowCustomGenre, select
         {showCustomGenre && (
           <input
             type="text"
-            value={GENRES.includes(form.genre ?? "") ? "" : (form.genre ?? "")}
-            onChange={(e) => setForm({ ...form, genre: e.target.value })}
-            placeholder="输入自定义类型..."
+            placeholder="输入自定义类型，多个用顿号分隔..."
             autoFocus
             className="mt-2 w-full text-sm px-3 py-2 rounded-lg focus:outline-none transition-colors"
             style={{ background: "var(--bg-raised)", border: "1px solid var(--border)", color: "var(--text-1)", caretColor: "var(--accent)" }}
             onFocus={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; }}
             onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border)"; }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                const val = (e.target as HTMLInputElement).value.trim();
+                if (val) {
+                  const current = (form.genre ?? "").split("、").filter(Boolean);
+                  setForm({ ...form, genre: [...current, val].join("、") });
+                  (e.target as HTMLInputElement).value = "";
+                }
+              }
+            }}
           />
         )}
       </div>

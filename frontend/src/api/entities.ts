@@ -29,6 +29,19 @@ export function getScenes(projectId: string) {
   return get<{ scenes: SceneItem[] }>(`/v1/project/${projectId}/scenes`);
 }
 
+export function getTimeline(projectId: string) {
+  return get<{
+    current_tick: number;
+    current_branch: string;
+    nodes: { tick: number; branch: string; title: string; file: string; archived: boolean; active: boolean }[];
+    branches: { name: string; head_tick: number; forked_from: number; backup_checkpoint_id: string; active: boolean }[];
+  }>(`/v1/project/${projectId}/timeline`);
+}
+
+export function switchBranch(projectId: string, branchName: string) {
+  return post<{ switched: boolean; branch: string; current_tick: number }>(`/v1/project/${projectId}/switch-branch/${branchName}`);
+}
+
 export function getScene(projectId: string, sceneId: string) {
   return get<SceneDetail>(`/v1/project/${projectId}/scenes/${sceneId}`);
 }
@@ -67,6 +80,10 @@ export function getFactions(projectId: string) {
 
 export function getFaction(projectId: string, factionId: string) {
   return get<FactionDetail>(`/v1/project/${projectId}/factions/${factionId}`);
+}
+
+export function resetProject(projectId: string) {
+  return post<{ reset: string; message: string }>(`/v1/project/${projectId}/reset`);
 }
 
 export function getRelationships(projectId: string) {

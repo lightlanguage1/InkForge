@@ -1,8 +1,11 @@
+import { useState } from "react";
 import { NavLink, useParams } from "react-router-dom";
 import { ThemeToggleBtn } from "./Layout";
 import { useTheme } from "../ThemeContext";
+import { clearToken, getSavedName, isAdmin } from "./LoginGate";
+import { patch } from "../api/client";
 
-const GROUPS = [
+const GROUPS: { label: string; items: { label: string; path: string; icon: string; }[] }[] = [
   {
     label: "核心",
     items: [
@@ -34,6 +37,7 @@ const GROUPS = [
     label: "管理",
     items: [
       { label: "节拍", path: "plot", icon: "▤" },
+      { label: "时间线", path: "timeline", icon: "🌳" },
       { label: "存档", path: "checkpoints", icon: "▦" },
       { label: "技能", path: "skills", icon: "◆" },
       { label: "参考", path: "references", icon: "▥" },
@@ -59,6 +63,24 @@ export function Sidebar({ projectName, tick, onNavigate }: { projectName: string
   const initials = (projectName || "?").slice(0, 2).toUpperCase();
   const avatarGrad = getAvatarGradient(projectName);
   const { isDayMode, toggleTheme: toggle } = useTheme();
+  const adminUser = isAdmin();
+  const [userName, setUserName] = useState(getSavedName() || "用户");
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState(userName);
+  const [namePw, setNamePw] = useState("");
+
+  const saveName = async () => {
+    const n = nameInput.trim();
+    if (!n || n === userName) { setEditingName(false); return; }
+    if (!namePw) { alert("请输入密码验证"); return; }
+    try {
+      await patch<{ ok: boolean; display_name: string }>("/v1/auth/me", { display_name: n, password: namePw });
+      localStorage.setItem("inkforge_name", n);
+      setUserName(n);
+      setNamePw("");
+      setEditingName(false);
+    } catch (e: any) { alert(e?.message || "修改失败"); }
+  };
 
   return (
     <aside
@@ -136,10 +158,21 @@ export function Sidebar({ projectName, tick, onNavigate }: { projectName: string
             </div>
           </div>
         ))}
+        {adminUser && (
+          <NavLink
+            to="/admin"
+            onClick={onNavigate}
+            className="flex items-center gap-2.5 py-1.5 text-[13px] rounded-md px-3 transition-all duration-150"
+            style={({ isActive }) => isActive
+              ? { borderLeftColor: "var(--accent)", backgroundColor: "rgba(200,151,90,0.1)", color: "var(--text-1)", borderLeft: "2px solid var(--accent)" }
+              : { color: "var(--accent)" }
+            }
+          ><span className="w-4 text-center text-xs">⚙</span><span>系统管理</span></NavLink>
+        )}
       </nav>
 
       {/* Footer */}
-      <div className="p-3 transition-colors duration-300" style={{ borderTop: "1px solid var(--border)" }}>
+      <div className="p-3 transition-colors duration-300 space-y-2" style={{ borderTop: "1px solid var(--border)" }}>
         <a
           href="/"
           onClick={onNavigate}
@@ -151,6 +184,38 @@ export function Sidebar({ projectName, tick, onNavigate }: { projectName: string
           <span className="text-base">←</span>
           <span>返回项目列表</span>
         </a>
+        <div className="flex items-center justify-between px-3 py-2 rounded-lg" style={{ background: "var(--bg-raised)", border: "1px solid var(--border)" }}>
+          {editingName ? (
+            <div className="flex flex-col gap-1">
+              <input autoFocus value={nameInput} onChange={e => setNameInput(e.target.value)}
+                placeholder="新用户名"
+                className="text-[12px] font-medium px-2 py-1 rounded w-28 outline-none"
+                style={{ background: "var(--bg-base)", border: "1px solid var(--accent)", color: "var(--text-1)" }}
+              />
+              <input type="password" value={namePw} onChange={e => setNamePw(e.target.value)}
+                placeholder="输入密码确认"
+                onKeyDown={e => { if (e.key === "Enter") saveName(); if (e.key === "Escape") setEditingName(false); }}
+                className="text-[11px] px-2 py-1 rounded w-28 outline-none"
+                style={{ background: "var(--bg-base)", border: "1px solid var(--border)", color: "var(--text-1)" }}
+              />
+              <div className="flex gap-1">
+                <button onClick={saveName} className="text-[10px] px-2 py-0.5 rounded" style={{ background: "var(--accent)", color: "var(--bg-base)" }}>确认</button>
+                <button onClick={() => setEditingName(false)} className="text-[10px] px-2 py-0.5 rounded" style={{ border: "1px solid var(--border)", color: "var(--text-3)" }}>取消</button>
+              </div>
+            </div>
+          ) : (
+            <span className="text-[12px] font-medium truncate cursor-pointer" style={{ color: "var(--text-1)" }}
+              onClick={() => { setNameInput(userName); setEditingName(true); }}
+              title="点击修改用户名">{userName}</span>
+          )}
+          <button
+            onClick={() => { clearToken(); window.location.href = "/"; }}
+            className="text-[11px] px-3 py-1 rounded-md font-medium transition-colors"
+            style={{ color: "#f87171", border: "1px solid rgba(248,113,113,0.3)", background: "rgba(248,113,113,0.08)" }}
+            onMouseEnter={e => { e.currentTarget.style.background = "rgba(248,113,113,0.2)"; }}
+            onMouseLeave={e => { e.currentTarget.style.background = "rgba(248,113,113,0.08)"; }}
+          >退出</button>
+        </div>
       </div>
     </aside>
   );

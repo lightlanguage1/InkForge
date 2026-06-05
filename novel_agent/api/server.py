@@ -10,7 +10,7 @@ from ..user.middleware import AuthMiddleware
 
 from .routers import (
     health, projects, generation, entities, status,
-    compile, plot, checkpoints, skills, references, log, threads, portrait, auth,
+    compile, plot, checkpoints, skills, references, log, threads, portrait, auth, admin,
 )
 
 logger = logging.getLogger(__name__)
@@ -57,3 +57,4 @@ app.include_router(log.router)
 app.include_router(threads.router)
 app.include_router(portrait.router)
 app.include_router(auth.router)
+app.include_router(admin.router)

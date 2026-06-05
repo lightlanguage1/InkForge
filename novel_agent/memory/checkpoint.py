@@ -1,10 +1,13 @@
 """Checkpoint system for project state snapshots."""
 import json
+import logging
 import shutil
 from pathlib import Path
 from typing import List, Optional
 from datetime import datetime
 from dataclasses import dataclass, asdict
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -96,16 +99,21 @@ def create_checkpoint(project_dir: Path, tick: int, created_by: str = "manual") 
     Raises:
         IOError: If checkpoint cannot be created
     """
-    checkpoint_id = get_checkpoint_id(tick)
+    base_id = get_checkpoint_id(tick)
     checkpoints_dir = get_checkpoint_dir(project_dir)
-    checkpoint_path = checkpoints_dir / checkpoint_id
-    
-    # Create checkpoints directory if needed
     checkpoints_dir.mkdir(exist_ok=True)
-    
-    # Check if checkpoint already exists
-    if checkpoint_path.exists():
-        raise IOError(f"Checkpoint already exists: {checkpoint_id}")
+
+    # 自动存档：一个 tick 只有一个；手动存档：加时间戳允许多个
+    if created_by == "auto":
+        checkpoint_id = base_id
+        checkpoint_path = checkpoints_dir / checkpoint_id
+        if checkpoint_path.exists():
+            logger.info("自动存档已存在，跳过: %s", checkpoint_id)
+            return str(checkpoint_path)
+    else:
+        ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        checkpoint_id = f"{base_id}_{ts}"
+        checkpoint_path = checkpoints_dir / checkpoint_id
     
     try:
         # Create checkpoint directory
@@ -244,29 +252,35 @@ def restore_checkpoint(project_dir: Path, checkpoint_id: str, backup_current: bo
             print(f"Warning: Could not create backup: {e}")
     
     try:
-        # Restore directories
-        dirs_to_restore = ['memory', 'scenes', 'plans']
-        for dir_name in dirs_to_restore:
+        state_file = project_dir / "state.json"
+
+        # 记录回滚前的 tick
+        if state_file.exists():
+            old_state = json.loads(state_file.read_text(encoding="utf-8"))
+            old_tick = old_state.get("current_tick", 0)
+        else:
+            old_tick = 0
+
+        # 恢复 memory、plans（覆盖式）
+        for dir_name in ["memory", "plans"]:
             src = checkpoint_path / dir_name
             dst = project_dir / dir_name
-            
-            # Remove existing
             if dst.exists():
                 shutil.rmtree(dst)
-            
-            # Copy from checkpoint
             if src.exists():
                 shutil.copytree(src, dst)
-        
-        # Restore files
-        files_to_restore = ['state.json', 'config.yaml']
-        for file_name in files_to_restore:
+
+        # 恢复 state/config（场景目录不动——git 模型永久保留）
+        for file_name in ["state.json", "config.yaml"]:
             src = checkpoint_path / file_name
             dst = project_dir / file_name
-            
             if src.exists():
                 shutil.copy2(src, dst)
-        
+
+        # git 分支管理：回滚到更早 tick → 保存分叉
+        from .branch_manager import fork_on_restore
+        fork_on_restore(project_dir, old_tick, backup_id if backup_current else "")
+
     except Exception as e:
         raise IOError(f"Error restoring checkpoint: {e}")
 

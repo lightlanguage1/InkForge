@@ -152,12 +152,11 @@ class StoryAgent:
         tick = self.state["current_tick"]
         if tick > 0 and tick % 3 == 0:
             try:
-                from ..memory.checkpoint import create_checkpoint, should_create_checkpoint
-                if should_create_checkpoint(self.project_path, tick):
-                    create_checkpoint(self.project_path, tick, "auto")
-                    logger.info("Auto-checkpoint saved at tick %d", tick)
-            except Exception:
-                logger.debug("Auto-checkpoint skipped at tick %d", tick)
+                from ..memory.checkpoint import create_checkpoint
+                create_checkpoint(self.project_path, tick, "auto")
+                logger.info("Auto-checkpoint saved at tick %d", tick)
+            except Exception as e:
+                logger.warning("Auto-checkpoint failed at tick %d: %s", tick, e)
 
     def tick(self, notes: str = "") -> Dict[str, Any]:
         """Execute one story generation tick.
@@ -334,63 +333,66 @@ class StoryAgent:
             )
 
     def _enforce_tool_usage(self, plan: dict) -> None:
-        """强制校验工具使用——不依赖 LLM 自觉，代码层硬性约束。
+        """工具使用校验 — 动态读取注册表，带完整使用指南。
 
         规则：
-        1. memory.search 必须出现（每场景至少1次）
-        2. actions 至少 3 个
-        3. 创建实体前必须先查询（先查后建）
-        4. 存在角色互动的场景必须有 relationship 工具
+        1. memory.search 必调
+        2. 至少 2 个工具（search + 至少一个实体操作）
+        失败时输出完整工具指南，教 LLM 什么时候该用什么工具。
         """
         actions = plan.get("actions", [])
         tools_called = {a.get("tool", "") for a in actions}
         reasons = []
 
-        # 规则 1：memory.search 必须调用
         if "memory.search" not in tools_called:
             reasons.append(
-                "必须调用 memory.search 搜索当前场景相关的已有角色/地点/阵营。"
-                "不搜索就是凭空编造，会导致故事脱节。"
+                "❌ 缺少 memory.search — 每场景必须先用它搜索已有角色/地点/阵营/线索，"
+                "否则会凭空编造、与已有内容脱节。"
             )
 
-        # 规则 2：最少 3 个 actions
-        if len(actions) < 3:
+        if len(actions) < 2:
             reasons.append(
-                f"actions 至少需要 3 个工具调用，当前只有 {len(actions)} 个。"
-                "请补充：查询已有信息 + 维护角色关系 + 创建/更新实体。"
-            )
-
-        # 规则 3：先查后建——如果有 generate 但没有 query/search，拒绝
-        create_tools = {t for t in tools_called if t.endswith(".generate")}
-        query_tools = {t for t in tools_called if t.endswith(".search") or t.endswith(".query")}
-        if create_tools and not query_tools:
-            reasons.append(
-                f"检测到创建工具 {', '.join(create_tools)}，但没有调用任何查询工具。"
-                "必须先查询是否已存在，避免重复创建。请添加查询类工具调用。"
-            )
-
-        # 规则 4：检查场景是否涉及多角色互动——从 plan 文本中检测
-        scene_text = " ".join([
-            plan.get("scene_intention", ""),
-            plan.get("rationale", ""),
-            plan.get("key_change", ""),
-        ])
-        has_relation_tool = "relationship.create" in tools_called or "relationship.update" in tools_called
-        # 检测文本中是否有角色互动信号
-        interaction_signals = ["对话", "互动", "冲突", "合作", "见面", "相遇", "对峙",
-                               "争吵", "和解", "联手", "背叛", "交谈"]
-        has_interaction_signal = any(sig in scene_text for sig in interaction_signals)
-        if has_interaction_signal and not has_relation_tool:
-            reasons.append(
-                "场景涉及角色互动（检测到对话/冲突/合作等信号），"
-                "但未调用 relationship.create 或 relationship.update。"
-                "请添加关系维护工具调用。"
+                "❌ 工具调用不足 — search 之后请至少再选一个实体维护工具：\n"
+                "\n"
+                "  全部可用工具及使用时机：\n"
+                "\n"
+                "【查询类 — 获取已有信息】\n"
+                "• memory.search — 语义搜索已有角色/地点/场景/阵营/线索\n"
+                "  何时用：每场景开始时，用场景关键词搜索，了解已有什么\n"
+                "• relationship.query — 查询某角色的所有关系\n"
+                "  何时用：写角色互动前，先看看 Ta 和别人的关系网\n"
+                "• faction.query — 搜索阵营/势力\n"
+                "  何时用：场景涉及组织/势力时，先查已有阵营信息\n"
+                "\n"
+                "【创建类 — 场景中出现新的东西时用】\n"
+                "• character.generate — 创建新角色\n"
+                "  何时用：场景中出现了故事里还不存在的角色\n"
+                "  不调会：角色数据丢失，后续无法搜索和引用\n"
+                "• location.generate — 创建新地点\n"
+                "  何时用：场景发生在新的、未记录的地点\n"
+                "  不调会：地点数据丢失，场景背景无法被后续搜索\n"
+                "• faction.generate — 创建新阵营/势力\n"
+                "  何时用：场景引入了新的组织、帮派、机构等\n"
+                "• relationship.create — 建立两个角色的关系\n"
+                "  何时用：两个角色首次互动（对话/冲突/合作/见面）\n"
+                "  不调会：角色关系网缺失，后续互动缺少上下文\n"
+                "\n"
+                "【更新类 — 已有实体发生变化时用】\n"
+                "• relationship.update — 更新角色关系状态\n"
+                "  何时用：已有关系发生变化（冷淡→亲密、友好→敌对等）\n"
+                "• faction.update — 更新阵营信息\n"
+                "  何时用：阵营的立场/资源/策略发生变化\n"
+                "\n"
+                "  自检：读完 scene_intention，问问自己——\n"
+                "  有新角色吗？ → character.generate\n"
+                "  有新地点吗？ → location.generate\n"
+                "  角色互动了吗？ → relationship.create 或 relationship.update\n"
+                "  涉及势力了吗？ → faction.query 或 faction.generate"
             )
 
         if reasons:
             raise ValueError(
-                "管线工具校验不通过：\n" +
-                "\n".join(f"  ❌ {r}" for r in reasons)
+                "管线工具校验不通过：\n" + "\n".join(reasons)
             )
 
     def _enforce_threads(self, plan: dict, tick: int) -> None:
@@ -1066,7 +1068,7 @@ class StoryAgent:
         
         # Promote to story goal!
         top_loop.is_story_goal = True
-        self.memory.save_open_loop(top_loop)
+        self.memory.save_open_loops([top_loop])
         
         # Update state
         story_goals['primary'] = {

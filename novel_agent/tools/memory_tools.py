@@ -390,8 +390,6 @@ class RelationshipCreateTool(Tool):
         )
         self.memory_manager = memory_manager
     
-    # _resolve_char_id is now a module-level function (see bottom of file)
-
     def execute(self, character_a: str, character_b: str, relationship_type: str,
                 perspective_a: str, perspective_b: str,
                 status: str = "neutral", intensity: int = 5) -> Dict[str, Any]:
@@ -405,13 +403,13 @@ class RelationshipCreateTool(Tool):
             perspective_b: How B views A
             status: Relationship status
             intensity: Importance 0-10
-        
+
         Returns:
             Success status and relationship ID
         """
         # Resolve Chinese names to C### IDs
-        character_a = self._resolve_char_id(character_a)
-        character_b = self._resolve_char_id(character_b)
+        character_a = _resolve_char_id(self.memory_manager, character_a)
+        character_b = _resolve_char_id(self.memory_manager, character_b)
 
         # Check if relationship already exists
         existing = self.memory_manager.get_relationship_between(character_a, character_b)
@@ -504,22 +502,8 @@ class RelationshipUpdateTool(Tool):
             Success status
         """
         # Resolve Chinese names to C### IDs (Bug fix: LLM may pass names instead of IDs)
-        a_resolved = character_a
-        b_resolved = character_b
-        if not (character_a.startswith("C") and character_a[1:].isdigit()):
-            for cid in self.memory_manager.list_characters():
-                c = self.memory_manager.load_character(cid)
-                full = ((c.family_name or "") + (c.first_name or "")).strip() if c else ""
-                if full and full == character_a.strip():
-                    a_resolved = cid
-                    break
-        if not (character_b.startswith("C") and character_b[1:].isdigit()):
-            for cid in self.memory_manager.list_characters():
-                c = self.memory_manager.load_character(cid)
-                full = ((c.family_name or "") + (c.first_name or "")).strip() if c else ""
-                if full and full == character_b.strip():
-                    b_resolved = cid
-                    break
+        a_resolved = _resolve_char_id(self.memory_manager, character_a)
+        b_resolved = _resolve_char_id(self.memory_manager, character_b)
 
         # Flatten nested status dict (Bug fix: LLM may send {old: ..., new: ...})
         if isinstance(status, dict):
@@ -800,3 +784,20 @@ class FactionQueryTool(Tool):
                 "relevance_score": round(r.get("relevance_score", 0.0), 2)
             })
         return {"success": True, "results": formatted, "count": len(formatted)}
+
+
+# ── 共享工具函数 ────────────────────────────────────────────────────────────
+
+def _resolve_char_id(memory_manager, name_or_id: str) -> str:
+    """将中文名或角色 ID 解析为标准 C### ID。"""
+    # 已经是标准 ID
+    if name_or_id.startswith("C") and name_or_id[1:].isdigit():
+        return name_or_id
+    # 按全名匹配
+    for cid in memory_manager.list_characters():
+        c = memory_manager.load_character(cid)
+        if c:
+            full = ((c.family_name or "") + (c.first_name or "")).strip()
+            if full and full == name_or_id.strip():
+                return cid
+    return name_or_id

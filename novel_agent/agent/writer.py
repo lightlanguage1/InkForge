@@ -194,11 +194,11 @@ class SceneWriter:
     
     def _extract_title(self, lines: List[str], context: Dict[str, Any]) -> str:
         """Extract or generate scene title.
-        
+
         Args:
             lines: Lines of the scene text
             context: Original context
-        
+
         Returns:
             Scene title
         """
@@ -206,11 +206,11 @@ class SceneWriter:
         # (short, no period at end, possibly markdown header)
         if lines:
             first_line = lines[0].strip()
-            
+
             # Remove markdown header markers
             if first_line.startswith('#'):
                 first_line = first_line.lstrip('#').strip()
-            
+
             # If it's short and doesn't end with a period, use it as title
             if len(first_line) < 60 and not first_line.endswith('.'):
                 return first_line

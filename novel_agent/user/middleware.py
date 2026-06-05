@@ -9,9 +9,14 @@ from .context import set_current_user
 
 logger = logging.getLogger(__name__)
 
-# Whitelisted paths that don't require authentication
+# Paths that don't require authentication (exact prefixes or full paths)
+_NO_AUTH_PATHS = {
+    "/api/v1/auth/activate",
+    "/api/v1/auth/register",
+    "/api/v1/auth/login",
+    "/api/v1/auth/reset-password",
+}
 _NO_AUTH_PREFIXES = (
-    "/api/v1/auth/",
     "/api/v1/log",
     "/health",
     "/docs",
@@ -23,9 +28,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
     """Extract and validate Bearer token, inject user_id into ContextVar."""
 
     async def dispatch(self, request: Request, call_next):
-        path = request.url.path.rstrip("/") + "/"
+        path = request.url.path.rstrip("/")
 
-        # Skip auth for public endpoints
+        # Skip auth for public endpoints: exact path or prefix match
+        if path in _NO_AUTH_PATHS:
+            return await call_next(request)
         for prefix in _NO_AUTH_PREFIXES:
             if path.startswith(prefix):
                 return await call_next(request)

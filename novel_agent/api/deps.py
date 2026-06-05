@@ -86,6 +86,20 @@ def resolve_project(project_id: str) -> Path:
     raise ValueError(f"未找到项目: {project_id}")
 
 
+def require_admin() -> str:
+    """依赖注入——验证当前用户是管理员，返回 user_id。"""
+    from fastapi import HTTPException
+    from ..user.context import get_current_user
+    from ..user.db import Database
+    user_id = get_current_user()
+    if not user_id:
+        raise HTTPException(status_code=401, detail="未登录")
+    user = Database().get_user(user_id)
+    if not user or not user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+    return user_id
+
+
 def create_agent(project_dir: Path, llm_backend=None, llm_model=None, save_prompts=False):
     return _create_agent(
         project_dir, _load_config(project_dir),
