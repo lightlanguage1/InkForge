@@ -5,7 +5,7 @@ import { clearToken, isAdmin } from "../components/LoginGate";
 import { useNavigate } from "react-router-dom";
 
 interface User { user_id: string; display_name: string; is_admin: number; disabled: number; created_at: string; last_seen: string; project_count: number; }
-interface Code { code: string; max_uses: number; used: number; created_at: string; expires_at: string | null; used_by: string | null; }
+interface Code { code: string; max_uses: number; used: number; created_at: string; expires_at: string | null; used_by: string | null; strict_expiry: number; }
 
 function useAdminQuery<T>(path: string, key: string[]) {
   const token = localStorage.getItem("inkforge_token");
@@ -38,6 +38,8 @@ export function AdminPage() {
   const [genUses, setGenUses] = useState(1);
   const [genDays, setGenDays] = useState(30);
   const [msg, setMsg] = useState("");
+  const [editExpiryCode, setEditExpiryCode] = useState<string | null>(null);
+  const [editExpiryDays, setEditExpiryDays] = useState(30);
 
   const { data: usersRes } = useAdminQuery<{ users: User[] }>("/users", ["admin", "users"]);
   const { data: codesRes } = useAdminQuery<{ codes: Code[] }>("/codes", ["admin", "codes"]);
@@ -72,6 +74,19 @@ export function AdminPage() {
     if (!confirm(`作废邀请码 ${code}？`)) return;
     await api("DELETE", `/codes/${code}`);
     qc.invalidateQueries({ queryKey: ["admin", "codes"] });
+  };
+
+  const updateExpiry = async (code: string, days: number) => {
+    await api("PATCH", `/codes/${code}`, { days });
+    setEditExpiryCode(null);
+    qc.invalidateQueries({ queryKey: ["admin", "codes"] });
+    setMsg(`邀请码 ${code} 过期时间已更新`);
+  };
+
+  const toggleStrict = async (code: string) => {
+    const r = await api("POST", `/codes/${code}/toggle-strict`);
+    qc.invalidateQueries({ queryKey: ["admin", "codes"] });
+    setMsg(`邀请码 ${code}: ${(r as any).label}`);
   };
 
   const tabStyle = (t: string) => ({
@@ -131,7 +146,7 @@ export function AdminPage() {
           </div>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead><tr style={{ borderBottom: "1px solid var(--border)" }}>
-              {["邀请码","已用/上限","使用者","过期时间","操作"].map(h => <th key={h} style={{ textAlign: "left", padding: "8px 10px", color: "var(--text-3)", fontWeight: 500, fontSize: 11 }}>{h}</th>)}
+              {["邀请码","已用/上限","使用者","过期时间","严格","操作"].map(h => <th key={h} style={{ textAlign: "left", padding: "8px 10px", color: "var(--text-3)", fontWeight: 500, fontSize: 11 }}>{h}</th>)}
             </tr></thead>
             <tbody>
               {codes?.map(c => (
@@ -139,7 +154,36 @@ export function AdminPage() {
                   <td style={{ padding: "10px", color: "var(--text-1)", fontFamily: "monospace", fontSize: 12 }}>{c.code}</td>
                   <td style={{ padding: "10px", color: "var(--text-2)" }}>{c.used}/{c.max_uses}</td>
                   <td style={{ padding: "10px", color: "var(--text-2)" }}>{c.used_by || "—"}</td>
-                  <td style={{ padding: "10px", color: "var(--text-3)", fontSize: 11 }}>{c.expires_at?.slice(0, 10) || "永不过期"}</td>
+                  <td style={{ padding: "10px", color: "var(--text-3)", fontSize: 11 }}>
+                    {editExpiryCode === c.code ? (
+                      <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+                        <input type="number" value={editExpiryDays}
+                          onChange={e => setEditExpiryDays(+e.target.value)}
+                          min={0} max={9999}
+                          style={{ width: 50, padding: "3px 6px", borderRadius: 4, border: "1px solid var(--accent)", background: "var(--bg-base)", color: "var(--text-1)", fontSize: 11 }} />
+                        <span style={{ fontSize: 10, color: "var(--text-3)" }}>天</span>
+                        <button onClick={() => updateExpiry(c.code, editExpiryDays)}
+                          style={{ padding: "2px 8px", borderRadius: 4, border: "none", background: "var(--accent)", color: "var(--bg-base)", fontSize: 10, cursor: "pointer" }}>确认</button>
+                        <button onClick={() => setEditExpiryCode(null)}
+                          style={{ padding: "2px 6px", borderRadius: 4, border: "1px solid var(--border)", background: "transparent", color: "var(--text-3)", fontSize: 10, cursor: "pointer" }}>✕</button>
+                      </span>
+                    ) : (
+                      <span onClick={() => { setEditExpiryCode(c.code); setEditExpiryDays(30); }}
+                        style={{ cursor: "pointer", borderBottom: "1px dashed var(--text-3)" }}
+                        title="点击修改过期时间">
+                        {c.expires_at?.slice(0, 10) || "永不过期"}
+                      </span>
+                    )}
+                  </td>
+                  <td style={{ padding: "10px" }}>
+                    <button onClick={() => toggleStrict(c.code)}
+                      style={{ padding: "2px 8px", borderRadius: 10, border: "none", fontSize: 10, cursor: "pointer",
+                        background: c.strict_expiry ? "rgba(248,113,113,0.1)" : "rgba(77,170,133,0.1)",
+                        color: c.strict_expiry ? "#f87171" : "#4daa85" }}
+                      title="严格过期：过期后已注册用户也拦截">
+                      {c.strict_expiry ? "严格" : "宽松"}
+                    </button>
+                  </td>
                   <td style={{ padding: "10px" }}><button onClick={() => revokeCode(c.code)} style={{ padding: "3px 10px", borderRadius: 6, border: "1px solid rgba(248,113,113,0.3)", background: "transparent", color: "#f87171", fontSize: 11, cursor: "pointer" }}>作废</button></td>
                 </tr>
               ))}

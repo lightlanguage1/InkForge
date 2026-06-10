@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS invite_codes (
     used       INTEGER NOT NULL DEFAULT 0,
     is_admin   INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
-    expires_at TEXT
+    expires_at TEXT,
+    strict_expiry INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS users (
@@ -34,6 +35,35 @@ CREATE TABLE IF NOT EXISTS projects (
     last_accessed TEXT NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(user_id),
     UNIQUE(user_id, project_id)
+);
+
+CREATE TABLE IF NOT EXISTS community_posts (
+    project_id   TEXT PRIMARY KEY,
+    user_id      TEXT NOT NULL,
+    published    INTEGER NOT NULL DEFAULT 1,
+    created_at   TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(user_id)
+);
+
+CREATE TABLE IF NOT EXISTS community_comments (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id   TEXT NOT NULL,
+    user_id      TEXT NOT NULL,
+    display_name TEXT NOT NULL DEFAULT '',
+    chapter_tick INTEGER,
+    paragraph    INTEGER,
+    content      TEXT NOT NULL,
+    parent_id    INTEGER DEFAULT NULL,
+    created_at   TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS community_chat (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id   TEXT DEFAULT NULL,
+    user_id      TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    message      TEXT NOT NULL,
+    created_at   TEXT NOT NULL
 );
 """
 
@@ -71,6 +101,14 @@ class Database:
                     pass
             try:
                 conn.execute("ALTER TABLE users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE invite_codes ADD COLUMN strict_expiry INTEGER NOT NULL DEFAULT 1")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE community_chat ADD COLUMN project_id TEXT DEFAULT NULL")
             except sqlite3.OperationalError:
                 pass
             conn.commit()
@@ -242,6 +280,57 @@ class Database:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def is_code_expired_for_user(self, user_id: str) -> bool:
+        """检查用户的邀请码是否已过期且 strict_expiry=1。返回 True 表示应拦截登录。"""
+        now = datetime.utcnow().isoformat()
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT c.expires_at, c.strict_expiry FROM invite_codes c "
+                "JOIN users u ON u.invite_code = c.code "
+                "WHERE u.user_id = ?", (user_id,)
+            ).fetchone()
+        if not row or not row["expires_at"]:
+            return False
+        if not row["strict_expiry"]:
+            return False  # 管理员关闭了严格过期
+        return now > row["expires_at"]
+
+    def get_code_expiry(self, code: str) -> Optional[str]:
+        """获取邀请码的过期时间。"""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT expires_at FROM invite_codes WHERE code = ?",
+                (code.strip().upper(),)
+            ).fetchone()
+        return row["expires_at"] if row else None
+
+    def toggle_strict_expiry(self, code: str) -> bool:
+        """切换 strict_expiry。返回新值。"""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT strict_expiry FROM invite_codes WHERE code = ?",
+                (code.strip().upper(),)
+            ).fetchone()
+            if not row:
+                return False
+            new_val = 0 if row["strict_expiry"] else 1
+            conn.execute(
+                "UPDATE invite_codes SET strict_expiry = ? WHERE code = ?",
+                (new_val, code.strip().upper())
+            )
+            conn.commit()
+            return bool(new_val)
+
+    def update_code_expiry(self, code: str, days: int):
+        """更新邀请码过期时间。days=0 表示永不过期。"""
+        expires = (datetime.utcnow() + timedelta(days=days)).isoformat() if days > 0 else None
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE invite_codes SET expires_at = ? WHERE code = ?",
+                (expires, code.strip().upper())
+            )
+            conn.commit()
+
     def revoke_code(self, code: str):
         with self._connect() as conn:
             conn.execute("DELETE FROM invite_codes WHERE code = ?", (code.strip().upper(),))
@@ -258,6 +347,126 @@ class Database:
                 (datetime.utcnow().isoformat(),)
             ).fetchone()["n"]
         return {"total_users": users, "active_users": active, "total_projects": projects, "available_codes": codes}
+
+    def count_online_users(self, minutes: int = 5) -> int:
+        """统计最近 N 分钟内有请求的用户数。middleware 每次请求更新 last_seen。"""
+        with self._connect() as conn:
+            cutoff = (datetime.utcnow() - timedelta(minutes=minutes)).isoformat()
+            row = conn.execute(
+                "SELECT COUNT(DISTINCT user_id) as n FROM users WHERE last_seen >= ? AND disabled = 0",
+                (cutoff,)
+            ).fetchone()
+        return row["n"] if row else 0
+
+    # ── community ─────────────────────────────────────────────────────────
+
+    def set_publish(self, project_id: str, user_id: str, published: bool) -> bool:
+        now = datetime.utcnow().isoformat()
+        with self._connect() as conn:
+            conn.execute("PRAGMA foreign_keys=OFF")
+            if published:
+                conn.execute(
+                    "INSERT OR REPLACE INTO community_posts (project_id, user_id, published, created_at) VALUES (?, ?, 1, ?)",
+                    (project_id, user_id, now)
+                )
+            else:
+                conn.execute("DELETE FROM community_posts WHERE project_id = ?", (project_id,))
+            conn.execute("PRAGMA foreign_keys=ON")
+            conn.commit()
+        return published
+
+    def get_publish_status(self, project_id: str) -> bool:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT published FROM community_posts WHERE project_id = ?", (project_id,)
+            ).fetchone()
+        return bool(row and row["published"])
+
+    def list_published_posts(self) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT p.project_id, p.user_id, p.created_at, COALESCE(u.display_name, p.user_id) as display_name "
+                "FROM community_posts p LEFT JOIN users u ON p.user_id = u.user_id "
+                "WHERE p.published = 1 ORDER BY p.created_at DESC"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def add_comment(self, project_id: str, user_id: str, display_name: str,
+                    content: str, chapter_tick: int = None, paragraph: int = None,
+                    parent_id: int = None) -> dict:
+        now = datetime.utcnow().isoformat()
+        name = display_name or user_id
+        with self._connect() as conn:
+            conn.execute("PRAGMA foreign_keys=OFF")
+            cur = conn.execute(
+                "INSERT INTO community_comments (project_id, user_id, display_name, chapter_tick, paragraph, content, parent_id, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (project_id, user_id, name, chapter_tick, paragraph, content, parent_id, now)
+            )
+            conn.commit()
+            return {"id": cur.lastrowid, "created_at": now}
+
+    def get_comments(self, project_id: str) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM community_comments WHERE project_id = ? ORDER BY created_at ASC",
+                (project_id,)
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def update_comment(self, comment_id: int, user_id: str, content: str) -> bool:
+        """编辑评论（仅本人）。"""
+        with self._connect() as conn:
+            cur = conn.execute(
+                "UPDATE community_comments SET content = ? WHERE id = ? AND user_id = ?",
+                (content, comment_id, user_id),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+
+    def delete_comment(self, comment_id: int, user_id: str) -> bool:
+        """删除评论（仅本人）。"""
+        with self._connect() as conn:
+            cur = conn.execute(
+                "DELETE FROM community_comments WHERE id = ? AND user_id = ?",
+                (comment_id, user_id),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+
+    def add_chat_message(self, user_id: str, display_name: str, message: str, project_id: str = None) -> dict:
+        now = datetime.utcnow().isoformat()
+        name = display_name or user_id
+        with self._connect() as conn:
+            cur = conn.execute(
+                "INSERT INTO community_chat (project_id, user_id, display_name, message, created_at) VALUES (?, ?, ?, ?, ?)",
+                (project_id, user_id, name, message, now)
+            )
+            # 限制每个频道最多保留 500 条，超出删旧
+            conn.execute(
+                "DELETE FROM community_chat WHERE project_id IS ? AND id NOT IN ("
+                "SELECT id FROM community_chat WHERE project_id IS ? ORDER BY id DESC LIMIT 500"
+                ")", (project_id, project_id)
+            )
+            conn.commit()
+            return {"id": cur.lastrowid, "created_at": now}
+
+    def get_chat_messages(self, project_id: str = None, since_id: int = 0, limit: int = 200) -> list[dict]:
+        pid_filter = "project_id IS NULL" if project_id is None else "project_id = ?"
+        params: list = [project_id] if project_id is not None else []
+        with self._connect() as conn:
+            if since_id > 0:
+                rows = conn.execute(
+                    f"SELECT * FROM community_chat WHERE {pid_filter} AND id > ? ORDER BY id ASC LIMIT ?",
+                    params + [since_id, limit]
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    f"SELECT * FROM community_chat WHERE {pid_filter} ORDER BY id DESC LIMIT ?",
+                    params + [limit]
+                ).fetchall()
+        result = [dict(r) for r in rows]
+        return list(reversed(result)) if since_id == 0 else result
 
     # ── projects ─────────────────────────────────────────────────────────
 

@@ -7,6 +7,12 @@ import { patch } from "../api/client";
 
 const GROUPS: { label: string; items: { label: string; path: string; icon: string; }[] }[] = [
   {
+    label: "社区",
+    items: [
+      { label: "发现", path: "/community", icon: "💬" },
+    ],
+  },
+  {
     label: "核心",
     items: [
       { label: "概览", path: ".", icon: "◈" },

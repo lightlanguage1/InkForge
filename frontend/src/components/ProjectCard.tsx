@@ -24,7 +24,6 @@ export function ProjectCard({ project, onClick, onDelete }: Props) {
   const name = project.novel_name || project.project_path.split(/[\\/]/).pop() || "?";
   const pid  = (project.project_path || "").split(/[\\/]/).pop() ?? "";
   const tick = project.current_tick ?? 0;
-  const progress = Math.min(100, Math.max(4, (tick / 50) * 100));
   const [gradient, accentColor, shadow] = resolveConfig(name);
 
   function handleDelete(e: React.MouseEvent) {
@@ -87,23 +86,14 @@ export function ProjectCard({ project, onClick, onDelete }: Props) {
               >
                 {pid}
               </p>
-              <div className="mt-3.5">
-                <div
-                  className="h-[2px] rounded-full overflow-hidden"
-                  style={{ background: "rgba(240,236,226,0.1)" }}
-                >
-                  <div
-                    className="h-full rounded-full"
-                    style={{ width: `${progress}%`, background: accentColor, opacity: 0.6 }}
-                  />
-                </div>
+              {tick > 0 && (
                 <p
-                  className="text-[10px] mt-1.5 tabular-nums font-mono"
+                  className="text-[10px] mt-3.5 tabular-nums font-mono"
                   style={{ color: "rgba(240,236,226,0.25)" }}
                 >
-                  {tick} / 50 幕
+                  已生成 {tick} 幕
                 </p>
-              </div>
+              )}
             </div>
           </div>
         </div>

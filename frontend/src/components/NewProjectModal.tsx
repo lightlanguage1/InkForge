@@ -1,10 +1,12 @@
 import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "./ui/Button";
 import { Input } from "./ui/Input";
 import { Textarea } from "./ui/Textarea";
 import { Modal } from "./ui/Modal";
 import { Toggle } from "./ui/Toggle";
 import { Checkbox } from "./ui/Checkbox";
+import { getStylePresets, getCraftPresets, createStyleTemplate, createCraftTemplate } from "../api/templates";
 import type { CreateProjectReq } from "../types/project";
 
 /* ── Display constants ──────────────────────────────── */
@@ -12,8 +14,9 @@ const STEP_META = [
   { label: "故事基础", desc: "为你的故事起个响亮的名字，选定类型与主线前提" },
   { label: "世界设定", desc: "定义故事的世界观、基调与情节驱动模式" },
   { label: "写作技能", desc: "加载风格技能，让 AI 模仿你最爱的叙事腔调" },
+  { label: "文风方法", desc: "选择文风与叙事框架，决定 AI 的写作方式" },
 ];
-const STEP_ACCENT_COLORS = ["#c8975a", "#5a96c8", "#4daa85"];
+const STEP_ACCENT_COLORS = ["#c8975a", "#5a96c8", "#4daa85", "#c8975a"];
 const GENRES = ["玄幻", "奇幻", "科幻", "悬疑", "言情", "武侠", "都市", "历史"];
 const TONES = [
   { label: "轻松幽默", icon: "◎", desc: "轻快活泼" },
@@ -143,6 +146,13 @@ export function NewProjectModal({ open, onClose, onSubmit, isLoading, skills }: 
               form={form} skills={skills}
               toggleSkill={toggleSkill}
               onBack={() => setStep(1)}
+              onNext={() => setStep(3)}
+            />
+          )}
+          {step === 3 && (
+            <StepStyle
+              form={form} setForm={setForm}
+              onBack={() => setStep(2)}
               onCreate={() => onSubmit(form)}
               loading={isLoading}
             />
@@ -326,11 +336,10 @@ interface StepSkillsProps {
   skills: SkillItem[];
   toggleSkill: (slug: string) => void;
   onBack: () => void;
-  onCreate: () => void;
-  loading: boolean;
+  onNext: () => void;
 }
 
-function StepSkills({ form, skills, toggleSkill, onBack, onCreate, loading }: StepSkillsProps) {
+function StepSkills({ form, skills, toggleSkill, onBack, onNext }: StepSkillsProps) {
   const selected = form.skill_ids ?? [];
   return (
     <div className="p-6 space-y-4 animate-fade-in">
@@ -377,7 +386,7 @@ function StepSkills({ form, skills, toggleSkill, onBack, onCreate, loading }: St
 
       <div className="flex justify-between pt-3" style={{ borderTop: "1px solid var(--border)" }}>
         <Button variant="ghost" size="sm" onClick={onBack}>← 返回</Button>
-        <Button size="sm" onClick={onCreate} loading={loading} disabled={!form.name}>创建项目</Button>
+        <Button size="sm" onClick={onNext} disabled={!form.name}>下一步 →</Button>
       </div>
     </div>
   );
@@ -420,5 +429,99 @@ function ToneCard({ tone, selected, onSelect }: { tone: { label: string; icon: s
         <p className="text-[11px] mt-0.5" style={{ color: "var(--text-3)" }}>{tone.desc}</p>
       </div>
     </button>
+  );
+}
+
+function StepStyle({ form, setForm, onBack, onCreate, loading }: {
+  form: CreateProjectReq; setForm: (f: CreateProjectReq) => void;
+  onBack: () => void; onCreate: () => void; loading: boolean;
+}) {
+  const qc = useQueryClient();
+  const { data: presetsS } = useQuery({ queryKey: ["stylePresets"], queryFn: getStylePresets });
+  const { data: presetsC } = useQuery({ queryKey: ["craftPresets"], queryFn: getCraftPresets });
+  const [createType, setCreateType] = useState<"style" | "craft" | null>(null);
+  const styles = presetsS?.templates ?? [];
+  const crafts = presetsC?.templates ?? [];
+
+  function group(label: string, emoji: string, items: any[], current: string, type: "style" | "craft", field: "style_id" | "craft_id") {
+    return (
+      <div>
+        <div className="flex items-center gap-2 mb-1">
+          <p className="text-[13px] font-semibold" style={{ color: "var(--text-1)" }}>{emoji} {label}</p>
+          <button onClick={() => setCreateType(type)}
+            className="text-[10px] border-0 cursor-pointer px-2 py-0.5 rounded-full"
+            style={{ background: "rgba(200,151,90,0.08)", color: "var(--text-3)" }}>＋ 自定义</button>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={() => setForm({ ...form, [field]: "" })}
+            className="text-[12px] px-4 py-2 rounded-xl border-0 cursor-pointer transition-all"
+            style={{ background: !current ? "var(--accent)" : "var(--bg-surface)", color: !current ? "var(--bg-base)" : "var(--text-3)", border: !current ? "1px solid var(--accent)" : "1px solid var(--border)" }}>默认</button>
+          {items.map(t => (
+            <button key={t.id} onClick={() => setForm({ ...form, [field]: t.id })}
+              className="text-[12px] px-4 py-2 rounded-xl border-0 cursor-pointer transition-all"
+              style={{ background: current === t.id ? "var(--accent)" : "var(--bg-surface)", color: current === t.id ? "var(--bg-base)" : "var(--text-3)", border: current === t.id ? "1px solid var(--accent)" : "1px solid var(--border)" }}>{t.name}</button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 space-y-5 animate-fade-in">
+      {group("文风 — 怎么写", "🎨", styles, form.style_id ?? "", "style", "style_id")}
+      {group("写作方法 — 什么框架", "📐", crafts, form.craft_id ?? "", "craft", "craft_id")}
+      <div className="flex gap-3 pt-3 justify-end" style={{ borderTop: "1px solid var(--border)" }}>
+        <button onClick={onBack} className="text-sm px-4 py-2 rounded-lg border-0 cursor-pointer" style={{ background: "transparent", color: "var(--text-3)" }}>← 上一步</button>
+        <Button size="sm" onClick={onCreate} loading={loading} disabled={!form.name}>创建项目</Button>
+      </div>
+
+      {createType && (
+        <CreateTemplateModal type={createType} onClose={() => setCreateType(null)}
+          onCreated={() => { qc.invalidateQueries({ queryKey: [createType === "style" ? "stylePresets" : "craftPresets"] }); setCreateType(null); }} />
+      )}
+    </div>
+  );
+}
+
+function CreateTemplateModal({ type, onClose, onCreated }: {
+  type: "style" | "craft"; onClose: () => void; onCreated: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [desc, setDesc] = useState("");
+  const [snippet, setSnippet] = useState("");
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    if (!name.trim() || !snippet.trim()) return;
+    setSaving(true);
+    const fn = type === "style" ? createStyleTemplate : createCraftTemplate;
+    await fn({ name, description: desc, prompt_snippet: snippet });
+    setSaving(false); onCreated();
+  };
+  return (
+    <div className="fixed inset-0 z-[20000] flex items-center justify-center" style={{ background: "rgba(0,0,0,0.6)" }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="w-[460px] max-w-[95vw] max-h-[80vh] overflow-auto rounded-2xl p-6"
+        style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", boxShadow: "0 24px 64px rgba(0,0,0,0.5)" }}>
+        <h3 className="font-semibold mb-4" style={{ color: "var(--text-1)" }}>
+          {type === "style" ? "🎨 新建文风模板" : "📐 新建写作方法模板"}
+        </h3>
+        <input value={name} onChange={e => setName(e.target.value)} placeholder="模板名称"
+          className="w-full text-sm px-3 py-2 rounded-lg mb-3 outline-none"
+          style={{ background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)", color: "var(--text-1)" }} />
+        <input value={desc} onChange={e => setDesc(e.target.value)} placeholder="简短描述"
+          className="w-full text-sm px-3 py-2 rounded-lg mb-3 outline-none"
+          style={{ background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)", color: "var(--text-1)" }} />
+        <textarea value={snippet} onChange={e => setSnippet(e.target.value)} rows={8}
+          placeholder="Prompt 文本（注入 AI 写作指令）"
+          className="w-full text-sm px-3 py-2 rounded-lg mb-4 outline-none resize-none"
+          style={{ background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)", color: "var(--text-1)", fontFamily: "monospace" }} />
+        <div className="flex gap-2 justify-end">
+          <button onClick={onClose} className="text-sm px-4 py-2 rounded-lg border-0 cursor-pointer" style={{ background: "transparent", color: "var(--text-3)" }}>取消</button>
+          <button onClick={save} disabled={saving || !name.trim() || !snippet.trim()}
+            className="text-sm px-4 py-2 rounded-lg border-0 cursor-pointer font-medium disabled:opacity-30"
+            style={{ background: "var(--accent)", color: "var(--bg-base)" }}>{saving ? "保存中…" : "创建"}</button>
+        </div>
+      </div>
+    </div>
   );
 }

@@ -162,7 +162,11 @@ def login(db: Database, display_name: str, password: str, ip: str = "") -> dict:
         raise AuthError("用户名不存在")
 
     if user.get("disabled"):
-        raise AuthError("账户已被禁用")
+        raise AuthError("账户已被禁用，请联系管理员")
+
+    # 严格过期：邀请码过期且 strict_expiry=1 → 已注册用户也无法登录
+    if db.is_code_expired_for_user(user["user_id"]):
+        raise AuthError("你的邀请码已过期，请联系管理员续期或关闭严格过期限制")
 
     if not user.get("password_hash"):
         raise AuthError("账户未设置密码，请联系管理员重置")

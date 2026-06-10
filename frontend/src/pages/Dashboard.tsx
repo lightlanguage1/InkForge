@@ -8,6 +8,7 @@ import { NewProjectModal } from "../components/NewProjectModal";
 import { listProjects, resume, createProject, deleteProject } from "../api/projects";
 import { listSkills } from "../api/skills";
 import { clearToken, getSavedName, isAdmin } from "../components/LoginGate";
+import { AnnouncementBanner } from "../components/AnnouncementBanner";
 import type { CreateProjectReq } from "../types/project";
 
 const FEATURE_ITEMS = [
@@ -54,6 +55,7 @@ export function DashboardPage() {
 
   return (
     <Layout>
+      <AnnouncementBanner />
       <div className="min-h-full" style={{ background: "var(--bg-base)", transition: "background 0.3s ease" }}>
         <div className="max-w-5xl mx-auto px-4 md:px-8 py-8 md:py-14">
 
@@ -64,6 +66,11 @@ export function DashboardPage() {
             </p>
             <div className="flex items-center gap-3">
               <span className="text-[12px]" style={{ color: "var(--text-2)" }}>{getSavedName() || "用户"}</span>
+              <button onClick={() => navigate("/community")} className="text-[12px] px-3 py-1.5 rounded-lg transition-colors"
+                style={{ color: "var(--text-3)", border: "1px solid var(--border)", background: "transparent", cursor: "pointer" }}
+                onMouseEnter={e => { e.currentTarget.style.color = "var(--accent)"; e.currentTarget.style.borderColor = "var(--accent)"; }}
+                onMouseLeave={e => { e.currentTarget.style.color = "var(--text-3)"; e.currentTarget.style.borderColor = "var(--border)"; }}
+              >💬 社区</button>
               {isAdmin() && <span className="text-[10px] px-2 py-0.5 rounded" style={{ background: "rgba(200,151,90,0.15)", color: "var(--accent)" }}>管理员</span>}
               <button onClick={() => { clearToken(); window.location.reload(); }}
                 className="text-[11px] px-3 py-1.5 rounded-lg transition-colors"

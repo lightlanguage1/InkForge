@@ -14,21 +14,32 @@ logger = logging.getLogger(__name__)
 
 
 def _repair_sqlite_wal(index_path: Path):
-    """修复上次异常关闭导致的 SQLite WAL 锁死 / DBMOVED。
+    """修复 SQLite WAL 锁死 / DBMOVED——删除 WAL/SHM + 强制 checkpoint 恢复。
 
-    容器重启后 Volume inode 变化会导致 SQLITE_READONLY_DBMOVED。
-    解决方案：删掉所有 WAL/SHM 残留文件，清空缓存，让 SQLite 重新初始化。
+    容器重启后 Volume inode 变化导致 SQLITE_READONLY_DBMOVED (code 1032)。
+    ChromaDB 的 PersistentClient 没有 close() 方法，del 不释放底层连接。
+    解决方案：用 sqlite3 直接 checkpoint 所有数据库，然后删 WAL/SHM 重建连接。
     """
-    removed = 0
+    import sqlite3 as _sqlite3
+    repaired = 0
+    # 先对每个 sqlite3 文件做 WAL checkpoint（核心：解决 DBMOVED）
+    for db_file in index_path.rglob("*.sqlite3"):
+        try:
+            conn = _sqlite3.connect(str(db_file))
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            conn.close()
+            repaired += 1
+        except Exception:
+            pass
+    # 再删 WAL/SHM 残留
     for suffix in ("-wal", "-shm"):
         for f in index_path.rglob(f"*.sqlite3{suffix}"):
             try:
                 os.remove(str(f))
-                removed += 1
             except OSError:
                 pass
-    if removed:
-        logger.warning("已清理 %d 个 WAL/SHM 残留文件", removed)
+    if repaired:
+        logger.warning("已修复 %d 个 SQLite 数据库（WAL checkpoint）", repaired)
 
 
 def _retry_on_readonly(method):

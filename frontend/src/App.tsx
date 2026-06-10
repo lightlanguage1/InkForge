@@ -25,6 +25,8 @@ import { ReadPage } from "./pages/Read";
 import { CompilePage } from "./pages/Compile";
 import { ProtagonistSettingsPage } from "./pages/ProtagonistSettings";
 import { TimelinePage } from "./pages/Timeline";
+import { CommunityPage, CommunityDetailPage } from "./pages/Community";
+import { MusicPlayer } from "./components/MusicPlayer";
 
 export function App() {
   const [token, setToken] = useState<string | null>(getToken);
@@ -40,29 +42,34 @@ export function App() {
   if (!token) return <LoginGate onActivated={setToken} />;
 
   return (
-    <Routes>
-      <Route path="/" element={<DashboardPage />} />
-      <Route path="/admin" element={<AdminPage />} />
-      <Route path="/project/:id" element={<ProjectLayout />}>
-        <Route index element={<OverviewPage />} />
-        <Route path="read" element={<ReadPage />} />
-        <Route path="writing" element={<WritingPage />} />
-        <Route path="characters" element={<CharactersPage />} />
-        <Route path="locations" element={<LocationsPage />} />
-        <Route path="scenes" element={<ScenesPage />} />
-        <Route path="loops" element={<LoopsPage />} />
-        <Route path="factions" element={<FactionsPage />} />
-        <Route path="relationships" element={<RelationshipsPage />} />
-        <Route path="goals" element={<GoalsPage />} />
-        <Route path="lore" element={<LorePage />} />
-        <Route path="plot" element={<PlotPage />} />
-        <Route path="checkpoints" element={<CheckpointsPage />} />
-        <Route path="skills" element={<SkillsPage />} />
-        <Route path="references" element={<ReferencesPage />} />
-        <Route path="compile" element={<CompilePage />} />
-        <Route path="protagonist" element={<ProtagonistSettingsPage />} />
-        <Route path="timeline" element={<TimelinePage />} />
-      </Route>
-    </Routes>
+    <>
+      <Routes>
+        <Route path="/" element={<DashboardPage />} />
+        <Route path="/admin" element={<AdminPage />} />
+        <Route path="/community" element={<CommunityPage />} />
+        <Route path="/community/:id" element={<CommunityDetailPage />} />
+        <Route path="/project/:id" element={<ProjectLayout />}>
+          <Route index element={<OverviewPage />} />
+          <Route path="read" element={<ReadPage />} />
+          <Route path="writing" element={<WritingPage />} />
+          <Route path="characters" element={<CharactersPage />} />
+          <Route path="locations" element={<LocationsPage />} />
+          <Route path="scenes" element={<ScenesPage />} />
+          <Route path="loops" element={<LoopsPage />} />
+          <Route path="factions" element={<FactionsPage />} />
+          <Route path="relationships" element={<RelationshipsPage />} />
+          <Route path="goals" element={<GoalsPage />} />
+          <Route path="lore" element={<LorePage />} />
+          <Route path="plot" element={<PlotPage />} />
+          <Route path="checkpoints" element={<CheckpointsPage />} />
+          <Route path="skills" element={<SkillsPage />} />
+          <Route path="references" element={<ReferencesPage />} />
+          <Route path="compile" element={<CompilePage />} />
+          <Route path="protagonist" element={<ProtagonistSettingsPage />} />
+          <Route path="timeline" element={<TimelinePage />} />
+        </Route>
+      </Routes>
+      <MusicPlayer />
+    </>
   );
 }

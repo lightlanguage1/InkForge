@@ -12,6 +12,21 @@ except ImportError:
 
 from novel_agent.skill.injector import build_skill_context as _build_skill_context
 
+# 文风/写作方法注入（独立模块，失败不影响核心）
+def _get_style_context(state: dict) -> str:
+    try:
+        from novel_agent.template.inject import get_style_context
+        return get_style_context(state)
+    except Exception:
+        return ""
+
+def _get_craft_context(state: dict) -> str:
+    try:
+        from novel_agent.template.inject import get_craft_context
+        return get_craft_context(state)
+    except Exception:
+        return ""
+
 
 class WriterContextBuilder:
     """Builds context for the scene writer LLM."""
@@ -128,6 +143,8 @@ class WriterContextBuilder:
                 store_path=(self.config.get("skill") or {}).get("store_path"),
             ),
             "reference_context": self._search_references(plan, project_state),
+            "style_context": _get_style_context(project_state),
+            "craft_context": _get_craft_context(project_state),
             "world_rules": self._format_world_rules(),
             "writer_notes": self._format_writer_notes(notes),
         }

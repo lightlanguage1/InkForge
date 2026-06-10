@@ -18,6 +18,7 @@ _NO_AUTH_PATHS = {
 }
 _NO_AUTH_PREFIXES = (
     "/api/v1/log",
+    "/api/v1/music/stream",
     "/health",
     "/docs",
     "/openapi.json",
@@ -57,4 +58,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
             )
 
         set_current_user(user_id)
+
+        # 在线探测：60s 内不重复写 DB
+        from .db import Database as _DB
+        try:
+            _DB().touch_user(user_id)
+        except Exception:
+            pass
+
         return await call_next(request)

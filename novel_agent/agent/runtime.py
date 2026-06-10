@@ -134,13 +134,16 @@ class PlanExecutor:
         if not tool:
             raise ValueError(f"Tool not found: {tool_name}")
         
+        # 模糊参数匹配：LLM 常写错参数名，自动纠正而非直接报错
+        args = _fuzzy_match_args(tool, args, tool_name)
+
         # Validate arguments
         tool.validate_args(args)
-        
+
         # Add tick to args if tool supports it (for relationship.update)
         if tool_name == "relationship.update":
             args["tick"] = tick
-        
+
         # Execute tool — catch bad params and return helpful error for LLM retry
         try:
             result = tool.execute(**args)
@@ -155,3 +158,35 @@ class PlanExecutor:
             )
 
         return result
+
+
+def _fuzzy_match_args(tool, args: dict, tool_name: str) -> dict:
+    """模糊匹配 LLM 传入的参数名——比直接报错更鲁棒。
+
+    LLM 常常写 current_goals 而不是 goals、personality_traits 而不是 traits。
+    与其每个工具加别名，不如在 PlanExecutor 层统一处理。
+    """
+    import difflib
+    from logging import getLogger
+    log = getLogger(__name__)
+
+    valid_params = list(tool.parameters.keys()) if hasattr(tool, 'parameters') else []
+    if not valid_params:
+        return args  # 无参数定义，不做匹配
+
+    fixed = {}
+    for key, value in args.items():
+        if key in valid_params:
+            fixed[key] = value
+            continue
+        # 找最接近的匹配
+        matches = difflib.get_close_matches(key, valid_params, n=1, cutoff=0.5)
+        if matches:
+            log.warning("工具 %s: 参数 '%s' → '%s' 自动纠正", tool_name, key, matches[0])
+            fixed[matches[0]] = value
+        else:
+            # 无法匹配，保留原样让 validate_args 报清晰错误
+            log.warning("工具 %s: 未知参数 '%s'（无匹配），保留待校验", tool_name, key)
+            fixed[key] = value
+
+    return fixed

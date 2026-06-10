@@ -10,8 +10,11 @@ from ..user.middleware import AuthMiddleware
 
 from .routers import (
     health, projects, generation, entities, status,
-    compile, plot, checkpoints, skills, references, log, threads, portrait, auth, admin,
+    compile, plot, checkpoints, skills, references, log, threads, portrait, auth,
 )
+from ..music.router import router as music_router
+from ..community.router import router as community_router
+from ..admin.router import router as admin_router
 
 logger = logging.getLogger(__name__)
 
@@ -57,4 +60,20 @@ app.include_router(log.router)
 app.include_router(threads.router)
 app.include_router(portrait.router)
 app.include_router(auth.router)
-app.include_router(admin.router)
+app.include_router(admin_router)
+app.include_router(community_router)
+app.include_router(music_router)
+
+# 公告模块 — 注册失败不影响核心
+try:
+    from ..announcement.router import router as announcement_router
+    app.include_router(announcement_router)
+except Exception:
+    logger.warning("公告模块加载失败，已跳过", exc_info=True)
+
+# 模板模块（文风 & 写作方法）— 注册失败不影响核心
+try:
+    from ..template.router import router as template_router
+    app.include_router(template_router)
+except Exception:
+    logger.warning("模板模块加载失败，已跳过", exc_info=True)

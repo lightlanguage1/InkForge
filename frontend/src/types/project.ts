@@ -10,6 +10,8 @@ export interface CreateProjectReq {
   primary_goal?: string;
   use_plot_first?: boolean;
   skill_ids?: string[];
+  style_id?: string;
+  craft_id?: string;
 }
 
 export interface ProjectInfo {

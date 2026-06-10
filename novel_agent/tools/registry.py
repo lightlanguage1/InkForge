@@ -50,31 +50,31 @@ class ToolRegistry:
     
     def get_tools_description(self) -> str:
         """Get formatted description of all tools for LLM prompt.
-        
+
         Returns:
             Multi-line string describing all available tools
         """
         if not self._tools:
             return "No tools available."
-        
+
         descriptions = []
         for tool in self._tools.values():
             # Format tool name and description
-            desc_lines = [f"**{tool.name}** - {tool.description}"]
-            
-            # Format parameters
+            lines = [f"**{tool.name}** — {tool.description}"]
+
+            # Format parameters with descriptions
             if tool.parameters:
-                param_parts = []
+                lines.append("  参数：")
                 for param_name, param_spec in tool.parameters.items():
                     param_type = param_spec.get("type", "any")
+                    param_desc = param_spec.get("description", "")
                     is_optional = param_spec.get("optional", False)
-                    optional_marker = " (optional)" if is_optional else ""
-                    param_parts.append(f"{param_name} ({param_type}){optional_marker}")
-                
-                desc_lines.append(f"  Args: {', '.join(param_parts)}")
-            
-            descriptions.append("\n".join(desc_lines))
-        
+                    opt = "（可选）" if is_optional else "（必填）"
+                    desc_part = f" — {param_desc}" if param_desc else ""
+                    lines.append(f"    • {param_name} ({param_type}) {opt}{desc_part}")
+
+            descriptions.append("\n".join(lines))
+
         return "\n\n".join(descriptions)
     
     def get_all_schemas(self) -> List[Dict]:

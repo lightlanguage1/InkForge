@@ -1,9 +1,10 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Spinner } from "../components/ui/Spinner";
 import { getStatus } from "../api/status";
 import { ProtagonistPortrait } from "../components/ProtagonistPortrait";
 import { PageHelp } from "../components/PageHelp";
+import { getPublishStatus, togglePublish } from "../api/community";
 
 const STATS = [
   { key: "ticks",   label: "总幕数",   accent: "#8b7fd4" },
@@ -15,10 +16,21 @@ const STATS = [
 export function OverviewPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ["status", id], queryFn: () => getStatus(id!), enabled: !!id });
+  const { data: pubData } = useQuery({ queryKey: ["publish", id], queryFn: () => getPublishStatus(id!), enabled: !!id });
+  const publishMut = useMutation({
+    mutationFn: (pub: boolean) => togglePublish(id!, pub),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["publish", id] });
+      qc.invalidateQueries({ queryKey: ["communityPosts"] });
+    },
+  });
 
   if (isLoading) return <Spinner />;
   if (!data) return <p className="text-sm" style={{ color: "var(--text-2)" }}>无法加载项目状态</p>;
+
+  const isPublished = pubData?.published ?? false;
 
   const values: Record<string, string> = {
     ticks:   String(data.current_tick),
@@ -50,6 +62,19 @@ export function OverviewPage() {
       <div className="relative max-w-[700px]">
 
         <PageHelp>项目仪表盘 — 查看故事进度、字数统计、主角画像。所有数据随 AI 生成自动更新。点击左侧导航切换功能模块。</PageHelp>
+
+        {/* 发布到社区开关 */}
+        <div className="flex items-center gap-3 mb-4">
+          <label className="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" checked={isPublished} onChange={e => publishMut.mutate(e.target.checked)}
+              className="sr-only peer" />
+            <div className="w-9 h-5 rounded-full peer-checked:bg-[var(--accent)]" style={{ background: isPublished ? "var(--accent)" : "var(--border)", transition: "0.2s" }} />
+            <div className="absolute w-4 h-4 bg-white rounded-full top-0.5 left-0.5 peer-checked:translate-x-full transition-transform" style={{ transform: isPublished ? "translateX(16px)" : "" }} />
+          </label>
+          <span className="text-xs" style={{ color: isPublished ? "var(--accent)" : "var(--text-3)" }}>
+            {isPublished ? "已发布到社区" : "发布到社区"}
+          </span>
+        </div>
 
         {/* Header */}
         <div className="ov-in relative z-10 flex items-start justify-between mb-10" style={{ animationDelay: "0ms" }}>
@@ -243,3 +268,4 @@ export function OverviewPage() {
     </>
   );
 }
+

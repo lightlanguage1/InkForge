@@ -58,6 +58,18 @@ def create_project(req: ProjectCreateRequest):
             primary_goal=req.primary_goal,
             use_plot_first=req.use_plot_first,
         )
+        # 写入 style_id / craft_id 到 state.json
+        if req.style_id or req.craft_id:
+            import json
+            state_path = Path(path) / "state.json"
+            if state_path.exists():
+                state = json.loads(state_path.read_text(encoding="utf-8"))
+                if req.style_id:
+                    state["style_id"] = req.style_id
+                if req.craft_id:
+                    state["craft_id"] = req.craft_id
+                state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
         # 记录到用户项目表
         from ...user.context import get_current_user
         from ...user.db import Database as UserDB
