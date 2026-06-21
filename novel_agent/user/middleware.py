@@ -18,10 +18,14 @@ _NO_AUTH_PATHS = {
 }
 _NO_AUTH_PREFIXES = (
     "/api/v1/log",
-    "/api/v1/music/stream",
     "/health",
     "/docs",
     "/openapi.json",
+)
+
+# 特殊路径：不校验 token（图片等资源）
+_NO_AUTH_SUFFIXES = (
+    "/cover",  # 项目封面
 )
 
 
@@ -36,6 +40,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         for prefix in _NO_AUTH_PREFIXES:
             if path.startswith(prefix):
+                return await call_next(request)
+        for suffix in _NO_AUTH_SUFFIXES:
+            if path.endswith(suffix) and request.method == "GET":
                 return await call_next(request)
 
         # Authorization: Bearer <token> (fetch) or ?token=<token> (EventSource)

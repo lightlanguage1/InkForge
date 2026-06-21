@@ -6,6 +6,8 @@ import { DropZone } from "./DropZone";
 interface Entity {
   type: string;
   args: Record<string, unknown>;
+  _existing_id?: string;
+  _action?: string;
 }
 
 interface Props {
@@ -22,7 +24,7 @@ export function ImportModal({ open, projectId, onClose, onImported }: Props) {
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<"input" | "preview" | "done">("input");
   const [entities, setEntities] = useState<Entity[]>([]);
-  const [result, setResult] = useState<{ imported?: { name: string; tool: string }[]; total?: number; message?: string } | null>(null);
+  const [result, setResult] = useState<{ imported?: { name: string; tool: string; action?: string }[]; merged?: { name: string; tool: string; action?: string }[]; total?: number; message?: string } | null>(null);
   const [error, setError] = useState("");
 
   const reset = () => { setText(""); setError(""); setEntities([]); setResult(null); setStep("input"); onClose(); };
@@ -77,7 +79,7 @@ export function ImportModal({ open, projectId, onClose, onImported }: Props) {
     <Modal open={open} onClose={reset} wide>
       <div className="p-5 space-y-3" style={{ maxHeight: "80vh", overflow: "auto" }}>
         <h2 className="font-semibold text-base" style={{ color: "var(--text-1)" }}>
-          {step === "input" ? "导入设定" : step === "preview" ? `识别到 ${entities.length} 个实体` : "导入完成"}
+          {step === "input" ? "导入设定" : step === "preview" ? `识别到 ${entities.length} 个实体（去重后）` : "导入完成"}
         </h2>
 
         {step === "input" && (
@@ -111,9 +113,18 @@ export function ImportModal({ open, projectId, onClose, onImported }: Props) {
               {entities.map((e, idx) => (
                 <div key={idx} className="p-3 rounded-lg" style={{ border: "1px solid var(--border)", background: "var(--bg-raised)" }}>
                   <div className="flex justify-between items-center mb-2">
-                    <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: "var(--accent)", color: "var(--bg-base)" }}>
-                      {TYPE_LABELS[e.type] || e.type}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: "var(--accent)", color: "var(--bg-base)" }}>
+                        {TYPE_LABELS[e.type] || e.type}
+                      </span>
+                      {e._action === "merge" && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "rgba(77,170,133,0.15)", color: "#4daa85" }}
+                          title={`将合并到已有实体 ${e._existing_id}`}>↻ 合并更新</span>
+                      )}
+                      {e._action === "create" && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "rgba(96,165,250,0.12)", color: "#60a5fa" }}>＋ 新建</span>
+                      )}
+                    </div>
                     <button onClick={() => removeEntity(idx)}
                       className="text-xs px-2 py-0.5 rounded" style={{ color: "#f87171", border: "1px solid rgba(248,113,113,0.3)" }}>删除</button>
                   </div>
@@ -149,14 +160,20 @@ export function ImportModal({ open, projectId, onClose, onImported }: Props) {
 
         {step === "done" && (
           <>
-            {result?.imported && result.imported.length > 0 ? (
+            {((result?.imported?.length || 0) + (result?.merged?.length || 0)) > 0 ? (
               <>
-                <p className="text-xs" style={{ color: "#4daa85" }}>✅ 成功导入 {result.imported.length}/{result.total}：</p>
+                <p className="text-xs" style={{ color: "#4daa85" }}>✅ {result?.message}</p>
                 <div className="max-h-48 overflow-auto space-y-1">
-                  {result.imported.map((e, i) => (
-                    <div key={i} className="text-xs px-3 py-1.5 rounded flex justify-between" style={{ background: "var(--bg-raised)" }}>
+                  {result?.imported?.map((e, i) => (
+                    <div key={`c${i}`} className="text-xs px-3 py-1.5 rounded flex justify-between" style={{ background: "var(--bg-raised)" }}>
                       <span style={{ color: "var(--text-1)" }}>{e.name}</span>
-                      <span style={{ color: "var(--text-3)" }}>{TYPE_LABELS[e.tool] || e.tool}</span>
+                      <span className="text-[10px] px-1.5 rounded" style={{ background: "rgba(96,165,250,0.12)", color: "#60a5fa" }}>＋ {TYPE_LABELS[e.tool] || e.tool}</span>
+                    </div>
+                  ))}
+                  {result?.merged?.map((e, i) => (
+                    <div key={`m${i}`} className="text-xs px-3 py-1.5 rounded flex justify-between" style={{ background: "var(--bg-raised)" }}>
+                      <span style={{ color: "var(--text-1)" }}>{e.name}</span>
+                      <span className="text-[10px] px-1.5 rounded" style={{ background: "rgba(77,170,133,0.12)", color: "#4daa85" }}>↻ {TYPE_LABELS[e.tool] || e.tool}</span>
                     </div>
                   ))}
                 </div>

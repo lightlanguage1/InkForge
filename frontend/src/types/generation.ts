@@ -14,6 +14,8 @@ export interface TickResponse {
   word_count: number;
   actions_executed: number;
   tension?: { level: number; category: string };
+  quality_score?: number;
+  polish_rounds?: number;
 }
 
 export interface TickResultItem {

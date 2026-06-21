@@ -12,9 +12,10 @@ export function CheckpointsPage() {
   const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ["checkpoints", id], queryFn: () => listCheckpoints(id!), enabled: !!id });
-  const createMut = useMutation({ mutationFn: () => createCheckpoint(id!), onSuccess: () => qc.invalidateQueries({ queryKey: ["checkpoints", id] }) });
-  const restoreMut = useMutation({ mutationFn: (cid: string) => restoreCheckpoint(id!, cid), onSuccess: () => qc.invalidateQueries({ queryKey: ["checkpoints", id] }) });
-  const deleteMut = useMutation({ mutationFn: (cid: string) => deleteCheckpoint(id!, cid), onSuccess: () => qc.invalidateQueries({ queryKey: ["checkpoints", id] }) });
+  const invalidateAll = () => { qc.invalidateQueries({ queryKey: ["checkpoints", id] }); qc.invalidateQueries({ queryKey: ["timeline", id] }); };
+  const createMut = useMutation({ mutationFn: () => createCheckpoint(id!), onSuccess: invalidateAll });
+  const restoreMut = useMutation({ mutationFn: (cid: string) => restoreCheckpoint(id!, cid), onSuccess: invalidateAll });
+  const deleteMut = useMutation({ mutationFn: (cid: string) => deleteCheckpoint(id!, cid), onSuccess: invalidateAll });
 
   if (isLoading) return <Spinner />;
   const checkpoints = data?.checkpoints ?? [];

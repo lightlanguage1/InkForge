@@ -9,6 +9,7 @@ import { listProjects, resume, createProject, deleteProject } from "../api/proje
 import { listSkills } from "../api/skills";
 import { clearToken, getSavedName, isAdmin } from "../components/LoginGate";
 import { AnnouncementBanner } from "../components/AnnouncementBanner";
+import { FeedbackButton } from "../components/FeedbackButton";
 import type { CreateProjectReq } from "../types/project";
 
 const FEATURE_ITEMS = [
@@ -220,6 +221,7 @@ export function DashboardPage() {
         isLoading={createMut.isPending}
         skills={skillsData?.skills ?? []}
       />
+      <FeedbackButton />
     </Layout>
   );
 }

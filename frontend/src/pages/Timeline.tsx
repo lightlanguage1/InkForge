@@ -1,271 +1,402 @@
-import { useState, useCallback, useMemo } from "react";
-import { useParams } from "react-router-dom";
+import { useState, useMemo, useRef, useEffect } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getTimeline, switchBranch as apiSwitchBranch } from "../api/entities";
-import { listCheckpoints, restoreCheckpoint } from "../api/checkpoints";
-import { PageHelp } from "../components/PageHelp";
+import { getTimeline, switchBranch as apiSwitchBranch, type TimelineNode, type TimelineBranch, type TimelineCheckpoint } from "../api/timeline";
+import { restoreCheckpoint, listCheckpoints } from "../api/checkpoints";
 import { Spinner } from "../components/ui/Spinner";
-import { Button } from "../components/ui/Button";
-import { Modal } from "../components/ui/Modal";
+import { PageHelp } from "../components/PageHelp";
 
-/* ── 大树布局 ── */
-const TICK_GAP = 90;
-const NODE_R = 7;
-const TRUNK_X = 440;
-const BRANCH_SPREAD = 55;
+/* ═══════════════════════════════════════════════════════════════
+   Timeline — 故事时间线
+   主线 + IF 分支 + 存档联动
+   ═══════════════════════════════════════════════════════════════ */
 
-/* ── 颜色 ── */
-const AUTO_CP = "#4daa85";
-const MANUAL_CP = "#c8975a";
-const ACTIVE = "var(--accent)";
+function shortHash(h: string) { return h?.slice(0, 7) ?? ""; }
 
 export function TimelinePage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const qc = useQueryClient();
+  const scrollRef = useRef<HTMLDivElement>(null);
 
+  /* ── 数据 ── */
   const { data: tl, isLoading } = useQuery({
     queryKey: ["timeline", id], queryFn: () => getTimeline(id!), enabled: !!id,
   });
   const { data: cps } = useQuery({
-    queryKey: ["checkpoints", id], queryFn: () => listCheckpoints(id!), enabled: !!id,
+    queryKey: ["checkpoints", id], queryFn: () => listCheckpoints(id!), enabled: !!id, staleTime: 0,
   });
 
-  const [hoveredCp, setHoveredCp] = useState<string | null>(null);
-  const [restoreTarget, setRestoreTarget] = useState<{ id: string; type: string } | null>(null);
-  const [branchTarget, setBranchTarget] = useState<{ id: string; headTick: number; backupId: string } | null>(null);
+  /* ── 状态 ── */
+  const [detailNode, setDetailNode] = useState<TimelineNode | null>(null);
+  const [restoreTarget, setRestoreTarget] = useState<TimelineCheckpoint | null>(null);
+  const [branchTarget, setBranchTarget] = useState<TimelineBranch | null>(null);
+  const [showBranches, setShowBranches] = useState(false);
 
+  /* ── mutations ── */
   const restoreMut = useMutation({
     mutationFn: (cpId: string) => restoreCheckpoint(id!, cpId),
-    onSuccess: () => {
-      // 全量刷新——状态/场景/时间线/存档全部变化
-      qc.invalidateQueries();
-      setRestoreTarget(null);
-      setBranchTarget(null);
-      // 延迟一下让后端状态落盘
-      setTimeout(() => window.location.reload(), 500);
-    },
+    onSuccess: () => { qc.invalidateQueries(); setRestoreTarget(null); navigate(`/project/${id}`, { replace: true }); },
   });
-
-  const handleRestore = useCallback(() => {
-    if (restoreTarget && confirm(`切换到存档 "${restoreTarget.id}"？当前进度自动备份为分支，历史不丢失。`)) {
-      restoreMut.mutate(restoreTarget.id);
-    }
-  }, [restoreTarget, restoreMut]);
-
   const switchMut = useMutation({
-    mutationFn: (branchName: string) => apiSwitchBranch(id!, branchName),
-    onSuccess: () => {
-      qc.invalidateQueries();
-      setBranchTarget(null);
-      setTimeout(() => window.location.reload(), 300);
-    },
+    mutationFn: (name: string) => apiSwitchBranch(id!, name),
+    onSuccess: () => { qc.invalidateQueries(); setBranchTarget(null); navigate(`/project/${id}`, { replace: true }); },
   });
 
-  const handleBranchSwitch = useCallback(() => {
-    if (branchTarget && confirm(`切换到分支 "${branchTarget.id}"（共 ${branchTarget.headTick + 1} 幕）？`)) {
-      switchMut.mutate(branchTarget.id);
-    }
-  }, [branchTarget, switchMut]);
+  /* ── 构建时间线 ── */
+  const { mainLine, forkLines, allBranches } = useMemo(() => {
+    if (!tl?.nodes?.length) return { mainLine: [], forkLines: [] as TimelineNode[][], allBranches: [] as TimelineBranch[] };
+    const nodes = [...tl.nodes].sort((a, b) => a.tick - b.tick);
+    const activeBranch = tl.current_branch || "main";
+    const branches = (tl.branches ?? []) as TimelineBranch[];
 
-  // ── 构建大树布局 ──
-  const { trunkNodes, branchGroups, treeH, svgW } = useMemo(() => {
-    const rawNodes = (tl?.nodes ?? []) as any[];
-    const currentTick = tl?.current_tick ?? 0;
-    const activeBranch = tl?.current_branch ?? "main";
+    const main = nodes.filter(n => n.branch === activeBranch && !n.archived);
+    const seen = new Set<number>();
+    const deduped = main.filter(n => { if (seen.has(n.tick)) return false; seen.add(n.tick); return true; });
 
-    // 主干 = 当前活跃分支
-    const main = rawNodes.filter((n: any) => n.branch === activeBranch).sort((a: any, b: any) => a.tick - b.tick);
-    const maxT = Math.max(...rawNodes.map((n: any) => n.tick), currentTick);
-
-    // 分支分组 = 非活跃分支
-    const groups: { id: string; nodes: any[]; forkTick: number }[] = [];
-    const seen = new Set<string>();
-    rawNodes.forEach((n: any) => {
-      if (n.branch !== activeBranch && !seen.has(n.branch)) {
-        seen.add(n.branch);
-        const bn = rawNodes.filter((x: any) => x.branch === n.branch).sort((a: any, b: any) => a.tick - b.tick);
-        groups.push({ id: n.branch, nodes: bn, forkTick: bn[0].tick - 1 });
-      }
+    const forks: TimelineNode[][] = [];
+    const forkNames = new Set(nodes.filter(n => n.branch !== activeBranch).map(n => n.branch));
+    forkNames.forEach(fn => {
+      const fnodes = nodes.filter(n => n.branch === fn).sort((a, b) => a.tick - b.tick);
+      if (fnodes.length > 0) forks.push(fnodes);
     });
 
-    return {
-      trunkNodes: main,
-      branchGroups: groups,
-      treeH: (maxT + 2) * TICK_GAP + 80,
-      svgW: 960,
-    };
+    return { mainLine: deduped, forkLines: forks, allBranches: branches };
   }, [tl]);
 
-  if (isLoading) return <div className="flex justify-center py-24"><Spinner /></div>;
-  if (!trunkNodes.length) return <p className="text-sm py-24 text-center" style={{ color: "var(--text-2)" }}>暂无场景，先生成一些章节</p>;
+  const checkpoints = (cps?.checkpoints ?? []) as any[];
+  const timelineCheckpoints = (tl?.checkpoints ?? []) as TimelineCheckpoint[];
+
+  /* ── 自动滚到当前 tick ── */
+  useEffect(() => {
+    if (!scrollRef.current || !mainLine.length) return;
+    const ct = tl?.current_tick ?? 0;
+    const idx = mainLine.findIndex(n => n.tick === ct);
+    if (idx >= 0) {
+      const el = scrollRef.current.children[idx + 1] as HTMLElement; // +1 因为第一个是分支面板
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [tl?.current_tick]);
+
+  if (isLoading) return <div className="flex justify-center py-32"><Spinner /></div>;
 
   const currentTick = tl?.current_tick ?? 0;
-  const cpList = (cps?.checkpoints ?? []) as any[];
+  const currentBranch = tl?.current_branch ?? "main";
+  const activeBranches = allBranches.filter(b => b.active);
+  const inactiveBranches = allBranches.filter(b => !b.active);
+
+  if (!mainLine.length) return (
+    <div className="flex flex-col items-center justify-center py-32 text-center">
+      <span className="text-5xl mb-4 opacity-10">◈</span>
+      <p className="text-sm" style={{ color: "var(--text-2)" }}>暂无场景，先生成一些章节</p>
+    </div>
+  );
 
   return (
-    <div className="h-full flex flex-col">
-      <PageHelp>时间线 — 大树主干向上生长，存档是分枝。点击存档可切换节点，历史永久保留。主干越往上越新，根部是最初的起点。</PageHelp>
+    <div className="h-full flex flex-col" style={{ background: "var(--bg-base)" }}>
+      <PageHelp>时间线 — 主线如树干向上生长，存档点和 IF 分支可在侧栏查看。点击存档可恢复，点击分支可切换查看。</PageHelp>
 
-      <div className="flex-1 overflow-auto" style={{ background: "var(--bg-base)" }}>
-        <svg width={svgW} height={treeH} style={{ display: "block", margin: "0 auto" }}>
-          <defs>
-            <filter id="nodeGlow">
-              <feGaussianBlur stdDeviation="2.5" result="blur" />
-              <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-            </filter>
-            <filter id="cpGlow">
-              <feGaussianBlur stdDeviation="1.5" result="blur" />
-              <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-            </filter>
-          </defs>
-
-          {/* ── Title ── */}
-          <text x={TRUNK_X} y={24} fontSize={14} fill="var(--text-2)" textAnchor="middle" fontWeight={600}>
-            故事时间线
-          </text>
-
-          {/* ── 主干 ── */}
-          {trunkNodes.map((n: any, i: number) => {
-            const y = treeH - 80 - i * TICK_GAP;
-            const nextY = i < trunkNodes.length - 1 ? treeH - 80 - (i + 1) * TICK_GAP : y;
-            const thick = Math.max(2, 8 - (i / Math.max(trunkNodes.length - 1, 1)) * 6);
-            const opacity = 0.3 + (i / Math.max(trunkNodes.length - 1, 1)) * 0.6;
-            const isHead = n.tick === currentTick && i === trunkNodes.length - 1;
-            const cpsHere = cpList.filter((c: any) => c.tick === n.tick);
-            // 该节点是否有分支从此处分叉
-            const forksHere = branchGroups.filter((g) => g.forkTick === n.tick);
-
-            return (
-              <g key={n.tick} style={{ cursor: "pointer" }}>
-                {/* 主干线段 */}
-                <line x1={TRUNK_X} y1={y} x2={TRUNK_X} y2={nextY}
-                  stroke={ACTIVE} strokeWidth={thick} strokeLinecap="round" opacity={opacity} />
-
-                {/* ── 分支（回滚后的旧时间线，可点击切回）── */}
-                {forksHere.map((bg, bi) => {
-                  const side = bi % 2 === 0 ? -1 : 1;
-                  const offset = BRANCH_SPREAD + bi * 35;
-                  const bx = TRUNK_X + side * offset;
-                  const by = y + (bi % 2 === 0 ? -30 : 30);
-                  const midX = TRUNK_X + side * offset * 0.5;
-                  const midY = (y + by) / 2;
-                  return (
-                    <g key={bg.id} style={{ cursor: "pointer" }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setBranchTarget({ id: bg.id, headTick: bg.nodes[bg.nodes.length - 1]?.tick || 0, backupId: bg.id });
-                      }}
-                      opacity={0.5}>
-                      <path d={`M${TRUNK_X},${y} Q${midX},${midY} ${bx},${by}`}
-                        fill="none" stroke="#555" strokeWidth={0.8} strokeDasharray="4,6" />
-                      <circle cx={bx} cy={by} r={4} fill="#555" />
-                      <text x={bx + (side > 0 ? 8 : -8)} y={by + 3} fontSize={8}
-                        fill="#777" textAnchor={side > 0 ? "start" : "end"}>
-                        分支 {bg.nodes.length}幕
-                      </text>
-                      <text x={bx + (side > 0 ? 8 : -8)} y={by + 14} fontSize={7}
-                        fill="#666" textAnchor={side > 0 ? "start" : "end"}>
-                        点击切换
-                      </text>
-                    </g>
-                  );
-                })}
-
-                {/* ── 存档分枝 ── */}
-                {cpsHere.map((cp: any, ci: number) => {
-                  const side = ci % 2 === 0 ? -1 : 1;
-                  const bx = TRUNK_X + side * (BRANCH_SPREAD + ci * 35);
-                  const by = y + (ci % 2 === 0 ? -18 : 18);
-                  const midX = TRUNK_X + side * BRANCH_SPREAD * 0.5;
-                  const midY = (y + by) / 2;
-                  const cpColor = cp.created_by === "auto" ? AUTO_CP : MANUAL_CP;
-                  const isHovered = hoveredCp === cp.checkpoint_id;
-
-                  return (
-                    <g key={cp.checkpoint_id}
-                      onMouseEnter={() => setHoveredCp(cp.checkpoint_id)}
-                      onMouseLeave={() => setHoveredCp(null)}
-                      onClick={(e) => { e.stopPropagation(); setRestoreTarget({ id: cp.checkpoint_id, type: cp.created_by }); }}>
-                      <path d={`M${TRUNK_X},${y} Q${midX},${midY} ${bx},${by}`}
-                        fill="none" stroke={cpColor}
-                        strokeWidth={isHovered ? 2.2 : 1.4} opacity={isHovered ? 1 : 0.7}
-                        style={{ transition: "all 0.15s" }} />
-                      <circle cx={bx} cy={by} r={NODE_R} fill={cpColor}
-                        filter={isHovered ? "url(#cpGlow)" : undefined} opacity={isHovered ? 1 : 0.85} />
-                      <text x={bx + (side > 0 ? 12 : -12)} y={by + 4} fontSize={10}
-                        fill={cpColor} textAnchor={side > 0 ? "start" : "end"} fontWeight={isHovered ? 600 : 400}>
-                        {cp.type === "auto" ? "自动存档" : "手动存档"}
-                      </text>
-                      {isHovered && (
-                        <text x={bx + (side > 0 ? 12 : -12)} y={by + 17} fontSize={9}
-                          fill="var(--text-3)" textAnchor={side > 0 ? "start" : "end"}>
-                          点击切换
-                        </text>
-                      )}
-                    </g>
-                  );
-                })}
-
-                {/* ── 主干节点 ── */}
-                <circle cx={TRUNK_X} cy={y} r={isHead ? NODE_R + 3 : NODE_R}
-                  fill={isHead ? "#ff6b35" : ACTIVE}
-                  filter={isHead ? "url(#nodeGlow)" : undefined}
-                  opacity={0.85} />
-                <text x={TRUNK_X + 16} y={y + 1} fontSize={12} fill="var(--text-2)" fontWeight={isHead ? 700 : 500}>
-                  第 {n.tick} 幕{isHead ? " ◀" : ""}
-                </text>
-                {n.title && (
-                  <text x={TRUNK_X + 16} y={y + 15} fontSize={10} fill="var(--text-3)" opacity={0.6}>
-                    {n.title.slice(0, 25)}
-                  </text>
-                )}
-              </g>
-            );
-          })}
-
-          {/* ── 根 ── */}
-          {trunkNodes.length > 0 && (
-            <>
-              <circle cx={TRUNK_X} cy={treeH - 80 - (trunkNodes.length - 1) * TICK_GAP}
-                r={12} fill="none" stroke={ACTIVE} strokeWidth={2} opacity={0.5} />
-              <text x={TRUNK_X} y={treeH - 40} fontSize={12} fill="var(--text-2)" textAnchor="middle" fontWeight={600}>🌱 根</text>
-            </>
+      {/* ═══════════════════ Header ═══════════════════ */}
+      <header className="flex-shrink-0 flex items-center justify-between px-4 md:px-6 py-3"
+        style={{ borderBottom: "1px solid var(--border)", background: "var(--bg-surface)" }}>
+        <div className="flex items-center gap-3">
+          <button onClick={() => navigate(`/project/${id}`)}
+            className="text-xs flex items-center gap-1.5 hover:opacity-70"
+            style={{ color: "var(--text-3)", background: "none", border: "none", cursor: "pointer" }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            返回
+          </button>
+          <h1 className="font-semibold text-sm" style={{ color: "var(--text-1)" }}>故事时间线</h1>
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded hidden sm:inline"
+            style={{ background: "var(--bg-raised)", color: "var(--text-3)" }}>
+            {currentBranch} · tick {currentTick}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          {/* 分支选择器 */}
+          {inactiveBranches.length > 0 && (
+            <div className="relative">
+              <button onClick={() => setShowBranches(!showBranches)}
+                className="flex items-center gap-1.5 text-[11px] px-3 py-1.5 rounded-lg transition-all"
+                style={{
+                  background: showBranches ? "rgba(200,151,90,0.1)" : "var(--bg-raised)",
+                  color: showBranches ? "var(--accent)" : "var(--text-3)",
+                  border: `1px solid ${showBranches ? "rgba(200,151,90,0.2)" : "var(--border)"}`,
+                  cursor: "pointer",
+                }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M6 3v18M18 9a3 3 0 100-6 3 3 0 000 6zM18 21a3 3 0 100-6 3 3 0 000 6z"/>
+                </svg>
+                IF 分支 ({inactiveBranches.length})
+              </button>
+              {showBranches && (
+                <div className="absolute right-0 top-full mt-1 w-64 rounded-xl overflow-hidden z-30"
+                  style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", boxShadow: "0 12px 40px rgba(0,0,0,0.4)" }}>
+                  <div className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wider"
+                    style={{ color: "var(--text-3)", borderBottom: "1px solid var(--border)" }}>
+                    可用分支
+                  </div>
+                  {activeBranches.map(b => (
+                    <div key={b.name} className="px-3 py-2 text-[12px] flex justify-between items-center"
+                      style={{ background: "rgba(200,151,90,0.06)", color: "var(--accent)" }}>
+                      <span className="font-mono text-[11px]">{b.name}</span>
+                      <span className="text-[10px]">← 当前</span>
+                    </div>
+                  ))}
+                  {inactiveBranches.map(b => (
+                    <button key={b.name}
+                      onClick={() => { setShowBranches(false); setBranchTarget(b); }}
+                      className="w-full px-3 py-2 text-[12px] flex justify-between items-center hover:brightness-110 transition-all"
+                      style={{ background: "transparent", color: "var(--text-2)", border: "none", borderBottom: "1px solid var(--border)", cursor: "pointer" }}>
+                      <span>
+                        <span className="font-mono text-[11px]">{b.name.replace("fork_", "").slice(0, 12)}</span>
+                        {b.message && <span className="ml-2 text-[10px]" style={{ color: "var(--text-3)" }}>{b.message.slice(0, 20)}</span>}
+                      </span>
+                      <span className="text-[10px] font-mono" style={{ color: "var(--text-3)" }}>{b.tick}幕</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
-        </svg>
+          {/* 存档按钮 */}
+          {checkpoints.length > 0 && (
+            <span className="text-[11px] hidden sm:inline" style={{ color: "var(--text-3)" }}>
+              ● {checkpoints.length} 存档
+            </span>
+          )}
+        </div>
+      </header>
+
+      {/* ═══════════════════ 存档面板 ═══════════════════ */}
+      {checkpoints.length > 0 && (
+        <div className="flex-shrink-0 px-4 md:px-6 py-2 flex items-center gap-2 overflow-x-auto"
+          style={{ borderBottom: "1px solid var(--border)", background: "var(--bg-surface)" }}>
+          <span className="text-[10px] font-semibold uppercase tracking-wider flex-shrink-0" style={{ color: "var(--text-3)" }}>
+            存档点
+          </span>
+          {checkpoints.map((cp: any) => (
+            <button key={cp.checkpoint_id || cp.id}
+              onClick={() => setRestoreTarget({ id: cp.checkpoint_id || cp.id, tick: cp.tick, hash: "", label: cp.created_by || cp.label || "" })}
+              className="flex-shrink-0 text-[10px] px-2 py-1 rounded-full transition-all hover:brightness-110"
+              style={{
+                background: cp.tick === currentTick ? "rgba(77,170,133,0.12)" : "var(--bg-raised)",
+                color: cp.tick === currentTick ? "#4daa85" : "var(--text-3)",
+                border: "none", cursor: "pointer",
+              }}>
+              t{cp.tick} {cp.created_by === "auto" || (cp.checkpoint_id || cp.id || "").includes("auto") ? "自动" : "手动"}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ═══════════════════ 主线时间线 ═══════════════════ */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 md:px-6 py-4 space-y-1.5">
+
+        {mainLine.map((n, i) => {
+          const isCurrent = n.tick === currentTick;
+          const cpHere = checkpoints.filter((c: any) => c.tick === n.tick);
+          const isFirst = n.tick === 0;
+          const isLatest = i === mainLine.length - 1;
+
+          return (
+            <div key={n.tick} className="relative mx-auto w-full max-w-2xl">
+              {/* 连接线 */}
+              {!isFirst && (
+                <div className="absolute left-[13px] top-[-8px] w-px h-2"
+                  style={{ background: isCurrent ? "var(--accent)" : "var(--border)" }} />
+              )}
+
+              {/* 节点卡片 */}
+              <div className="flex items-start gap-3 py-2 px-3 rounded-lg cursor-pointer transition-all duration-150"
+                style={{
+                  background: isCurrent ? "rgba(200,151,90,0.06)" : "transparent",
+                  border: isCurrent ? "1px solid rgba(200,151,90,0.12)" : "1px solid transparent",
+                }}
+                onClick={() => setDetailNode(n)}
+                onMouseEnter={e => { if (!isCurrent) e.currentTarget.style.background = "var(--bg-raised)"; }}
+                onMouseLeave={e => { if (!isCurrent) e.currentTarget.style.background = "transparent"; }}>
+
+                {/* 圆点 */}
+                <div className="flex-shrink-0 relative mt-0.5">
+                  <div style={{
+                    width: 8, height: 8, borderRadius: "50%",
+                    background: isCurrent ? "var(--accent)" : isFirst ? "#4daa85" : "var(--border)",
+                    boxShadow: isCurrent ? "0 0 8px var(--accent)" : "none",
+                  }} />
+                  {isCurrent && (
+                    <div style={{
+                      position: "absolute", inset: -3, borderRadius: "50%",
+                      border: "1px solid var(--accent)", opacity: 0.25,
+                      animation: "tlPulse 2s ease-out infinite",
+                    }} />
+                  )}
+                </div>
+
+                {/* 内容 */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[11px] font-mono font-medium" style={{ color: isCurrent ? "var(--accent)" : "var(--text-2)" }}>
+                      S{n.tick.toString().padStart(3, "0")}
+                    </span>
+                    {n.title ? (
+                      <span className="text-[12px] truncate" style={{ color: isCurrent ? "var(--text-1)" : "var(--text-2)" }}>
+                        {n.title.slice(0, 45)}{n.title.length > 45 ? "…" : ""}
+                      </span>
+                    ) : (
+                      <span className="text-[11px] italic" style={{ color: "var(--text-3)" }}>未命名场景</span>
+                    )}
+                    {isFirst && <span className="text-[9px] px-1.5 py-0.5 rounded" style={{ background: "rgba(77,170,133,0.1)", color: "#4daa85" }}>ROOT</span>}
+                    {isLatest && <span className="text-[9px] px-1.5 py-0.5 rounded" style={{ background: "rgba(200,151,90,0.1)", color: "var(--accent)" }}>HEAD</span>}
+                  </div>
+
+                  {/* 存档点标记 */}
+                  {cpHere.length > 0 && (
+                    <div className="flex items-center gap-1.5 mt-1">
+                      {cpHere.map((cp: any) => (
+                        <button key={cp.checkpoint_id || cp.tick}
+                          onClick={e => { e.stopPropagation(); setRestoreTarget({ id: cp.checkpoint_id || cp.id, tick: cp.tick, hash: "", label: cp.created_by || cp.label || "" }); }}
+                          className="text-[9px] px-1.5 py-0.5 rounded-full font-medium transition-all hover:brightness-110"
+                          style={{ background: "rgba(77,170,133,0.08)", color: "#4daa85", border: "none", cursor: "pointer" }}>
+                          ●
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* commit hash */}
+                  <div className="text-[9px] font-mono mt-0.5" style={{ color: "var(--text-3)", opacity: 0.5 }}>
+                    {shortHash(n.hash)}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+
+        {/* 底部 */}
+        <div className="flex justify-center py-8">
+          <span className="text-[10px]" style={{ color: "var(--text-3)", opacity: 0.4, fontFamily: "'Cormorant Garamond', serif" }}>
+            —— 故事从根部开始生长 ——
+          </span>
+        </div>
       </div>
 
-      {/* ── 存档切换弹窗 ── */}
-      {restoreTarget && (
-        <Modal open={!!restoreTarget} onClose={() => setRestoreTarget(null)}>
-          <div className="p-5 space-y-3">
-            <h3 className="font-semibold text-base" style={{ color: "var(--text-1)" }}>切换节点</h3>
-            <p className="text-sm" style={{ color: "var(--text-2)" }}>
-              切换到 <b>{restoreTarget.id}</b>？当前进度自动备份，可随时切回。
-            </p>
-            <div className="flex gap-2 justify-end">
-              <Button variant="ghost" size="sm" onClick={() => setRestoreTarget(null)}>取消</Button>
-              <Button variant="danger" size="sm" onClick={handleRestore} loading={restoreMut.isPending}>确认切换</Button>
+      {/* ═══════════════════ 节点详情弹窗 ═══════════════════ */}
+      {detailNode && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}
+          onClick={e => { if (e.target === e.currentTarget) setDetailNode(null); }}>
+          <div className="rounded-2xl p-5 w-full max-w-xs animate-fade-in"
+            style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-sm" style={{ color: "var(--text-1)" }}>
+                S{String(detailNode.tick).padStart(3, "0")}
+              </h3>
+              <button onClick={() => setDetailNode(null)}
+                className="text-base opacity-30 hover:opacity-60"
+                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-2)" }}>✕</button>
+            </div>
+            <div className="space-y-2 text-[12px]">
+              {[
+                ["标题", detailNode.title || "—"],
+                ["分支", detailNode.branch],
+                ["Tick", String(detailNode.tick)],
+                ["Commit", shortHash(detailNode.hash)],
+                ["Parent", detailNode.parent ? shortHash(detailNode.parent) : "— (root)"],
+              ].map(([label, val]) => (
+                <div key={label} className="flex justify-between">
+                  <span style={{ color: "var(--text-3)" }}>{label}</span>
+                  <span className="font-mono text-[11px]" style={{ color: label === "Commit" ? "var(--accent)" : "var(--text-2)" }}>{val}</span>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2 mt-5">
+              <button onClick={() => { setDetailNode(null); navigate(`/project/${id}`); }}
+                className="flex-1 py-2 rounded-lg text-[12px] font-medium"
+                style={{ background: "rgba(200,151,90,0.08)", color: "var(--accent)", border: "1px solid rgba(200,151,90,0.12)", cursor: "pointer" }}>
+                返回概览
+              </button>
+              <button onClick={() => setDetailNode(null)}
+                className="px-4 py-2 rounded-lg text-[12px]"
+                style={{ background: "transparent", color: "var(--text-3)", border: "1px solid var(--border)", cursor: "pointer" }}>
+                关闭
+              </button>
             </div>
           </div>
-        </Modal>
+        </div>
       )}
 
-      {/* ── 分支切换弹窗 ── */}
-      {branchTarget && (
-        <Modal open={!!branchTarget} onClose={() => setBranchTarget(null)}>
-          <div className="p-5 space-y-3">
-            <h3 className="font-semibold text-base" style={{ color: "var(--text-1)" }}>切换分支（git checkout）</h3>
-            <p className="text-sm" style={{ color: "var(--text-2)" }}>
-              切换到分支 <b>{branchTarget.id}</b>（{branchTarget.headTick + 1} 幕）
+      {/* ═══════════════════ 存档恢复确认 ═══════════════════ */}
+      {restoreTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}
+          onClick={e => { if (e.target === e.currentTarget) setRestoreTarget(null); }}>
+          <div className="rounded-2xl p-5 w-full max-w-xs animate-fade-in"
+            style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}>
+            <h3 className="font-semibold text-sm mb-2" style={{ color: "var(--text-1)" }}>恢复存档</h3>
+            <p className="text-[12px] leading-relaxed mb-1" style={{ color: "var(--text-2)" }}>
+              恢复到 <b style={{ color: "#4daa85" }}>{restoreTarget.id}</b>（tick {restoreTarget.tick}）
             </p>
-            <p className="text-xs" style={{ color: "var(--text-3)" }}>HEAD 将移动到该分支的最新位置，主分支不动。</p>
-            <div className="flex gap-2 justify-end">
-              <Button variant="ghost" size="sm" onClick={() => setBranchTarget(null)}>取消</Button>
-              <Button variant="danger" size="sm" onClick={handleBranchSwitch} loading={switchMut.isPending}>确认切换</Button>
+            <p className="text-[11px]" style={{ color: "var(--text-3)" }}>当前进度自动保存为新分支，不会丢失。</p>
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => restoreMut.mutate(restoreTarget.id)} disabled={restoreMut.isPending}
+                className="flex-1 py-2 rounded-lg text-[12px] font-medium"
+                style={{ background: "#4daa85", color: "#fff", border: "none", cursor: "pointer", opacity: restoreMut.isPending ? 0.5 : 1 }}>
+                {restoreMut.isPending ? "…" : "确认恢复"}
+              </button>
+              <button onClick={() => setRestoreTarget(null)}
+                className="px-4 py-2 rounded-lg text-[12px]"
+                style={{ background: "transparent", color: "var(--text-3)", border: "1px solid var(--border)", cursor: "pointer" }}>
+                取消
+              </button>
             </div>
           </div>
-        </Modal>
+        </div>
       )}
+
+      {/* ═══════════════════ 分支切换确认 ═══════════════════ */}
+      {branchTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}
+          onClick={e => { if (e.target === e.currentTarget) setBranchTarget(null); }}>
+          <div className="rounded-2xl p-5 w-full max-w-xs animate-fade-in"
+            style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}>
+            <h3 className="font-semibold text-sm mb-2" style={{ color: "var(--text-1)" }}>切换到 IF 分支</h3>
+            <p className="text-[12px] leading-relaxed mb-1" style={{ color: "var(--text-2)" }}>
+              进入 <b style={{ color: "var(--accent-lit)" }}>{branchTarget.name}</b>（{branchTarget.tick} 幕）
+            </p>
+            <p className="text-[11px]" style={{ color: "var(--text-3)" }}>当前主线进度保留，可随时切回。</p>
+            <div className="text-[10px] font-mono mt-2" style={{ color: "var(--text-3)" }}>
+              {shortHash(branchTarget.hash)}{branchTarget.message ? ` · ${branchTarget.message.slice(0, 30)}` : ""}
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => switchMut.mutate(branchTarget.name)} disabled={switchMut.isPending}
+                className="flex-1 py-2 rounded-lg text-[12px] font-medium"
+                style={{ background: "rgba(200,151,90,0.1)", color: "var(--accent)", border: "1px solid rgba(200,151,90,0.2)", cursor: "pointer", opacity: switchMut.isPending ? 0.5 : 1 }}>
+                {switchMut.isPending ? "…" : "确认切换"}
+              </button>
+              <button onClick={() => setBranchTarget(null)}
+                className="px-4 py-2 rounded-lg text-[12px]"
+                style={{ background: "transparent", color: "var(--text-3)", border: "1px solid var(--border)", cursor: "pointer" }}>
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes tlPulse {
+          0% { transform: scale(1); opacity: 0.35; }
+          100% { transform: scale(2.2); opacity: 0; }
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(6px) scale(0.97); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .animate-fade-in { animation: fadeIn 0.2s ease-out; }
+      `}</style>
     </div>
   );
 }

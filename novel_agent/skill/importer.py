@@ -30,6 +30,20 @@ REL_OVERLAP_THRESHOLD = 0.6   # merge only if ≥60% of relationships overlap
 CONSENSUS_MIN = 1             # patterns / tags need ≥ this many confirmations
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _read_text(path: Path) -> str:
+    """Read a text file, trying common Chinese encodings."""
+    for enc in ("utf-8", "gbk", "gb18030", "latin-1"):
+        try:
+            return path.read_text(encoding=enc)
+        except (UnicodeDecodeError, UnicodeError):
+            continue
+    return path.read_text(encoding="utf-8", errors="replace")
+
+
+# ---------------------------------------------------------------------------
 # Chapter parsing (no LLM)
 # ---------------------------------------------------------------------------
 
@@ -789,7 +803,7 @@ class SkillImporter:
             raise FileNotFoundError(f"File not found: {file_path}")
 
         novel_name = name or path.stem
-        text = path.read_text(encoding='utf-8')
+        text = _read_text(path)
         chapters = extract_chapters(text)
         slug = self._generate_slug(novel_name, text[:5000])
 

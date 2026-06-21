@@ -1,140 +1,79 @@
-"""Git 风格分支管理器——独立模块，不侵入核心逻辑。
+"""Git 风格分支管理器——包装 GitRepo，对上层提供简洁 API。
 
 模型（直接映射 git 概念）：
-  - scene = commit（有 parent tick）
-  - branch = 具名指针，存的是 head tick
-  - HEAD = current_tick + current_branch
-  - fork = 回滚到旧节点后，原路线保留为分叉分支
+  - scene = commit（有 parent 指针）
+  - branch = refs/heads/<name>（指向 commit hash）
+  - HEAD = current_branch
+  - fork = reset 前自动创建分支保存旧路线
   - 存档 = tag（固定引用）
-
-所有状态存储在 state.json 的三个字段中：
-  branch_heads: {"main": 12, "fork_001": 15}   — 每个分支指向的 head tick
-  fork_points: {"fork_001": 8}                   — 分叉发生在哪个 tick
-  current_branch: "main"                          — 当前活跃分支
 """
 
 import json
 import logging
-from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Optional
+
+from .git_core import GitRepo
 
 logger = logging.getLogger(__name__)
 
 
-def _read_state(state_path: Path) -> dict:
-    if state_path.exists():
-        return json.loads(state_path.read_text(encoding="utf-8"))
-    return {}
-
-
-def _write_state(state_path: Path, state: dict) -> None:
-    with open(state_path, "w", encoding="utf-8") as f:
-        json.dump(state, f, indent=2, ensure_ascii=False)
+def _get_repo(project_dir: Path) -> GitRepo:
+    repo = GitRepo(project_dir)
+    # 自动迁移
+    if repo.needs_migration():
+        logger.info("检测到旧版本数据，正在迁移到 git 模型...")
+        repo.migrate_from_legacy()
+    else:
+        repo.init()
+    return repo
 
 
 # ═══════════════════════════════════════════════════════
 # 分支操作
 # ═══════════════════════════════════════════════════════
 
-def fork_on_restore(project_dir: Path, old_tick: int, backup_checkpoint_id: str = "") -> Optional[str]:
-    """回滚到更早 tick 时调用——旧路线保存为分叉分支。
+def fork_on_restore(project_dir: Path, old_tick: int, backup_id: str = "") -> Optional[str]:
+    """回滚到更早 tick 时调用——旧路线保存为分叉分支。"""
+    repo = _get_repo(project_dir)
+    head = repo.resolve_head()
+    if not head:
+        return None
+    current = repo.get_commit(head)
+    if not current or current["tick"] <= old_tick:
+        return None
 
-    Args:
-        project_dir: 项目目录
-        old_tick: 回滚前的 current_tick
-        backup_checkpoint_id: 备份存档 ID（前端切换用）
-
-    Returns:
-        新分叉分支名，无分叉则返回 None
-    """
-    state_path = project_dir / "state.json"
-    state = _read_state(state_path)
-    restored_tick = state.get("current_tick", 0)
-
-    if old_tick <= restored_tick:
-        return None  # 回滚到同一 tick 或未来，不分叉
-
-    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     fork_name = f"fork_{ts}"
-
-    state.setdefault("branch_heads", {})
-    state.setdefault("fork_points", {})
-
-    # main 指针移到回滚点
-    state["branch_heads"]["main"] = restored_tick
-    # 旧位置存为分叉
-    state["branch_heads"][fork_name] = old_tick
-    state["fork_points"][fork_name] = restored_tick
-    state["current_branch"] = "main"
-
-    if backup_checkpoint_id:
-        state.setdefault("fork_backups", {})[fork_name] = backup_checkpoint_id
-
-    # 清理旧字段
-    state.pop("branches", None)
-    state.pop("scene_branches", None)
-
-    _write_state(state_path, state)
-    logger.info("分叉分支已创建: %s (tick %d → %d)", fork_name, restored_tick, old_tick)
+    repo.create_branch(fork_name, head)
     return fork_name
 
 
 def advance_branch(project_dir: Path) -> None:
-    """生成新场景后调用——当前分支指针前移 1。
-
-    由 scene_committer.commit_scene 调用，不侵入核心逻辑。
-    """
-    state_path = project_dir / "state.json"
-    state = _read_state(state_path)
-    tick = state.get("current_tick", 0)
-    branch = state.get("current_branch", "main")
-
-    state.setdefault("branch_heads", {})
-    state["branch_heads"][branch] = tick
-
-    _write_state(state_path, state)
+    """生成新场景后调用——当前分支指针已由 commit 更新，无需额外操作。"""
+    pass  # commit 已经更新了 ref
 
 
 def switch_branch(project_dir: Path, branch_name: str) -> dict:
-    """切换到指定分支——移动 HEAD 到该分支的 head tick。
-
-    Args:
-        project_dir: 项目目录
-        branch_name: 目标分支名（"main" 或 "fork_xxx"）
+    """切换到指定分支——git checkout <branch>
 
     Returns:
-        {"switched": True, "branch": branch_name, "current_tick": N}
+        {"switched": True, "branch": name, "current_tick": N}
     """
-    state_path = project_dir / "state.json"
-    state = _read_state(state_path)
-    heads = state.get("branch_heads", {})
-
-    if branch_name not in heads:
-        raise ValueError(f"分支不存在: {branch_name}（可用: {list(heads.keys())}）")
-
-    state["current_branch"] = branch_name
-    state["current_tick"] = heads[branch_name]
-    _write_state(state_path, state)
-    logger.info("切换到分支 %s (tick %d)", branch_name, heads[branch_name])
-    return {"switched": True, "branch": branch_name, "current_tick": heads[branch_name]}
+    repo = _get_repo(project_dir)
+    result = repo.checkout(branch_name)
+    return {"switched": True, "branch": result["branch"], "current_tick": result["tick"]}
 
 
-def list_branches(state: dict) -> list:
+def list_branches(project_dir: Path) -> list:
     """列出所有分支及其信息（给前端）。"""
-    heads = state.get("branch_heads", {})
-    forks = state.get("fork_points", {})
-    backups = state.get("fork_backups", {})
-    result = []
-    for name, head_tick in heads.items():
-        result.append({
-            "name": name,
-            "head_tick": head_tick,
-            "forked_from": forks.get(name),
-            "backup_checkpoint_id": backups.get(name, ""),
-            "active": state.get("current_branch") == name,
-        })
-    return result
+    repo = _get_repo(project_dir)
+    return repo.list_branches()
+
+
+def delete_branch(project_dir: Path, name: str) -> None:
+    repo = _get_repo(project_dir)
+    repo.delete_branch(name)
 
 
 # ═══════════════════════════════════════════════════════
@@ -142,106 +81,97 @@ def list_branches(state: dict) -> list:
 # ═══════════════════════════════════════════════════════
 
 def build_timeline(project_dir: Path) -> dict:
-    """构建完整时间线树——主干 + 分支 + 存档节点。
+    """构建完整时间线树——基于 git commit 链。
 
     纯数据层：只读，不修改任何文件。
     """
     import re
+    from datetime import datetime as _dt
 
-    state_path = project_dir / "state.json"
-    state = _read_state(state_path)
-    scenes_dir = project_dir / "scenes"
+    repo = _get_repo(project_dir)
+    state_file = project_dir / "state.json"
+    state = {}
+    if state_file.exists():
+        state = json.loads(state_file.read_text(encoding="utf-8"))
 
     current_tick = state.get("current_tick", 0)
-    current_branch = state.get("current_branch", "main")
-    heads = state.get("branch_heads", {"main": current_tick})
-    forks = state.get("fork_points", {})
-    backups = state.get("fork_backups", {})
+    current_branch = repo.head_branch()
 
-    nodes = []
-
-    # 扫描所有场景文件
-    if scenes_dir.exists():
-        for f in sorted(scenes_dir.iterdir()):
-            m = re.match(r"scene_(\d+)\.md(?:\.(\d{8}_\d{6})\.bak)?", f.name)
-            if not m:
+    # 收集所有 commit
+    all_commits = {}
+    for obj_dir in sorted(repo.objects_dir.glob("[0-9a-f][0-9a-f]")):
+        for obj_file in sorted(obj_dir.glob("*")):
+            try:
+                c = json.loads(obj_file.read_text(encoding="utf-8"))
+                if "hash" in c and "tick" in c:
+                    all_commits[c["hash"]] = c
+            except (json.JSONDecodeError, OSError):
                 continue
-            tick = int(m.group(1))
+
+    # 构建分支→commit 的映射
+    branch_heads = {}
+    for b in repo.list_branches():
+        branch_heads[b["name"]] = b["hash"]
+
+    # 收集所有 commit hash，按 tick 分组
+    tick_commits: dict[int, list[dict]] = {}
+    for c in all_commits.values():
+        tick_commits.setdefault(c["tick"], []).append(c)
+
+    # 构建节点
+    nodes = []
+    for tick_val in sorted(tick_commits):
+        commits = tick_commits[tick_val]
+        # 确定这个 tick 属于哪个分支
+        for c in commits:
             branch = "main"
             archived = False
+            active = c["hash"] == repo.resolve_head()
 
-            if m.group(2):  # .bak 文件
-                archived = True
-                branch = f"fork_{m.group(2)}"
-            else:
-                # 判断该 tick 属于哪个非活跃分支
-                # 规则：tick 超出某非活跃分支的 fork 点但不超过其 head → 属于该分支
-                for fname, fhead in heads.items():
-                    if fname == current_branch:
-                        continue
-                    ffork = forks.get(fname, 0)
-                    if ffork < tick <= fhead:
-                        branch = fname
-                        archived = True
-                        break
-                # 如果没匹配到任何非活跃分支，保持 main（共享历史或 active branch）
+            # 检查是否属于非活跃分支
+            for bname, bhash in branch_heads.items():
+                if bhash == c["hash"] and bname != current_branch:
+                    branch = bname
+                    archived = True
+                    break
 
             # 读标题
-            title = ""
-            try:
-                first = f.read_text(encoding="utf-8").split("\n")[0]
-                first = re.sub(r"^#\s*第\d+章\s*", "", first).strip()
-                title = first[:40]
-            except Exception:
-                pass
+            title = c.get("message", "")
+            scene_file = c.get("scene_file", f"scene_{tick_val:03d}.md")
 
             nodes.append({
-                "tick": tick,
-                "branch": branch,
+                "tick": tick_val,
+                "hash": c["hash"],
+                "parent": c.get("parent", ""),
+                "branch": branch if archived else current_branch,
                 "title": title,
-                "file": f.name,
+                "file": scene_file,
                 "archived": archived,
-                "active": branch == current_branch,
+                "active": branch == current_branch or c["hash"] == repo.resolve_head(),
             })
 
-    # 补充分支中没有对应 .md 文件的虚拟节点
-    for fname, fhead in heads.items():
-        if fname == "main":
-            continue
-        ffork = forks.get(fname, 0)
-        for t in range(ffork + 1, fhead + 1):
-            if not any(n["tick"] == t and n["branch"] == fname for n in nodes):
-                nodes.append({
-                    "tick": t,
-                    "branch": fname,
-                    "title": "",
-                    "file": f"scene_{t:03d}.md",
-                    "archived": True,
-                    "active": fname == current_branch,
-                })
+    # 去重：同一 tick 可能有多个节点（分叉），保留当前分支的和最新的
+    seen = {}
+    for n in sorted(nodes, key=lambda x: (x["tick"], 0 if x["branch"] == current_branch else 1)):
+        key = (n["tick"], n["branch"])
+        seen[key] = n
+    nodes = sorted(seen.values(), key=lambda n: (n["tick"], n["branch"]))
 
-    # 活跃分支包含所有从 0 到 head 的 tick（共享历史 + 独有）
-    active_head = heads.get(current_branch, current_tick)
-    active_ticks = {n["tick"] for n in nodes if n["branch"] == current_branch}
-    for n in list(nodes):
-        if n["tick"] <= active_head and n["tick"] not in active_ticks:
-            nodes.append({
-                "tick": n["tick"],
-                "branch": current_branch,
-                "title": n["title"],
-                "file": n["file"],
-                "archived": False,
-                "active": True,
-            })
-            active_ticks.add(n["tick"])
-
-    nodes.sort(key=lambda n: (n["tick"], n["branch"]))
-
-    branches = list_branches(state)
+    # tags（存档点）
+    checkpoints = []
+    for tag in repo.list_tags():
+        checkpoints.append({
+            "id": tag["name"],
+            "tick": tag["tick"],
+            "hash": tag["hash"],
+            "label": tag.get("message", "") or tag["name"],
+        })
 
     return {
         "current_tick": current_tick,
         "current_branch": current_branch,
+        "current_hash": repo.resolve_head() or "",
         "nodes": nodes,
-        "branches": branches,
+        "branches": repo.list_branches(),
+        "checkpoints": checkpoints,
     }

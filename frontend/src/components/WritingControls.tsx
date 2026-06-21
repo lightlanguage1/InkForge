@@ -35,10 +35,14 @@ interface Props {
   skills: SkillInfo[];
   activeSkills: string[];
   skillPending: boolean;
+  qualityEnabled: boolean;
+  qualityThreshold: number;
   onNotesChange: (v: string) => void;
   onBackendChange: (v: string) => void;
   onModelChange: (v: string) => void;
   onSkillToggle: (skillId: string) => void;
+  onQualityToggle: () => void;
+  onQualityThresholdChange: (v: number) => void;
   onTick: () => void;
   onRunN: (n: number) => void;
   onFinale: () => void;
@@ -50,7 +54,9 @@ export function WritingControls({
   status, result, notes, backend, model, streamMode, running,
   tickPending, runPending, theme: t,
   skills, activeSkills, skillPending,
+  qualityEnabled, qualityThreshold,
   onNotesChange, onBackendChange, onModelChange, onSkillToggle,
+  onQualityToggle, onQualityThresholdChange,
   onTick, onRunN, onFinale, onStartStream, onStopStream,
 }: Props) {
   const [runCount, setRunCount] = useState(5);
@@ -110,6 +116,38 @@ export function WritingControls({
             placeholder="描述本幕想写的内容，例如「两位主角在月光下互诉衷肠」"
             theme={t}
           />
+        </div>
+
+        {/* 质量打磨配置 */}
+        <div className="px-4 pb-3 space-y-2" style={{ borderTop: `1px solid ${t.cardBorder}`, paddingTop: "0.75rem" }}>
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-medium" style={{ color: t.text3 }}>质量打磨</label>
+            <button
+              onClick={onQualityToggle}
+              className="text-[11px] px-2 py-0.5 rounded-full border transition-colors"
+              style={{
+                background: qualityEnabled ? "var(--accent)" : "transparent",
+                color: qualityEnabled ? "var(--bg-base)" : t.text3,
+                borderColor: qualityEnabled ? "var(--accent)" : t.cardBorder,
+                cursor: "pointer",
+              }}
+            >
+              {qualityEnabled ? "ON" : "OFF"}
+            </button>
+          </div>
+          {qualityEnabled && (
+            <div className="flex items-center gap-2">
+              <span className="text-[11px]" style={{ color: t.text3 }}>阈值</span>
+              <input
+                type="number" min={60} max={100} step={5}
+                value={qualityThreshold}
+                onChange={e => onQualityThresholdChange(Number(e.target.value))}
+                className="w-12 text-center rounded text-xs px-1 py-0.5"
+                style={{ background: "var(--bg-raised)", border: `1px solid ${t.cardBorder}`, color: t.text, outline: "none" }}
+              />
+              <span className="text-[11px]" style={{ color: t.text3 }}>分</span>
+            </div>
+          )}
         </div>
 
         <div className="px-4 pb-4 pt-3 space-y-2 flex-shrink-0" style={{ borderTop: `1px solid ${t.cardBorder}` }}>
@@ -180,6 +218,14 @@ export function WritingControls({
               <div className="flex justify-between items-center">
                 <span className="text-xs" style={{ color: t.text3 }}>张力</span>
                 <Badge variant="info">{String(result.tension.level)}/10</Badge>
+              </div>
+            )}
+            {result.quality_score != null && (
+              <div className="flex justify-between items-center">
+                <span className="text-xs" style={{ color: t.text3 }}>质量</span>
+                <Badge variant={result.quality_score >= 90 ? "success" : result.quality_score >= 75 ? "info" : "warning"}>
+                  {result.quality_score}分{result.polish_rounds ? ` · ${result.polish_rounds}轮打磨` : ""}
+                </Badge>
               </div>
             )}
           </div>

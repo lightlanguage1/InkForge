@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Card } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { Select } from "../components/ui/Select";
 import { Spinner } from "../components/ui/Spinner";
 import { compile, summarize, generateTitles } from "../api/compile";
+import { getStatus } from "../api/status";
 import { PageHelp } from "../components/PageHelp";
 
 const EXT: Record<string, string> = { markdown: "md", html: "html", prose: "txt" };
@@ -32,6 +33,8 @@ export function CompilePage() {
   const compileMut = useMutation({ mutationFn: () => compile(id!, { format }), onSuccess: (d) => setContent(d.content) });
   const summaryMut = useMutation({ mutationFn: () => summarize(id!), onSuccess: (d) => setContent(d.content) });
   const titleMut = useMutation({ mutationFn: () => generateTitles(id!, { count: 10 }), onSuccess: (d) => setTitles(d.titles) });
+  const { data: status } = useQuery({ queryKey: ["status", id], queryFn: () => getStatus(id!), enabled: !!id });
+  const hasScenes = (status?.scene_count ?? 0) > 0;
 
   return (
     <div className="space-y-6">
@@ -41,10 +44,11 @@ export function CompilePage() {
         <div className="flex gap-3 items-end">
           <Select label="格式" value={format} onChange={setFormat}
             options={[{ value: "markdown", label: "Markdown" }, { value: "html", label: "HTML" }, { value: "prose", label: "纯文本" }]} />
-          <Button onClick={() => compileMut.mutate()} loading={compileMut.isPending}>编译</Button>
+          <Button onClick={() => compileMut.mutate()} loading={compileMut.isPending} disabled={!hasScenes}>编译</Button>
           <Button variant="ghost" onClick={() => summaryMut.mutate()} loading={summaryMut.isPending}>摘要</Button>
           <Button variant="ghost" onClick={() => titleMut.mutate()} loading={titleMut.isPending}>起名</Button>
         </div>
+        {!hasScenes && <p className="text-xs mt-2" style={{ color: "var(--text-3)" }}>暂无场景可编译，请先生成内容</p>}
       </Card>
 
       {titles.length > 0 && (

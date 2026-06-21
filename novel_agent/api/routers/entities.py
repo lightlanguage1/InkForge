@@ -337,6 +337,44 @@ def _rename_in_project(project_dir: Path, old_name: str, new_name: str, characte
         except Exception:
             logger.warning("Failed to rename in lore.json")
 
+    # 5. Faction JSON — direct replace (descriptions, stances may mention characters)
+    factions_dir = project_dir / "memory" / "factions"
+    if factions_dir.exists():
+        for faction_file in factions_dir.glob("*.json"):
+            try:
+                content = faction_file.read_text(encoding="utf-8")
+                if old_name in content:
+                    content = content.replace(old_name, new_name)
+                    faction_file.write_text(content, encoding="utf-8")
+                    replaced_count += 1
+            except Exception:
+                logger.warning("Failed to rename in %s", faction_file.name)
+
+    # 6. Location JSON — direct replace (descriptions may mention characters)
+    locs_dir = project_dir / "memory" / "locations"
+    if locs_dir.exists():
+        for loc_file in locs_dir.glob("*.json"):
+            try:
+                content = loc_file.read_text(encoding="utf-8")
+                if old_name in content:
+                    content = content.replace(old_name, new_name)
+                    loc_file.write_text(content, encoding="utf-8")
+                    replaced_count += 1
+            except Exception:
+                logger.warning("Failed to rename in %s", loc_file.name)
+
+    # 7. Relationships JSON — direct replace
+    rels_file = project_dir / "memory" / "relationships.json"
+    if rels_file.exists():
+        try:
+            text = rels_file.read_text(encoding="utf-8")
+            if old_name in text:
+                text = text.replace(old_name, new_name)
+                rels_file.write_text(text, encoding="utf-8")
+                replaced_count += 1
+        except Exception:
+            logger.warning("Failed to rename in relationships.json")
+
     logger.info("Global rename %s→%s: %d files updated (LLM-verified for prose)", old_name, new_name, replaced_count)
 
 
@@ -378,23 +416,6 @@ def delete_location(project_id: str, entity_id: str):
 @router.get("/project/{project_id}/scenes")
 def get_scenes(project_id: str, verbose: bool = False):
     return {"scenes": list_scenes(resolve_project(project_id), verbose=verbose)}
-
-
-@router.post("/project/{project_id}/switch-branch/{branch_name}")
-def switch_branch(project_id: str, branch_name: str):
-    """切换到指定分支——git checkout <branch>"""
-    from ...memory.branch_manager import switch_branch as do_switch
-    try:
-        return do_switch(resolve_project(project_id), branch_name)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-
-@router.get("/project/{project_id}/timeline")
-def get_timeline(project_id: str):
-    """返回完整时间线——主干 + 分支 + 存档点，git graph 结构。"""
-    from ...memory.branch_manager import build_timeline
-    return build_timeline(resolve_project(project_id))
 
 
 @router.get("/project/{project_id}/scenes/{entity_id}")
@@ -572,6 +593,32 @@ def get_faction(project_id: str, entity_id: str):
     return _get_entity(resolve_project(project_id), entity_id)
 
 
+@router.patch("/project/{project_id}/factions/{entity_id}")
+def update_faction(project_id: str, entity_id: str, patch: Dict[str, Any] = Body(...)):
+    """更新势力字段。"""
+    project_dir = resolve_project(project_id)
+    memory = MemoryManager(project_dir)
+    faction = memory.load_faction(entity_id)
+    if not faction:
+        raise HTTPException(status_code=404, detail=f"未找到势力: {entity_id}")
+    for key, val in patch.items():
+        if hasattr(faction, key):
+            setattr(faction, key, val)
+    memory.save_faction(faction)
+    return faction.to_dict()
+
+
+@router.delete("/project/{project_id}/factions/{entity_id}")
+def delete_faction(project_id: str, entity_id: str):
+    """删除势力。"""
+    project_dir = resolve_project(project_id)
+    memory = MemoryManager(project_dir)
+    if not memory.load_faction(entity_id):
+        raise HTTPException(status_code=404, detail=f"未找到势力: {entity_id}")
+    memory.delete_faction(entity_id)
+    return {"deleted": entity_id}
+
+
 @router.get("/project/{project_id}/relationships")
 def get_relationships(project_id: str):
     project_dir = resolve_project(project_id)
@@ -684,9 +731,129 @@ def _parse_document(content: str) -> list:
     return json.loads(json_match.group())
 
 
+# ── 智能去重合并 ──
+
+def _norm(name: str) -> str:
+    """标准化名称用于匹配：去括号注释、去空格、小写。"""
+    import re
+    n = re.sub(r'[（(][^)）]*[)）]', '', name)  # 去括号注释
+    n = re.sub(r'\s+', '', n)  # 去所有空白
+    return n.lower()
+
+
+def _names_match(a: str, b: str) -> bool:
+    """两个名称是否指向同一个实体。"""
+    na = _norm(a)
+    nb = _norm(b)
+    if na == nb:
+        return True
+    # 包含匹配："沈青鸿" vs "沈青鸿（核爆仙尊）"
+    if na in nb or nb in na:
+        return True
+    return False
+
+
+def _merge_str(old_val: str, new_val: str) -> str:
+    """合并字符串字段：取更长的（信息更完整）。"""
+    if not new_val:
+        return old_val
+    if not old_val:
+        return new_val
+    return new_val if len(new_val) >= len(old_val) else old_val
+
+
+def _merge_list(old_val: list, new_val: list) -> list:
+    """合并列表字段：去重并集。"""
+    seen = set()
+    result = []
+    for item in (new_val or []) + (old_val or []):
+        if item and item not in seen:
+            seen.add(item)
+            result.append(item)
+    return result
+
+
+def _merge_entity_fields(existing: dict, incoming: dict) -> dict:
+    """合并两个实体的 args 字段。字符串取更长的，列表去重合并。"""
+    merged = dict(existing)
+    str_fields_map = {
+        "character": ["description", "role"],
+        "location": ["description", "atmosphere"],
+        "faction": ["summary", "org_type", "importance"],
+    }
+    list_fields_map = {
+        "character": ["traits", "goals"],
+        "location": ["features"],
+        "faction": ["mandate_objectives", "influence_domains", "assets_resources", "methods_tactics", "tags"],
+    }
+    etype = existing.get("type", "")
+    for f in str_fields_map.get(etype, []):
+        merged[f] = _merge_str(existing.get(f, ""), incoming.get(f, ""))
+    for f in list_fields_map.get(etype, []):
+        merged[f] = _merge_list(existing.get(f, []) or [], incoming.get(f, []) or [])
+
+    # 特殊处理：name 取 incoming（最新的）
+    merged["name"] = incoming.get("name", existing.get("name", ""))
+
+    return merged
+
+
+def _find_existing_by_name(memory, etype: str, name: str) -> str | None:
+    """在已有实体中按名称查找匹配项，返回实体 ID 或 None。"""
+    n = _norm(name)
+    if not n:
+        return None
+
+    if etype == "character":
+        for cid in memory.list_characters():
+            c = memory.load_character(cid)
+            if c:
+                full = _norm(c.full_name or "")
+                first = _norm(c.first_name or "")
+                if full and (n == full or n in full or full in n or n == first):
+                    return cid
+    elif etype == "location":
+        for lid in memory.list_locations():
+            loc = memory.load_location(lid)
+            if loc:
+                ln = _norm(loc.name or "")
+                if ln and (n == ln or n in ln or ln in n):
+                    return lid
+    elif etype == "faction":
+        for fid in memory.list_factions():
+            fac = memory.load_faction(fid)
+            if fac:
+                fn = _norm(fac.name or "")
+                if fn and (n == fn or n in fn or fn in n):
+                    return fid
+    return None
+
+
+def _batch_dedup_entities(entities: list) -> list:
+    """批内去重：同一批次内同名实体合并为一条。保留最后出现的版本作为基础。"""
+    groups: dict[str, dict] = {}  # norm_name -> merged_entity
+    order: list[str] = []  # 保持首次出现顺序
+
+    for e in entities:
+        name = (e.get("args", {}) or {}).get("name", "")
+        key = _norm(name)
+        if not key:
+            order.append("__anon__" + str(len(order)))
+            groups[order[-1]] = {"type": e["type"], "args": dict(e.get("args", {}))}
+            continue
+        if key in groups:
+            # 合并：用新的覆盖、合并旧的
+            groups[key]["args"] = _merge_entity_fields(groups[key]["args"], e.get("args", {}))
+        else:
+            order.append(key)
+            groups[key] = {"type": e["type"], "args": dict(e.get("args", {}))}
+
+    return [groups[k] for k in order]
+
+
 @router.post("/project/{project_id}/import")
 def import_settings(project_id: str, req: ImportRequest = Body(...)):
-    """导入设定——preview 模式返回识别结果，confirm 模式执行导入。"""
+    """导入设定——preview 模式返回识别结果，confirm 模式执行导入（含智能去重合并）。"""
     project_dir = resolve_project(project_id)
     memory = MemoryManager(project_dir)
 
@@ -700,39 +867,121 @@ def import_settings(project_id: str, req: ImportRequest = Body(...)):
             entities = _parse_document(req.content)
         except Exception as e:
             raise HTTPException(status_code=422, detail=f"LLM 解析失败: {e}")
-        return {"preview": True, "entities": entities}
+        # 预览时也显示去重合并后的结果
+        deduped = _batch_dedup_entities(entities)
+        # 标记哪些已有磁盘实体
+        for e in deduped:
+            name = (e.get("args", {}) or {}).get("name", "")
+            existing_id = _find_existing_by_name(memory, e["type"], name)
+            e["_existing_id"] = existing_id or ""
+            e["_action"] = "merge" if existing_id else "create"
+        return {"preview": True, "entities": deduped, "original_count": len(entities), "deduped_count": len(deduped)}
 
-    # === Confirm 模式：执行导入 ===
+    # === Confirm 模式：执行导入（含去重+合并） ===
     if not req.entities:
         return {"imported": [], "message": "没有要导入的实体"}
 
-    actions = []
-    for e in req.entities:
-        tool_map = {"character": "character.generate", "location": "location.generate", "faction": "faction.generate"}
-        tool = tool_map.get(e.get("type", ""))
-        if tool:
-            actions.append({"tool": tool, "args": e.get("args", {})})
-
-    from ...agent.runtime import PlanExecutor
-    from ...memory.vector_store import VectorStore
-    from ...tools.memory_tools import CharacterGenerateTool, LocationGenerateTool, FactionGenerateTool
-    vs = VectorStore(project_dir)
-    executor = PlanExecutor(ToolRegistry(), memory, vs)
-    executor.tools.register(CharacterGenerateTool(memory, vs))
-    executor.tools.register(LocationGenerateTool(memory, vs))
-    executor.tools.register(FactionGenerateTool(memory, vs))
-
-    results = executor.execute_plan({"actions": actions}, tick=0)
+    # Layer 1: 批内去重
+    entities = _batch_dedup_entities(req.entities)
 
     imported = []
-    for r in results.get("actions_executed", []):
-        if r.get("success") and r.get("result", {}).get("success"):
-            res = r["result"]
-            imported.append({
-                "tool": r["tool"],
-                "id": res.get("character_id") or res.get("location_id") or res.get("faction_id") or "",
-                "name": res.get("name", ""),
-            })
+    merged = []
+    skipped = 0
 
-    logger.info("导入设定: %d/%d 个实体创建成功", len(imported), len(actions))
-    return {"preview": False, "imported": imported, "total": len(actions), "message": f"成功导入 {len(imported)}/{len(actions)} 个实体"}
+    from ...memory.vector_store import VectorStore
+    vs = VectorStore(project_dir)
+
+    for e in entities:
+        etype = e.get("type", "")
+        args = dict(e.get("args", {}))
+        name = args.get("name", "")
+
+        # Layer 2: 查找磁盘已有实体
+        existing_id = _find_existing_by_name(memory, etype, name)
+
+        if existing_id:
+            # 合并到已有实体
+            if etype == "character":
+                c = memory.load_character(existing_id)
+                if c:
+                    changed = False
+                    new_desc = _merge_str(c.description or "", args.get("description", ""))
+                    new_role = _merge_str(c.role or "", args.get("role", ""))
+                    if new_desc != (c.description or ""):
+                        c.description = new_desc; changed = True
+                    if new_role != (c.role or ""):
+                        c.role = new_role; changed = True
+                    new_traits = _merge_list(getattr(c.personality, "core_traits", []) or [], args.get("traits", []))
+                    if new_traits != (getattr(c.personality, "core_traits", []) or []):
+                        c.personality.core_traits = new_traits; changed = True
+                    new_goals = _merge_list(c.current_state.goals or [], args.get("goals", []))
+                    if new_goals != (c.current_state.goals or []):
+                        c.current_state.goals = new_goals; changed = True
+                    if changed:
+                        memory.save_character(c)
+                        vs.index_character(c)
+                    merged.append({"tool": "character.generate", "id": existing_id, "name": c.full_name, "action": "merged"})
+                    continue
+            elif etype == "location":
+                loc = memory.load_location(existing_id)
+                if loc:
+                    changed = False
+                    new_desc = _merge_str(loc.description or "", args.get("description", ""))
+                    new_atmo = _merge_str(loc.atmosphere or "", args.get("atmosphere", ""))
+                    if new_desc != (loc.description or ""):
+                        loc.description = new_desc; changed = True
+                    if new_atmo != (loc.atmosphere or ""):
+                        loc.atmosphere = new_atmo; changed = True
+                    new_feat = _merge_list(loc.features or [], args.get("features", []))
+                    if new_feat != (loc.features or []):
+                        loc.features = new_feat; changed = True
+                    if changed:
+                        memory.save_location(loc)
+                        vs.index_location(loc)
+                    merged.append({"tool": "location.generate", "id": existing_id, "name": loc.name, "action": "merged"})
+                    continue
+            elif etype == "faction":
+                fac = memory.load_faction(existing_id)
+                if fac:
+                    changed = False
+                    new_summary = _merge_str(fac.summary or "", args.get("summary", ""))
+                    new_org = _merge_str(fac.org_type or "", args.get("org_type", ""))
+                    if new_summary != (fac.summary or ""):
+                        fac.summary = new_summary; changed = True
+                    if new_org != (fac.org_type or ""):
+                        fac.org_type = new_org; changed = True
+                    if changed:
+                        memory.save_faction(fac)
+                        vs.index_faction(fac)
+                    merged.append({"tool": "faction.generate", "id": existing_id, "name": fac.name, "action": "merged"})
+                    continue
+
+        # 全新创建
+        from ...agent.runtime import PlanExecutor
+        from ...tools.memory_tools import CharacterGenerateTool, LocationGenerateTool, FactionGenerateTool
+        tool_map = {"character": "character.generate", "location": "location.generate", "faction": "faction.generate"}
+        tool_name = tool_map.get(etype)
+        if not tool_name:
+            skipped += 1
+            continue
+
+        executor = PlanExecutor(ToolRegistry(), memory, vs)
+        cls_map = {"character.generate": CharacterGenerateTool, "location.generate": LocationGenerateTool, "faction.generate": FactionGenerateTool}
+        executor.tools.register(cls_map[tool_name](memory, vs))
+
+        result = executor.execute_plan({"actions": [{"tool": tool_name, "args": args}]}, tick=0)
+        for r in result.get("actions_executed", []):
+            if r.get("success") and r.get("result", {}).get("success"):
+                res = r["result"]
+                imported.append({
+                    "tool": r["tool"],
+                    "id": res.get("character_id") or res.get("location_id") or res.get("faction_id") or "",
+                    "name": res.get("name", ""),
+                    "action": "created",
+                })
+
+    summary = f"新建 {len(imported)} 个, 合并更新 {len(merged)} 个"
+    if skipped:
+        summary += f", 跳过 {skipped} 个"
+    logger.info("导入设定: %s", summary)
+    return {"preview": False, "imported": imported, "merged": merged, "total": len(entities), "message": summary}

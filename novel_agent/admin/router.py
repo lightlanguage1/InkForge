@@ -134,3 +134,19 @@ def get_logs(service: str = "backend", lines: int = 100, _admin=require_admin):
 @router.get("/stats")
 def get_stats(_admin=require_admin):
     return _get_db().get_stats()
+
+
+@router.get("/analytics")
+def get_analytics(_admin=require_admin):
+    """详细分析数据：活跃度/使用度/趋势。"""
+    db = _get_db()
+    stats = db.get_stats()
+    online = db.count_online_users(minutes=5)
+    daily = db.get_daily_activity(days=30)
+    top_users = db.get_top_users(limit=10)
+    return {
+        **stats,
+        "online_users": online,
+        "daily_activity": daily,
+        "top_users": top_users,
+    }

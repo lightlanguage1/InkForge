@@ -72,6 +72,13 @@ BEAT_LOW_CONFIDENCE_THRESHOLD = 0.4
 TENSION_LOW_THRESHOLD = 3
 TENSION_HIGH_THRESHOLD = 7
 
+# ---- Evaluation frequency (cost optimization) -----------------------------
+# 前 N 幕每次都做全量 LLM 评估（黄金三章保证质量）
+# 之后降频：每 N 幕做一次全量评估，其余只用关键词快速路径
+EVAL_FULL_CHECK_FIRST_N = 3      # 前3章全量评估
+EVAL_FULL_CHECK_INTERVAL = 3     # 之后每3章一次全量评估
+EVAL_ASYNC_POST_PROCESS = True   # Fact/Lore 提取改为后台异步
+
 # ---- Goal / loop promotion ------------------------------------------------
 
 GOAL_PROMOTION_WINDOW_START = 10
@@ -85,6 +92,13 @@ TOP_CHARACTER_IDS_FOR_TITLES = 10
 THREAD_AUDIT_INTERVAL = 5       # 每 N 章触发 LLM 支线审计
 THREAD_STALE_WARN = 4           # 停滞提醒阈值（章）
 THREAD_STALE_FORCE = 8          # 强制推进阈值（章）
+
+# ---- Quality scoring (黄金三章打磨闭环) -----------------------------------
+
+QUALITY_THRESHOLD_EARLY = 95    # 前三章质量阈值（0-100）
+QUALITY_THRESHOLD_NORMAL = 85   # 正常章节质量阈值
+QUALITY_FIRST_N_TICKS = 3       # 前N章启用严格打磨
+MAX_POLISH_ROUNDS = 3           # 最大打磨轮数
 
 # ---- Text sampling --------------------------------------------------------
 

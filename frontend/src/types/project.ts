@@ -19,6 +19,7 @@ export interface ProjectInfo {
   project_id?: string;
   novel_name?: string;
   current_tick?: number;
+  has_cover?: boolean;
 }
 
 export interface ResumeResult {

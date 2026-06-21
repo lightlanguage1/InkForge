@@ -63,7 +63,7 @@ class AnnouncementUpdate(BaseModel):
 
 
 @router.get("/all")
-def list_all(_admin=...):
+def list_all(_admin: str = ""):
     """管理端：所有公告列表。"""
     _require_admin()
     return {"announcements": _ann_db().list_all()}

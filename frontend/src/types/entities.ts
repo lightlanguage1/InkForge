@@ -110,7 +110,20 @@ export interface FactionItem {
   tags?: string[];
 }
 
-export type FactionDetail = FactionItem;
+export interface FactionDetail {
+  id: string;
+  name: string;
+  org_type: string;
+  importance: string;
+  summary?: string;
+  tags?: string[];
+  mandate_objectives?: string[];
+  influence_domains?: string[];
+  assets_resources?: string[];
+  methods_tactics?: string[];
+  stance_by_character?: Record<string, string>;
+  relationships?: Record<string, string>;
+}
 
 export interface GraphNode {
   id: string; name: string; status: string;

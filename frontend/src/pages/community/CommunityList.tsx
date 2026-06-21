@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { listPosts } from "../../api/community";
+import { getCoverUrl } from "../../api/projects";
 import { Spinner } from "../../components/ui/Spinner";
 import { ChatColumn } from "../../components/community/ChatColumn";
 
@@ -65,21 +66,39 @@ export function CommunityPage() {
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-5xl mx-auto">
-                {posts.map((p) => (
+                {posts.map((p: any) => (
                   <article
                     key={p.project_id}
                     onClick={() => navigate(`/community/${p.project_id}`)}
-                    className="rounded-xl p-5 cursor-pointer hover:-translate-y-0.5 transition-all duration-200"
+                    className="rounded-xl overflow-hidden cursor-pointer hover:-translate-y-0.5 transition-all duration-200 group"
                     style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className="text-[10px] px-2 py-0.5 rounded-full"
-                        style={{ background: "rgba(200,151,90,0.1)", color: "var(--accent)" }}>
-                        {p.genre || "未分类"}
-                      </span>
-                      <span className="text-[10px]" style={{ color: "var(--text-3)" }}>{p.scene_count} 幕</span>
+                    {/* Cover */}
+                    <div className="relative w-full h-36 overflow-hidden" style={{ background: "var(--bg-raised)" }}>
+                      {p.has_cover ? (
+                        <img src={getCoverUrl(p.project_id)} alt={p.novel_name}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                          onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <span className="text-5xl font-black select-none opacity-10" style={{ color: "var(--accent)" }}>
+                            {(p.novel_name || "?")[0]}
+                          </span>
+                        </div>
+                      )}
+                      <div className="absolute inset-x-0 bottom-0 h-12 pointer-events-none"
+                        style={{ background: "linear-gradient(transparent, var(--bg-surface))" }} />
                     </div>
-                    <h3 className="font-semibold text-sm mb-2" style={{ color: "var(--text-1)" }}>{p.novel_name}</h3>
-                    <p className="text-xs" style={{ color: "var(--text-3)" }}>@{p.display_name || p.user_id?.slice(0, 8)}</p>
+                    <div className="p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-[10px] px-2 py-0.5 rounded-full"
+                          style={{ background: "rgba(200,151,90,0.1)", color: "var(--accent)" }}>
+                          {p.genre || "未分类"}
+                        </span>
+                        <span className="text-[10px]" style={{ color: "var(--text-3)" }}>{p.scene_count} 幕</span>
+                      </div>
+                      <h3 className="font-semibold text-sm mb-1 truncate" style={{ color: "var(--text-1)" }}>{p.novel_name}</h3>
+                      <p className="text-xs" style={{ color: "var(--text-3)" }}>@{p.display_name || p.user_id?.slice(0, 8)}</p>
+                    </div>
                   </article>
                 ))}
               </div>

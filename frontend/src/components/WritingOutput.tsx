@@ -117,6 +117,8 @@ export function WritingOutput({ text, result, running, streamMode, tickPending, 
               <p className="text-xs mt-1.5 tabular-nums transition-colors duration-300" style={{ color: t.text2 }}>
                 {result.word_count} 字 · {result.actions_executed} 个动作
                 {result.tension ? ` · 张力 ${result.tension.level}/10` : ""}
+                {result.quality_score != null ? ` · 质量 ${result.quality_score}分` : ""}
+                {result.polish_rounds != null ? ` (${result.polish_rounds}轮打磨)` : ""}
               </p>
             </div>
           </div>

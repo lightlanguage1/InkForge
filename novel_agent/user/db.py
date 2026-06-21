@@ -358,6 +358,34 @@ class Database:
             ).fetchone()
         return row["n"] if row else 0
 
+    def get_daily_activity(self, days: int = 30) -> list[dict]:
+        """最近 N 天每天的活跃用户数和项目数。"""
+        with self._connect() as conn:
+            cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
+            rows = conn.execute("""
+                SELECT DATE(last_seen) as day,
+                       COUNT(DISTINCT user_id) as users,
+                       COUNT(DISTINCT (SELECT COUNT(*) FROM projects p2
+                           WHERE p2.user_id = u.user_id AND p2.last_accessed >= ?)) as active_projects
+                FROM users u
+                WHERE last_seen >= ?
+                GROUP BY day ORDER BY day
+            """, (cutoff, cutoff)).fetchall()
+            return [{"day": r["day"], "users": r["users"], "active_projects": r["active_projects"]} for r in rows]
+
+    def get_top_users(self, limit: int = 10) -> list[dict]:
+        """最活跃用户排行（按项目数+最近活跃）。"""
+        with self._connect() as conn:
+            rows = conn.execute("""
+                SELECT u.display_name, u.last_seen,
+                       COUNT(p.project_id) as project_count
+                FROM users u LEFT JOIN projects p ON u.user_id = p.user_id
+                WHERE u.disabled = 0
+                GROUP BY u.user_id ORDER BY u.last_seen DESC, project_count DESC
+                LIMIT ?
+            """, (limit,)).fetchall()
+            return [{"display_name": r["display_name"], "last_seen": r["last_seen"], "project_count": r["project_count"]} for r in rows]
+
     # ── community ─────────────────────────────────────────────────────────
 
     def set_publish(self, project_id: str, user_id: str, published: bool) -> bool:

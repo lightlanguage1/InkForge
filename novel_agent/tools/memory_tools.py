@@ -658,7 +658,8 @@ class FactionGenerateTool(Tool):
         methods_tactics: Optional[List[str]] = None,
         stance_by_character: Optional[Dict[str, str]] = None,
         importance: Optional[str] = None,
-        tags: Optional[List[str]] = None
+        tags: Optional[List[str]] = None,
+        features: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         faction_id = self.memory_manager.generate_id("faction")
 
@@ -676,6 +677,8 @@ class FactionGenerateTool(Tool):
         if not final_name:
             final_name = f"Faction_{faction_id}"
 
+        # Merge features into tags (LLM often passes 'features' for descriptive labels)
+        merged_tags = list(set((tags or []) + (features or [])))
         faction = Faction(
             id=faction_id,
             name=final_name,
@@ -687,7 +690,7 @@ class FactionGenerateTool(Tool):
             methods_tactics=methods_tactics or [],
             stance_by_character=stance_by_character or {},
             importance=importance or "medium",
-            tags=tags or []
+            tags=merged_tags
         )
         self.memory_manager.save_faction(faction)
         self.vector_store.index_faction(faction)

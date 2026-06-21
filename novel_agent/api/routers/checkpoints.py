@@ -22,11 +22,11 @@ def checkpoint_create(project_id: str, req: CheckpointCreateRequest = None):
     project_dir = resolve_project(project_id)
     state = load_project_state(str(project_dir))
     try:
-        path = create_checkpoint(
+        tag_name = create_checkpoint(
             project_dir, state.get("current_tick", 0),
             created_by=req.message or "api",
         )
-        return {"checkpoint_id": path.name, "path": str(path)}
+        return {"checkpoint_id": tag_name, "path": str(project_dir / "checkpoints" / tag_name)}
     except Exception:
         logger.exception("创建存档失败: project=%s", project_id)
         raise HTTPException(status_code=400, detail="创建存档失败，该幕可能已有存档")
@@ -53,8 +53,9 @@ def checkpoint_list(project_id: str):
 @router.post("/project/{project_id}/checkpoints/{checkpoint_id}/restore")
 def checkpoint_restore(project_id: str, checkpoint_id: str):
     try:
-        restore_checkpoint(resolve_project(project_id), checkpoint_id)
-        return {"restored": checkpoint_id}
+        project_dir = resolve_project(project_id)
+        result = restore_checkpoint(project_dir, checkpoint_id)
+        return result
     except Exception:
         logger.exception("恢复存档失败: project=%s checkpoint=%s", project_id, checkpoint_id)
         raise HTTPException(status_code=400, detail="恢复存档失败")

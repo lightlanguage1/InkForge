@@ -307,7 +307,9 @@ class Character:
     
     @property
     def display_name(self) -> str:
-        """Get name for prose (first name, or full name if no first name)."""
+        """Get name for prose. 中文名返回全名，英文名返回 first_name。"""
+        if self.family_name and any('一' <= c <= '鿿' for c in self.family_name + self.first_name):
+            return self.full_name
         return self.first_name if self.first_name else self.full_name
     
     @property

@@ -143,11 +143,56 @@ class PlotOutlineManager:
             recent_lines.append(f"{sid}: {s.title or ''} — {summ}")
         recent_text = "\n".join(recent_lines) if recent_lines else "None"
 
+        # Story foundation (hard constraints from user)
+        foundation = state.get("story_foundation", {})
+        foundation_text = (
+            f"类型：{foundation.get('genre', '')}\n"
+            f"前提：{foundation.get('premise', '')}\n"
+            f"主角：{foundation.get('protagonist_archetype', '')}\n"
+            f"背景：{foundation.get('setting', '')}\n"
+            f"基调：{foundation.get('tone', '')}\n"
+            f"主题：{', '.join(foundation.get('themes', [])) if isinstance(foundation.get('themes'), list) else foundation.get('themes', '')}"
+        )
+
+        # Factions with stance info
+        faction_ids = self.memory.list_factions()
+        faction_lines = []
+        if faction_ids:
+            active_char_id = state.get("active_character", "")
+            for fid in faction_ids:
+                fac = self.memory.load_faction(fid)
+                if not fac:
+                    continue
+                name = getattr(fac, 'name', fid)
+                org_type = getattr(fac, 'org_type', 'other')
+                summary = getattr(fac, 'summary', '')
+                stance_map = getattr(fac, 'stance_by_character', {}) or {}
+                # Show stance toward protagonist
+                stance = stance_map.get(active_char_id, "unknown") if active_char_id else "unknown"
+                faction_lines.append(
+                    f"- {name} ({fid}) — 类型:{org_type} 对主角态度:{stance}\n"
+                    f"  概述:{summary}"
+                )
+        factions_text = "\n".join(faction_lines) if faction_lines else "暂无势力设定"
+
+        # World lore / rules
+        lore_items = self.memory.load_all_lore()
+        lore_lines = []
+        for l in lore_items:
+            imp = getattr(l, "importance", "normal") or "normal"
+            content = getattr(l, "content", "")
+            cat = getattr(l, "category", "其他")
+            lore_lines.append(f"- [{imp}] [{cat}] {content}")
+        lore_text = "\n".join(lore_lines) if lore_lines else "暂无世界观规则"
+
         return {
             "novel_name": novel_name,
             "current_tick": current_tick,
+            "story_foundation": foundation_text,
             "open_loops": open_loops_text,
             "recent_scenes": recent_text,
+            "factions": factions_text,
+            "world_lore": lore_text,
             "count": count,
             "planner_max_tokens": 1000,
         }

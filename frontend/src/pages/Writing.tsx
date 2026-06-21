@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { WritingControls } from "../components/WritingControls";
 import { WritingOutput, buildTheme } from "../components/WritingOutput";
 import { getStatus } from "../api/status";
 import { listSkills } from "../api/skills";
 import { resetProject } from "../api/entities";
+import { runMultiple } from "../api/generation";
 import { useTheme } from "../ThemeContext";
 import { useGeneration } from "../GenerationContext";
 import { PageHelp } from "../components/PageHelp";
@@ -16,8 +17,21 @@ export function WritingPage() {
   const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
 
-  const { session, startSSE, stopAll } = useGeneration();
+  const { session, startSSE, stopAll, setGenerating } = useGeneration();
   const active = session?.projectId === id ? session : null;
+
+  const batchMut = useMutation({
+    mutationFn: (n: number) => runMultiple(id!, n),
+    onMutate: () => { setGenerating(id!); },
+    onSuccess: (data) => {
+      setGenerating(null);
+      qc.invalidateQueries({ queryKey: ["status", id] });
+      qc.invalidateQueries({ queryKey: ["scenes", id] });
+      qc.invalidateQueries({ queryKey: ["read", id] });
+      qc.invalidateQueries({ queryKey: ["timeline", id] });
+    },
+    onError: () => { setGenerating(null); },
+  });
   const running = active?.running ?? false;
   const text = active?.text ?? "";
   const phase = active?.phase ?? "";
@@ -30,15 +44,17 @@ export function WritingPage() {
   const [backend, setBackend] = useState("api");
   const [model, setModel] = useState("deepseek-chat");
   const [showImport, setShowImport] = useState(false);
+  const [qualityEnabled, setQualityEnabled] = useState(true);
+  const [qualityThreshold, setQualityThreshold] = useState(95);
 
   const { isDayMode, toggleTheme } = useTheme();
   const theme = buildTheme();
 
-  const handleTick = () => startSSE(id!, 1, { notes, backend, model });
-  const handleRunN = (n: number) => startSSE(id!, n, { notes, backend, model });
+  const handleTick = () => startSSE(id!, 1, { notes, backend, model, quality: qualityEnabled, quality_threshold: qualityThreshold });
+  const handleRunN = (n: number) => batchMut.mutate(n);
   const handleFinale = () => {
     if (confirm("启动结尾完结模式？智能体将收束所有线索、完成人物弧线，写出故事结局。"))
-      startSSE(id!, 1, { notes, backend, model, finale: true });
+      startSSE(id!, 1, { notes, backend, model, finale: true, quality: qualityEnabled, quality_threshold: qualityThreshold });
   };
   const skills: SkillInfo[] = skillsData?.skills ?? [];
 
@@ -73,15 +89,26 @@ export function WritingPage() {
         <WritingControls
           status={status} result={result}
           notes={notes} backend={backend} model={model}
-          streamMode={false} running={running}
-          tickPending={false} runPending={false}
+          streamMode={false} running={running || batchMut.isPending}
+          tickPending={false} runPending={batchMut.isPending}
           theme={theme} skills={skills} activeSkills={[]} skillPending={false}
+          qualityEnabled={qualityEnabled}
+          qualityThreshold={qualityThreshold}
           onNotesChange={setNotes} onBackendChange={setBackend}
           onModelChange={setModel} onSkillToggle={() => {}}
+          onQualityToggle={() => setQualityEnabled(v => !v)}
+          onQualityThresholdChange={setQualityThreshold}
           onTick={handleTick} onRunN={handleRunN} onFinale={handleFinale}
-          onStartStream={() => startSSE(id!, 1, { notes, backend, model })}
+          onStartStream={() => startSSE(id!, 1, { notes, backend, model, quality: qualityEnabled, quality_threshold: qualityThreshold })}
           onStopStream={stopAll}
         />
+        {batchMut.data && (
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-xl shadow-2xl text-sm"
+            style={{ background: "var(--accent)", color: "var(--bg-base)" }}>
+            ✅ 连续生成完成：{batchMut.data.completed}/{batchMut.data.results.length} 幕
+            （{batchMut.data.results.reduce((s: number, r: any) => s + (r.word_count || 0), 0).toLocaleString()} 字）
+          </div>
+        )}
         <WritingOutput
           text={text} result={result} running={running}
           streamMode={running} tickPending={false}

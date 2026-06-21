@@ -110,7 +110,7 @@ class WriterContextBuilder:
         thread_context = self._format_thread_context(project_state.get("current_tick", 0))
         story_goal_context = self._format_story_goal(project_state)
 
-        return {
+        context = {
             "novel_name": novel_name,
             "current_tick": current_tick,
             "story_foundation_summary": foundation_summary,
@@ -148,6 +148,16 @@ class WriterContextBuilder:
             "world_rules": self._format_world_rules(),
             "writer_notes": self._format_writer_notes(notes),
         }
+
+        # Token 预算裁剪（try/except 包裹，失败返回原始 context）
+        try:
+            from ..context.budget import ContextBudgeter
+            budgeter = ContextBudgeter(self.config)
+            context = budgeter.budget_writer_context(context)
+        except Exception:
+            pass
+
+        return context
 
     def _format_writer_notes(self, per_tick_notes: str = "") -> str:
         """Format direction notes for writer context.
@@ -304,7 +314,11 @@ class WriterContextBuilder:
         Collected fresh from memory on every tick — always reflects the
         latest entity updates from the previous tick.
         """
-        lines = ["## 故事世界当前状态", ""]
+        lines = [
+            "## 故事世界当前状态（权威数据源——所有角色名、地名、势力名须以此为准）",
+            "**注意：下方列表中的名称是唯一正确版本。即使近期场景文本中出现不同写法，也必须使用此处列出的名称。**",
+            "",
+        ]
 
         # --- characters ---
         char_ids = self.memory.list_characters()

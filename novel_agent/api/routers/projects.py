@@ -6,7 +6,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile
 
 from ...utils.log_manager import rmtree_force
 from ...memory.manager import MemoryManager
@@ -16,6 +16,23 @@ from ..models import ProjectCreateRequest, TickRequest, TickResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["项目"])
+
+
+def _has_cover(project_dir: Path) -> bool:
+    """检查项目目录是否存在封面文件。"""
+    for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif"):
+        if (project_dir / f"cover{ext}").exists():
+            return True
+    return False
+
+
+def _find_cover(project_dir: Path) -> Path | None:
+    """查找项目目录中的封面文件路径。"""
+    for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif"):
+        p = project_dir / f"cover{ext}"
+        if p.exists():
+            return p
+    return None
 
 
 def _list_filesystem_projects() -> list[dict]:
@@ -39,6 +56,7 @@ def _list_filesystem_projects() -> list[dict]:
             "project_id": state.get("project_id", entry.name),
             "novel_name": state.get("novel_name", entry.name),
             "current_tick": state.get("current_tick", 0),
+            "has_cover": _has_cover(entry),
         })
     return projects
 
@@ -58,16 +76,17 @@ def create_project(req: ProjectCreateRequest):
             primary_goal=req.primary_goal,
             use_plot_first=req.use_plot_first,
         )
-        # 写入 style_id / craft_id 到 state.json
-        if req.style_id or req.craft_id:
-            import json
+        # 写入 style_id / craft_id 到 state.json（安全访问，防止模型缺少字段）
+        style_id = getattr(req, "style_id", None)
+        craft_id = getattr(req, "craft_id", None)
+        if style_id or craft_id:
             state_path = Path(path) / "state.json"
             if state_path.exists():
                 state = json.loads(state_path.read_text(encoding="utf-8"))
-                if req.style_id:
-                    state["style_id"] = req.style_id
-                if req.craft_id:
-                    state["craft_id"] = req.craft_id
+                if style_id:
+                    state["style_id"] = style_id
+                if craft_id:
+                    state["craft_id"] = craft_id
                 state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
         # 记录到用户项目表
@@ -224,6 +243,87 @@ def delete_project(project_id: str):
         logger.exception("删除项目失败: %s", project_dir)
         raise HTTPException(status_code=500, detail=f"删除失败: {exc}")
     return {"deleted": str(project_dir)}
+
+
+# ---- 封面 ----
+
+def _find_project_across_users(project_id: str) -> Path | None:
+    """跨用户目录查找项目 — 用于无需认证的公开访问（如封面图片）。"""
+    users_dir = Path("work/users")
+    if not users_dir.exists():
+        return None
+    for user_dir in users_dir.iterdir():
+        if not user_dir.is_dir():
+            continue
+        novels = user_dir / "novels"
+        if not novels.exists():
+            continue
+        for entry in novels.iterdir():
+            if entry.is_dir() and entry.name == project_id:
+                if (entry / "state.json").exists():
+                    return entry
+    return None
+
+
+@router.get("/project/{project_id}/cover")
+def get_cover(project_id: str):
+    """获取项目封面图片（公开访问，无需登录）。"""
+    # 先尝试认证用户的目录，失败则跨用户搜索
+    try:
+        project_dir = resolve_project(project_id)
+    except ValueError:
+        project_dir = _find_project_across_users(project_id)
+    if not project_dir:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    cover_path = _find_cover(project_dir)
+    if not cover_path:
+        raise HTTPException(status_code=404, detail="无封面")
+    from fastapi.responses import FileResponse
+    ext = cover_path.suffix.lower()
+    media_map = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif"}
+    return FileResponse(cover_path, media_type=media_map.get(ext, "image/jpeg"))
+
+
+@router.post("/project/{project_id}/cover")
+async def upload_cover(project_id: str, file: UploadFile):
+    """上传项目封面。支持 jpg/png/webp/gif。"""
+    try:
+        project_dir = resolve_project(project_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    # 校验类型
+    ext = Path(file.filename or "cover.jpg").suffix.lower()
+    if ext not in (".jpg", ".jpeg", ".png", ".webp", ".gif"):
+        raise HTTPException(status_code=400, detail="仅支持 jpg/png/webp/gif 格式")
+
+    # 限制大小 (5MB)
+    content = await file.read()
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="图片大小不能超过 5MB")
+
+    # 删除旧封面
+    old = _find_cover(project_dir)
+    if old:
+        old.unlink()
+
+    # 保存
+    cover_path = project_dir / f"cover{ext}"
+    cover_path.write_bytes(content)
+    return {"ok": True, "has_cover": True}
+
+
+@router.delete("/project/{project_id}/cover")
+def remove_cover(project_id: str):
+    """删除项目封面。"""
+    try:
+        project_dir = resolve_project(project_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    cover_path = _find_cover(project_dir)
+    if cover_path:
+        cover_path.unlink()
+    return {"ok": True, "has_cover": False}
 
 
 # ---- Tick ----

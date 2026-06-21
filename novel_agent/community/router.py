@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from ..user.db import Database
 from ..user.context import get_current_user
+from ..api.routers.projects import _has_cover
 
 router = APIRouter(prefix="/api/v1/community", tags=["社区"])
 logger = logging.getLogger(__name__)
@@ -70,7 +71,7 @@ def read_project(project_id: str, tick: int = Query(None, description="指定幕
     if state_path.exists():
         state = json.loads(state_path.read_text(encoding="utf-8"))
 
-    # 读所有场景
+    # 读所有场景（工作区只包含当前 HEAD 的场景，无需过滤）
     scene_files = sorted(scene_dir.glob("scene_*.md"))
     scenes = []
     for sf in scene_files:
@@ -147,6 +148,7 @@ def list_posts():
                         "current_tick": state.get("current_tick", 0),
                         "scene_count": scene_count,
                         "genre": state.get("story_foundation", {}).get("genre", ""),
+                        "has_cover": _has_cover(d),
                         "created_at": p["created_at"],
                     })
                     break

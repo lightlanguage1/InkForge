@@ -242,24 +242,28 @@ class SceneWriter:
     
     def _strip_llm_header(self, text: str) -> str:
         """Strip LLM-generated markdown header and metadata from scene text.
-        
-        The LLM often generates a title like "# Title" followed by metadata
-        like "*Scene ID: ...*" and "---". We strip this to avoid duplication
-        since the scene_committer adds its own standardized header.
-        
+
+        The LLM often generates a title like "# Title" or bare "第X章 Title"
+        followed by metadata like "*Scene ID: ...*" and "---". We strip this
+        to avoid duplication since the scene_committer adds its own standardized header.
+
         Args:
             text: Raw scene text from LLM
-        
+
         Returns:
             Text with header stripped
         """
+        import re as _re
         lines = text.split('\n')
         start_index = 0
-        
-        # Skip leading markdown title (# Title)
+
+        # Skip leading markdown title (# Title, ## Title, etc.)
         if lines and lines[0].strip().startswith('#'):
             start_index = 1
-        
+        # Also skip bare chapter title (e.g., "第五章 代码的代价") without # prefix
+        elif lines and _re.match(r'^第[零一二三四五六七八九十百千\d]+[章节幕]', lines[0].strip()):
+            start_index = 1
+
         # Skip blank lines after title
         while start_index < len(lines) and not lines[start_index].strip():
             start_index += 1

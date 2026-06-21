@@ -70,14 +70,25 @@ def _is_readonly_error(exc: Exception) -> bool:
 
 
 class VectorStore:
-    """Manages semantic search using ChromaDB."""
-    
-    def __init__(self, project_path: Path):
-        """Initialize vector store.
+    """Manages semantic search using ChromaDB. 实例按 project_path 缓存——避免重复创建
+    PersistentClient 导致 SQLITE_READONLY_DBMOVED。"""
 
-        Args:
-            project_path: Path to the novel project directory
-        """
+    _instances: dict[str, "VectorStore"] = {}
+
+    def __new__(cls, project_path: Path):
+        key = str(Path(project_path).resolve())
+        if key in cls._instances:
+            return cls._instances[key]
+        instance = super().__new__(cls)
+        cls._instances[key] = instance
+        return instance
+
+    def __init__(self, project_path: Path):
+        # 避免重复初始化（__new__ 返回缓存实例后 __init__ 仍会调用）
+        if hasattr(self, "_initialized"):
+            return
+        self._initialized = True
+
         self.project_path = Path(project_path)
         self.index_path = self.project_path / "memory" / "index"
         self.index_path.mkdir(parents=True, exist_ok=True)
@@ -90,32 +101,68 @@ class VectorStore:
             path=str(self.index_path),
             settings=Settings(anonymized_telemetry=False, chroma_sqlite_timeout=60000)
         )
-        
-        # Initialize collections
-        self.characters_collection = self.client.get_or_create_collection(
-            name="characters",
-            metadata={"description": "Character entities"}
-        )
-        self.locations_collection = self.client.get_or_create_collection(
-            name="locations",
-            metadata={"description": "Location entities"}
-        )
-        self.scenes_collection = self.client.get_or_create_collection(
-            name="scenes",
-            metadata={"description": "Scene summaries"}
-        )
-        self.lore_collection = self.client.get_or_create_collection(
-            name="lore",
-            metadata={"description": "World rules and lore (Phase 7A.4)"}
-        )
-        self.factions_collection = self.client.get_or_create_collection(
-            name="factions",
-            metadata={"description": "Faction/organization entities"}
-        )
-        self.loops_collection = self.client.get_or_create_collection(
-            name="loops",
-            metadata={"description": "Open loop / story thread entities"}
-        )
+
+        # Initialize collections with readonly retry
+        self._init_collections()
+
+    def _init_collections(self):
+        """创建或获取所有 collection。readonly 时自动修复重试。"""
+        try:
+            self.characters_collection = self.client.get_or_create_collection(
+                name="characters",
+                metadata={"description": "Character entities"}
+            )
+            self.locations_collection = self.client.get_or_create_collection(
+                name="locations",
+                metadata={"description": "Location entities"}
+            )
+            self.scenes_collection = self.client.get_or_create_collection(
+                name="scenes",
+                metadata={"description": "Scene summaries"}
+            )
+            self.lore_collection = self.client.get_or_create_collection(
+                name="lore",
+                metadata={"description": "World rules and lore (Phase 7A.4)"}
+            )
+            self.factions_collection = self.client.get_or_create_collection(
+                name="factions",
+                metadata={"description": "Faction/organization entities"}
+            )
+            self.loops_collection = self.client.get_or_create_collection(
+                name="loops",
+                metadata={"description": "Open loop / story thread entities"}
+            )
+        except Exception as e:
+            if _is_readonly_error(e):
+                logger.warning("ChromaDB init 遇到 readonly，尝试修复后重试")
+                self._repair_and_reconnect()
+                # 修复后再次尝试
+                self.characters_collection = self.client.get_or_create_collection(
+                    name="characters",
+                    metadata={"description": "Character entities"}
+                )
+                self.locations_collection = self.client.get_or_create_collection(
+                    name="locations",
+                    metadata={"description": "Location entities"}
+                )
+                self.scenes_collection = self.client.get_or_create_collection(
+                    name="scenes",
+                    metadata={"description": "Scene summaries"}
+                )
+                self.lore_collection = self.client.get_or_create_collection(
+                    name="lore",
+                    metadata={"description": "World rules and lore (Phase 7A.4)"}
+                )
+                self.factions_collection = self.client.get_or_create_collection(
+                    name="factions",
+                    metadata={"description": "Faction/organization entities"}
+                )
+                self.loops_collection = self.client.get_or_create_collection(
+                    name="loops",
+                    metadata={"description": "Open loop / story thread entities"}
+                )
+            else:
+                raise
 
     def _repair_and_reconnect(self):
         """运行时自愈：清理 WAL 残留并重建 ChromaDB 客户端连接。
@@ -345,6 +392,7 @@ class VectorStore:
     # Search Methods
     # ========================================================================
 
+    @_retry_on_readonly
     def search_characters(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
         """Search for relevant characters.
         
@@ -362,6 +410,7 @@ class VectorStore:
         
         return self._format_results(results)
     
+    @_retry_on_readonly
     def search_locations(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
         """Search for relevant locations.
         
@@ -379,6 +428,7 @@ class VectorStore:
         
         return self._format_results(results)
     
+    @_retry_on_readonly
     def search_scenes(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
         """Search for relevant scenes.
         
@@ -396,7 +446,8 @@ class VectorStore:
         
         return self._format_results(results)
     
-    def search(self, query: str, entity_types: Optional[List[str]] = None, 
+    @_retry_on_readonly
+    def search(self, query: str, entity_types: Optional[List[str]] = None,
                limit: int = 5) -> List[Dict[str, Any]]:
         """Search across multiple entity types.
         
@@ -460,6 +511,7 @@ class VectorStore:
         
         return all_results[:limit]
 
+    @_retry_on_readonly
     def search_factions(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
         """Search for relevant factions.
         
@@ -476,6 +528,7 @@ class VectorStore:
         )
         return self._format_results(results)
 
+    @_retry_on_readonly
     def search_loops(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
         """Search for relevant open loops.
 
@@ -600,6 +653,7 @@ class VectorStore:
             metadatas=[metadata]
         )
     
+    @_retry_on_readonly
     def search_lore(
         self,
         query: str,
@@ -727,3 +781,70 @@ class VectorStore:
             import logging
             logging.getLogger(__name__).warning(f"Semantic similarity computation failed: {e}")
             return 0.0
+
+
+def rebuild_indexes(project_dir: Path) -> None:
+    """从实体 JSON 文件重建全部 ChromaDB 索引。
+
+    用于 git checkout/reset 后恢复——tree 快照不含二进制 ChromaDB 文件。
+    实体 JSON 文本文件是数据源，向量从文本重新计算，不会丢失信息。
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    from .manager import MemoryManager
+
+    memory = MemoryManager(project_dir)
+    vs = VectorStore(project_dir)
+    count = 0
+
+    for cid in memory.list_characters():
+        c = memory.load_character(cid)
+        if c:
+            try:
+                vs.index_character(c)
+                count += 1
+            except Exception as e:
+                logger.warning("重建角色索引失败 %s: %s", cid, e)
+
+    for lid in memory.list_locations():
+        loc = memory.load_location(lid)
+        if loc:
+            try:
+                vs.index_location(loc)
+                count += 1
+            except Exception as e:
+                logger.warning("重建地点索引失败 %s: %s", lid, e)
+
+    for fid in memory.list_factions():
+        fac = memory.load_faction(fid)
+        if fac:
+            try:
+                vs.index_faction(fac)
+                count += 1
+            except Exception as e:
+                logger.warning("重建势力索引失败 %s: %s", fid, e)
+
+    for sid in memory.list_scenes():
+        scene = memory.load_scene(sid)
+        if scene:
+            try:
+                vs.index_scene(scene)
+                count += 1
+            except Exception as e:
+                logger.warning("重建场景索引失败 %s: %s", sid, e)
+
+    for loop in memory.load_open_loops():
+        try:
+            vs.index_loop(loop)
+            count += 1
+        except Exception as e:
+            logger.warning("重建线索索引失败: %s", e)
+
+    for lore in memory.load_all_lore():
+        try:
+            vs.index_lore(lore)
+            count += 1
+        except Exception as e:
+            logger.warning("重建世界观索引失败: %s", e)
+
+    logger.info("ChromaDB 索引重建完成: %d 条", count)

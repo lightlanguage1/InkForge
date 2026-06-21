@@ -172,50 +172,155 @@ novel tick --notes "本幕描写两位主角在月光下的温泉中互诉衷肠
 | 势力 | `memory/factions/F*.json` | 名称/组织类型/目标/影响力/立场 |
 | 向量索引 | ChromaDB | 场景摘要 + 世界观语义搜索 |
 
-## 架构
+## 项目结构
 
 ```
-novel_agent/
-├── agent/          ✅ 核心 — AI 智能体（Writer/Planner/Evaluator）
-├── memory/         ✅ 核心 — 记忆/向量存储/检查点/分支管理
-├── plot/           ✅ 核心 — 情节节拍管理
-├── tools/          ✅ 核心 — LLM 工具注册表/多供应商
-├── skill/          ✅ 核心 — 写作技能提取/注入
-├── engine/         ✅ 核心 — 常驻进程引擎
-├── reference/      ✅ 核心 — 参考小说索引
-├── cli/            ✅ 核心 — 命令行界面
-├── configs/        ✅ 核心 — 配置/API Key
-├── data/           ✅ 核心 — 姓名库/Prompt 模板
-├── utils/          ✅ 核心 — 工具函数
+InkForge/
+├── novel_agent/              # 核心代码包
+│   ├── agent/                # 核心引擎（Tick 循环 + 写作 + 评估）
+│   │   ├── agent.py                  # StoryAgent 主编排器
+│   │   ├── context.py                # ContextBuilder — Planner 上下文（~25字段）
+│   │   ├── writer_context.py         # WriterContextBuilder — Writer 上下文
+│   │   ├── writer.py                 # SceneWriter — 写作+拒止回落+润色
+│   │   ├── evaluator.py              # SceneEvaluator — POV/连续性+QA指标
+│   │   ├── prompts.py                # System Prompt + 模板加载
+│   │   ├── schemas.py                # Plan JSON 校验
+│   │   ├── runtime.py                # PlanExecutor — 工具调用执行
+│   │   ├── scene_committer.py        # 场景提交
+│   │   ├── tension_evaluator.py      # 张力评估
+│   │   ├── plan_manager.py           # 计划持久化
+│   │   ├── streaming_agent.py        # SSE 流式 Agent
+│   │   ├── fact_extractor.py         # 事实提取
+│   │   ├── entity_updater.py         # 事实→实体变更
+│   │   ├── lore_extractor.py         # 世界观提取
+│   │   ├── lore_contradiction_detector.py  # 设定冲突检测
+│   │   └── character_detector.py     # 新角色检测
+│   ├── memory/                # 持久化与向量检索
+│   │   ├── manager.py                 # MemoryManager — JSON CRUD
+│   │   ├── entities.py                # 数据类定义（9个实体）
+│   │   ├── vector_store.py            # ChromaDB 向量索引
+│   │   ├── update.py                  # 场景后处理管道总入口
+│   │   ├── summarizer.py             # 摘要生成
+│   │   └── checkpoint.py             # 项目存档
+│   ├── plot/                  # 情节节拍管理
+│   │   └── manager.py                 # PlotOutlineManager — 节拍CRUD+LLM生成
+│   ├── tools/                 # LLM 后端 + 工具注册
+│   │   ├── llm_interface.py           # 5种后端统一入口
+│   │   ├── multi_provider_llm.py      # 多供应商API注册表
+│   │   ├── provider.py                # LLMProvider — generate/chat封装
+│   │   ├── router.py                  # ModelRouter — 按任务路由模型
+│   │   ├── registry.py                # ToolRegistry — 工具注册表
+│   │   ├── memory_tools.py            # 10个工具实现
+│   │   ├── name_generator.py          # 随机中文名
+│   │   ├── codex_interface.py         # Codex CLI 后端
+│   │   ├── gemini_cli_interface.py    # Gemini CLI 后端
+│   │   ├── claude_cli_interface.py    # Claude Code CLI 后端
+│   │   ├── ollama_stream.py           # Ollama 流式
+│   │   └── llm_pool.py                # LLM 连接池
+│   ├── skill/                 # 写作技能系统
+│   │   ├── importer.py                # 小说→SKILL.yaml（分层采样+角色去重）
+│   │   ├── injector.py                # SKILL→写作上下文注入
+│   │   ├── models.py                  # Skill/StyleProfile等数据类
+│   │   └── store.py                   # YAML 持久化
+│   ├── engine/                # 常驻进程引擎
+│   │   ├── core.py                    # EngineCore — LLMPool+ProjectManager
+│   │   └── project_manager.py         # 项目管理器
+│   ├── api/                   # REST API
+│   │   ├── server.py                  # FastAPI 入口（各模块 try/except 注册）
+│   │   ├── deps.py                    # 共享依赖
+│   │   └── routers/                   # 核心路由（auth/projects/entities/generation/…）
+│   ├── reference/             # 外部参考小说索引
+│   │   └── indexer.py                 # 分块+向量搜索
+│   ├── cli/                   # 命令行界面
+│   │   ├── main.py                    # 全部命令注册
+│   │   ├── project.py                 # 项目创建/查找
+│   │   ├── foundation.py              # 故事设定向导
+│   │   ├── recent_projects.py         # 最近项目追踪
+│   │   └── commands/                  # 各命令实现
+│   │       ├── skill.py               # 技能管理
+│   │       ├── plot.py                # 情节节拍管理
+│   │       ├── checkpoint.py          # 存档管理
+│   │       ├── compile.py             # 手稿编译
+│   │       ├── summarize.py           # 摘要生成
+│   │       ├── status.py              # 状态查看
+│   │       ├── list.py                # 实体列表
+│   │       ├── inspect.py             # 实体详情
+│   │       ├── goals.py               # 目标层级
+│   │       ├── lore.py                # 世界观浏览
+│   │       ├── plan.py                # 计划预览
+│   │       └── titles.py              # 标题生成
+│   ├── configs/               # 配置
+│   │   ├── config.py                  # 全局配置管理
+│   │   ├── constants.py               # 所有魔法数字
+│   │   └── api_keys.py                # API Key 统一解析
+│   ├── data/                  # 静态数据
+│   │   ├── names/                     # 中文姓名库
+│   │   ├── templates/                 # Prompt 模板（可热更新）
+│   │   └── skills/                    # 已导入的写作技能
+│   ├── utils/                 # 工具函数
+│   │
+│   ├── user/                  # 🔌 独立 — 用户认证/DB/中间件
+│   │   ├── auth.py                    # HMAC+SHA256 JWT 认证
+│   │   ├── db.py                      # SQLite 用户数据库
+│   │   ├── context.py                 # get_current_user 依赖
+│   │   └── middleware.py              # 认证中间件（最小白名单）
+│   ├── music/                 # 🔌 独立 — 音乐播放器
+│   │   ├── router.py                  # 搜索/流代理/随机/收藏 API
+│   │   ├── sources.py                 # 网易云+酷狗 API 封装
+│   │   └── db.py                      # 收藏 SQLite 表
+│   ├── community/             # 🔌 独立 — 社区阅读
+│   │   ├── router.py                  # 发布/阅读/评论/聊天 API
+│   │   └── db.py                      # 帖子/评论 SQLite 表
+│   ├── admin/                 # 🔌 独立 — 管理面板
+│   │   ├── router.py                  # 用户管理/统计 API
+│   │   └── db.py                      # 管理操作
+│   ├── announcement/          # 🔌 独立 — 公告栏
+│   │   ├── router.py                  # 公告 CRUD API
+│   │   └── db.py                      # 公告 SQLite 表
+│   └── template/              # 🔌 独立 — 文风/写作方法
+│       ├── router.py                  # 预设/自定义模板 API
+│       ├── db.py                      # style+craft 双表
+│       ├── presets.py                 # 10个内置预设
+│       └── inject.py                  # 注入写作上下文
 │
-├── user/           🔌 独立 — 用户认证/DB/中间件
-├── music/          🔌 独立 — 音乐搜索/流/收藏/随机
-├── community/      🔌 独立 — 发布/阅读/评论/聊天
-├── admin/          🔌 独立 — 管理面板
-├── announcement/   🔌 独立 — 公告栏
-├── template/       🔌 独立 — 文风/写作方法模板
+├── frontend/                  # React 18 + TypeScript + Vite
+│   └── src/
+│       ├── pages/
+│       │   ├── Dashboard.tsx          # 项目仪表盘
+│       │   ├── Overview.tsx           # 项目概览
+│       │   ├── Writing.tsx            # 写作页面（SSE 流式）
+│       │   ├── AdminPage.tsx          # 管理面板
+│       │   ├── Community.tsx          # 🆕 社区入口（重导出）
+│       │   └── community/            # 🆕 社区
+│       │       ├── CommunityList.tsx   #   社区列表（番茄小说式）
+│       │       └── CommunityRead.tsx   #   阅读页（滚动/翻页/自动）
+│       ├── components/
+│       │   ├── ui/                    # 基础组件库
+│       │   ├── community/            # 🆕 社区评论/聊天组件
+│       │   ├── reader/               # 🆕 阅读器组件
+│       │   ├── MusicPlayer.tsx       # 🆕 音乐播放器（可拖拽小球+VU表）
+│       │   ├── AnnouncementBanner.tsx # 🆕 公告栏（可关闭）
+│       │   ├── NewProjectModal.tsx    # 新建项目（含文风/方法选择）
+│       │   └── ...
+│       ├── api/                       # API 客户端
+│       │   ├── client.ts              #   基础 HTTP 客户端
+│       │   ├── music.ts              # 🆕 音乐 API
+│       │   ├── community.ts          # 🆕 社区 API
+│       │   ├── templates.ts          # 🆕 文风/方法 API
+│       │   └── announcements.ts      # 🆕 公告 API
+│       └── types/                     # TypeScript 类型定义
 │
-└── api/
-    ├── server.py   — 入口（各模块 try/except 注册，失败不影响核心）
-    ├── deps.py     — 共享依赖
-    └── routers/    — 核心路由（auth/projects/entities/generation/…）
-```
-
-```
-frontend/src/
-├── pages/
-│   ├── community/           🆕 社区列表 + 阅读
-│   ├── Dashboard/Overview/Writing/…
-├── components/
-│   ├── ui/                 基础组件
-│   ├── community/          🆕 评论/聊天
-│   ├── reader/             🆕 阅读器组件
-│   ├── MusicPlayer.tsx     🆕 音乐播放器
-│   ├── AnnouncementBanner  🆕 公告栏
-│   ├── StyleCraftPicker    🆕 文风选择器
-│   └── …
-├── api/                    API 客户端（按域拆分）
-└── types/                  TypeScript 类型
+├── examples/                 # 示例小说项目
+├── docs/                     # 设计文档
+│   ├── ARCHITECTURE.md                # 架构设计（最新）
+│   ├── ARCHITECTURE_DEEP_ANALYSIS.md  # 架构改进方案
+│   ├── IMPLEMENTATION_PLAN.md         # 实施计划
+│   ├── IMPLEMENTATION_ISSUES.md       # 技术债清单
+│   ├── IMPROVEMENT_PLAN.md            # 优化方案
+│   ├── API_REFERENCE.md               # API 参考
+│   ├── PLOT_FIRST_MODE_GUIDE.md       # Plot-First 用户指南
+│   └── spec.md                        # 原始规格文档
+└── scripts/                  # 辅助脚本
 ```
 
 ## CLI 命令参考

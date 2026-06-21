@@ -18,6 +18,8 @@ class ProjectCreateRequest(BaseModel):
     primary_goal: Optional[str] = None
     use_plot_first: bool = False
     skill_ids: List[str] = []
+    style_id: Optional[str] = None
+    craft_id: Optional[str] = None
 
 
 class TickRequest(BaseModel):

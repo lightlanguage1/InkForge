@@ -68,7 +68,8 @@ class SceneCommitter:
         """
         # 1. Generate scene ID
         scene_id = self.memory.generate_id("scene")
-        
+        scene_num = int(scene_id[1:])  # S010 → 10
+
         # 2. Save markdown file
         markdown_file = self._save_markdown(
             scene_id,
@@ -107,9 +108,14 @@ class SceneCommitter:
         # 7. Index in vector database
         self.vector.index_scene(scene)
 
-        # 8. 分支指针前移（git commit）
-        from ..memory.branch_manager import advance_branch
-        advance_branch(self.memory.project_path)
+        # 8. git commit（保存 tree 快照 + 更新 ref）
+        from ..memory.git_core import GitRepo
+        repo = GitRepo(self.memory.project_path)
+        repo.commit(
+            tick=tick,
+            message=scene.title or f"Scene {tick}",
+            scene_file=f"scene_{scene_num:03d}.md",
+        )
 
         return scene_id
     
@@ -122,24 +128,32 @@ class SceneCommitter:
     ) -> Path:
         """Save scene text to markdown file.
 
+        文件名基于 scene_id 编号（如 S010 → scene_010.md），
+        tick 编号如果与 scene_id 不同步时也不会覆盖已有文件。
+
         如果该 tick 的旧场景文件已存在（回滚后重写），
         自动将旧文件归档带时间戳后缀，不丢失历史节点。
         """
         self.scenes_dir.mkdir(parents=True, exist_ok=True)
 
-        filename = f"scene_{tick:03d}.md"
+        # 从 scene_id 提取编号（S010 → 10），确保和文件名一致
+        scene_num = int(scene_id[1:])  # strip 'S' prefix
+        filename = f"scene_{scene_num:03d}.md"
         filepath = self.scenes_dir / filename
 
         # 回滚后重写：旧文件归档，不覆盖（git 模型）
         if filepath.exists():
             ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-            archived = self.scenes_dir / f"scene_{tick:03d}.md.{ts}.bak"
+            archived = self.scenes_dir / f"scene_{scene_num:03d}.md.{ts}.bak"
             filepath.rename(archived)
             logger.info("归档旧场景: %s → %s", filename, archived.name)
 
         cleaned_text = strip_markdown(text)
+        # 去掉 title 中已有的 "第X章" 前缀，避免和第{tick+1}章重复
+        import re as _re
+        clean_title = _re.sub(r'^第[零一二三四五六七八九十百千\d]+章\s*', '', title).strip()
         with open(filepath, 'w', encoding='utf-8') as f:
-            f.write(f"# 第{tick+1}章 {title}\n\n")
+            f.write(f"# 第{tick+1}章 {clean_title}\n\n")
             f.write(cleaned_text)
             f.write("\n")
 

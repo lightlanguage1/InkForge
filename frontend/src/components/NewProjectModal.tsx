@@ -266,6 +266,21 @@ interface StepWorldProps {
 function StepWorld({ form, setForm, onBack, onNext }: StepWorldProps) {
   return (
     <div className="p-6 space-y-5 animate-fade-in">
+      {/* 主角设定 */}
+      <div className="p-4 rounded-xl" style={{ background: "rgba(200,151,90,0.04)", border: "1px solid rgba(200,151,90,0.1)" }}>
+        <p className="text-[11px] font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--accent)" }}>
+          👤 主角设定 <span className="font-normal normal-case" style={{ color: "var(--text-3)" }}>（可选 — 不填则 AI 自主创作）</span>
+        </p>
+        <div className="space-y-3">
+          <Input label="主角姓名/简述" value={form.protagonist ?? ""}
+            onChange={(v) => setForm({ ...form, protagonist: v })}
+            placeholder="沈青鸿，外冷内热的核爆仙尊，曾是原书天命女主…" />
+          <Textarea label="主角核心目标" value={form.primary_goal ?? ""}
+            onChange={(v) => setForm({ ...form, primary_goal: v })}
+            placeholder="主角最想达成的一件事——主线剧情的核心驱动力…" rows={2} />
+        </div>
+      </div>
+
       <Input label="背景设定" value={form.setting ?? ""} onChange={(v) => setForm({ ...form, setting: v })}
         placeholder="古代仙侠世界 / 近未来都市 / 架空大陆..." />
 
@@ -302,9 +317,6 @@ function StepWorld({ form, setForm, onBack, onNext }: StepWorldProps) {
 
       <Input label="主题（逗号分隔）" value={form.themes ?? ""} onChange={(v) => setForm({ ...form, themes: v })}
         placeholder="复仇 / 成长 / 爱情 / 救赎..." />
-
-      <Textarea label="主角核心目标" value={form.primary_goal ?? ""} onChange={(v) => setForm({ ...form, primary_goal: v })}
-        placeholder="主角最想达成的一件事——主线剧情的核心驱动力，一句话说清楚…" rows={2} />
 
       <div
         className="flex items-center justify-between p-4 rounded-xl cursor-pointer transition-all duration-150"

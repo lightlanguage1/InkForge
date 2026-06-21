@@ -169,16 +169,32 @@ class SceneEvaluator:
     # ---- POV check -------------------------------------------------------
 
     def _check_pov(self, text: str, context: Dict[str, Any]) -> bool:
-        """POV check: fast-path keyword bypass → LLM full-scene scan."""
-        # Run POV check via LLM whenever available
-        text_lower = text.lower()
-        if not any(m in text_lower for m in _FAST_PATH_MARKERS):
-            if not self.llm:
-                return True
+        """POV check: fast-path keyword bypass → LLM full-scene scan.
 
-        if self.llm:
+        降频策略：前N章全量 LLM 检查，之后每N章一次，其余仅关键词快速路径。
+        """
+        tick = context.get("current_tick", 0)
+        should_full_check = self._should_full_check(tick)
+
+        text_lower = text.lower()
+        has_markers = any(m in text_lower for m in _FAST_PATH_MARKERS)
+
+        if not has_markers and not should_full_check:
+            return True
+
+        if not self.llm:
+            return not has_markers
+
+        if should_full_check or has_markers:
             return self._llm_check_pov(text, context)
-        return False
+        return True
+
+    def _should_full_check(self, tick: int) -> bool:
+        """Determine if this tick should get a full LLM evaluation."""
+        from ..configs.constants import EVAL_FULL_CHECK_FIRST_N, EVAL_FULL_CHECK_INTERVAL
+        if tick < EVAL_FULL_CHECK_FIRST_N:
+            return True
+        return tick % EVAL_FULL_CHECK_INTERVAL == 0
 
     def _llm_check_pov(self, text: str, context: Dict[str, Any]) -> bool:
         """LLM scans the full scene for any form of POV violation."""
@@ -267,16 +283,14 @@ class SceneEvaluator:
     def _check_logic(self, text: str, context: Dict[str, Any]) -> dict | None:
         """LLM 评审场景的时间连续性、年龄一致性和逻辑矛盾。
 
-        总是调用 LLM（不像 POV 有快速路径），因为逻辑评审需要理解
-        故事上下文，无法用关键词判断。
+        降频策略：前N章全量，之后每N章一次，其余跳过节省成本。
         """
         if not self.llm:
             return None
 
         tick = context.get("current_tick", 0)
-        # Run logic QA every tick — the cost of missing contradictions far outweighs LLM cost
-        if tick > 0:
-            pass
+        if not self._should_full_check(tick):
+            return None  # 降频跳过
 
         pov_id = context.get("pov_character_id", "")
         char_name = context.get("pov_character_name", "未知")

@@ -3,9 +3,10 @@
 import json
 import logging
 import re
+import threading
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +20,7 @@ from .writer import SceneWriter
 from .evaluator import SceneEvaluator
 from .scene_committer import SceneCommitter
 from .tension_evaluator import TensionEvaluator
+from .scorer import ScoringEvaluator
 from ..tools.registry import ToolRegistry
 from ..memory.manager import MemoryManager
 from ..memory.vector_store import VectorStore
@@ -130,9 +132,15 @@ class StoryAgent:
         # Phase 5 components
         self.tension_evaluator = TensionEvaluator(config)
 
+        # Quality scoring (黄金三章打磨闭环)
+        self.scorer = ScoringEvaluator(self.agent_llm, config)
+
         # Plot-first components
         self.plot_manager = PlotOutlineManager(self.project_path, llm_interface)
         
+        # Async post-processing
+        self._async_update_thread: Optional[threading.Thread] = None
+
         # Load state
         self.state = self._load_state()
 
@@ -183,6 +191,9 @@ class StoryAgent:
         """Execute normal tick (tick 1+)."""
         tick = self.state["current_tick"]
 
+        # 等待上次异步后处理完成（确保本 tick 读取最新数据）
+        self._join_async_update()
+
         try:
             current_beat = self._resolve_plot_beat(tick)
 
@@ -212,22 +223,10 @@ class StoryAgent:
             self.plan_manager.save_plan(tick, plan, execution_results, context)
 
             # Phase 2: Write + Evaluate (with retry on failure)
-            max_retries = self.config.get("generation", {}).get("eval_max_retries", 2)
-            eval_feedback = ""
-            for attempt in range(max_retries + 1):
-                writer_context = self.writer_context_builder.build_writer_context(
-                    plan, execution_results, self.state, eval_feedback=eval_feedback,
-                    notes=getattr(self, '_tick_notes', ''),
-                )
-                scene_data = self.writer.write_scene(writer_context)
-                eval_result = self.evaluator.evaluate_scene(scene_data["text"], writer_context)
-                if eval_result["passed"] or not eval_result.get("issues"):
-                    break
-                if attempt < max_retries:
-                    logger.warning("评估失败 (第%d次)，带反馈重试...", attempt + 1)
-                    eval_feedback = _format_eval_feedback(eval_result)
-                else:
-                    raise ValueError(f"Scene evaluation failed after {max_retries + 1} attempts: {eval_result['issues']}")
+            # 黄金三章打磨闭环：前N章质量分不达标则自动重写
+            scene_data, eval_result, quality_info = self._write_with_quality_loop(
+                plan, execution_results, tick,
+            )
 
             # Phase 3: Commit
             tension = self.tension_evaluator.evaluate_tension(scene_data["text"], writer_context)
@@ -238,12 +237,22 @@ class StoryAgent:
             self._verify_beat(scene_id, plan, current_beat, scene_data, tick=tick)
             self._save_tension(scene_id, tension)
 
-            # Phase 4: Memory update
-            self._update_memory(scene_data["text"], scene_id, tick)
-            self._bump_loop_mentions(plan)
-            self._advance_threads(plan, scene_id, tick)
+            # Phase 4: Memory update (异步后台执行，不阻塞用户反馈)
             promotion_result = self._check_goal_promotion(tick)
-            self._maybe_audit_threads(tick)
+
+            async_cfg = self.config.get("generation", {}).get("async_post_process", True)
+            if async_cfg:
+                self._async_update_thread = threading.Thread(
+                    target=self._async_update_wrapper,
+                    args=(scene_data["text"], scene_id, tick, plan),
+                    daemon=True,
+                )
+                self._async_update_thread.start()
+            else:
+                self._update_memory(scene_data["text"], scene_id, tick)
+                self._bump_loop_mentions(plan)
+                self._advance_threads(plan, scene_id, tick)
+                self._maybe_audit_threads(tick)
 
             self.state["current_tick"] += 1
             self._save_state()
@@ -252,6 +261,7 @@ class StoryAgent:
             return self._build_tick_result(
                 tick, scene_id, scene_data, execution_results,
                 eval_result, tension, promotion_result,
+                quality_info=quality_info,
             )
 
         except RuntimeError as e:
@@ -541,6 +551,25 @@ class StoryAgent:
         self.memory.save_scene(scene)
         logger.info("        张力：%s/10（%s）", tension_result['tension_level'], tension_result['tension_category'])
 
+    def _join_async_update(self):
+        """等待上次异步后处理完成（如有）。"""
+        if self._async_update_thread is not None:
+            if self._async_update_thread.is_alive():
+                logger.debug("等待上次异步后处理完成...")
+                self._async_update_thread.join(timeout=30)
+            self._async_update_thread = None
+
+    def _async_update_wrapper(self, scene_text: str, scene_id: str, tick: int, plan: dict):
+        """异步后处理入口 — 包裹完整 Phase 4 逻辑。"""
+        try:
+            self._update_memory(scene_text, scene_id, tick)
+            self._bump_loop_mentions(plan)
+            self._advance_threads(plan, scene_id, tick)
+            self._maybe_audit_threads(tick)
+            logger.debug("异步后处理完成 (tick %d)", tick)
+        except Exception as e:
+            logger.warning("异步后处理失败 (tick %d): %s", tick, e)
+
     def _update_memory(self, scene_text: str, scene_id: str, tick: int):
         """Post-processing: facts, entities, lore, characters via memory/update.py."""
         from ..memory.update import update_from_scene
@@ -549,8 +578,81 @@ class StoryAgent:
         except Exception as e:
             logger.warning("内存更新失败 (tick %d): %s", tick, e)
 
+    def _write_with_quality_loop(
+        self, plan: dict, execution_results: dict, tick: int,
+    ) -> tuple:
+        """Write + Evaluate + 质量打磨闭环。
+
+        先按原有逻辑 write → eval（pass/fail 检查）。
+        如果通过且开启了质量打磨，再用 Scorer 打分：不达标则带反馈重写。
+
+        Returns: (scene_data, eval_result, quality_info)
+        """
+        max_retries = self.config.get("generation", {}).get("eval_max_retries", 2)
+        eval_feedback = ""
+        scene_data = None
+        eval_result = None
+        quality_info = {}  # quality_score, polish_rounds
+
+        # ---- Stage 1: 合规评估（原有逻辑） ----
+        for attempt in range(max_retries + 1):
+            writer_context = self.writer_context_builder.build_writer_context(
+                plan, execution_results, self.state, eval_feedback=eval_feedback,
+                notes=getattr(self, '_tick_notes', ''),
+            )
+            scene_data = self.writer.write_scene(writer_context)
+            eval_result = self.evaluator.evaluate_scene(scene_data["text"], writer_context)
+            if eval_result["passed"] or not eval_result.get("issues"):
+                break
+            if attempt < max_retries:
+                logger.warning("评估失败 (第%d次)，带反馈重试...", attempt + 1)
+                eval_feedback = _format_eval_feedback(eval_result)
+            else:
+                raise ValueError(
+                    f"Scene evaluation failed after {max_retries + 1} attempts: "
+                    f"{eval_result['issues']}"
+                )
+
+        # ---- Stage 2: 质量打磨（前N章） ----
+        if self.scorer.is_quality_tick(tick):
+            threshold = self.scorer.get_threshold(tick)
+            max_polish = self.scorer.max_polish_rounds
+            quality_feedback = ""
+            polish_rounds = 0
+
+            for polish_round in range(max_polish):
+                score_result = self.scorer.score_scene(scene_data["text"], writer_context)
+                total = score_result.get("total", 0)
+                if total >= threshold:
+                    logger.info("质量打磨通过: %d/100 ≥ %d (tick %d, 第%d轮)",
+                                total, threshold, tick, polish_round + 1)
+                    quality_info = {"quality_score": total, "polish_rounds": polish_round + 1}
+                    break
+
+                logger.info("质量打磨第%d轮: %d/100 < %d (tick %d)，带反馈重写...",
+                            polish_round + 1, total, threshold, tick)
+                quality_feedback = self.scorer.format_feedback(score_result)
+
+                # 带质量反馈重建 context 并重写
+                writer_context = self.writer_context_builder.build_writer_context(
+                    plan, execution_results, self.state,
+                    eval_feedback=quality_feedback,
+                    notes=getattr(self, '_tick_notes', ''),
+                )
+                scene_data = self.writer.write_scene(writer_context)
+                # 重写后仍需通过合规评估
+                eval_result = self.evaluator.evaluate_scene(
+                    scene_data["text"], writer_context,
+                )
+                polish_rounds = polish_round + 1
+
+            if not quality_info:
+                quality_info = {"quality_score": total, "polish_rounds": polish_rounds + 1}
+
+        return scene_data, eval_result, quality_info
+
     def _build_tick_result(self, tick, scene_id, scene_data, execution_results,
-                           eval_result, tension_result, promotion_result=None):
+                           eval_result, tension_result, promotion_result=None, quality_info=None):
         result = {
             "success": True,
             "tick": tick,
@@ -567,6 +669,9 @@ class StoryAgent:
                 "level": tension_result['tension_level'],
                 "category": tension_result['tension_category']
             }
+        if quality_info:
+            result["quality_score"] = quality_info.get("quality_score")
+            result["polish_rounds"] = quality_info.get("polish_rounds")
         return result
 
     def _auto_fill_foundation(self):
@@ -660,10 +765,17 @@ class StoryAgent:
             premise = foundation.get("premise", "")
             setting = foundation.get("setting", "")
             tone = foundation.get("tone", "")
+            protagonist = foundation.get("protagonist_archetype", "")
+            themes = foundation.get("themes", [])
+            primary_goal = foundation.get("primary_goal", "")
+            themes_str = ", ".join(themes) if isinstance(themes, list) else str(themes or "")
 
             lore_prompt = (
                 f"为以下故事设定生成初始世界观规则。\n\n"
-                f"类型：{genre}\n前提：{premise}\n背景：{setting}\n基调：{tone}\n\n"
+                f"类型：{genre}\n前提：{premise}\n背景：{setting}\n基调：{tone}\n"
+                f"主角：{protagonist or '（待定——由你根据上述设定自由创作）'}\n"
+                f"主题：{themes_str or '（待定）'}\n"
+                f"主角目标：{primary_goal or '（待定）'}\n\n"
                 f"请生成 3-5 条核心世界观规则，每条包含：\n"
                 f"- 类别：根据故事语境自行取名（如 魔法体系/科技水平/社会结构 等），不要用固定枚举\n"
                 f"- 类型：根据本条目的性质自行归类（如 规则/事实/约束/能力/限制 等）\n"
@@ -733,28 +845,11 @@ class StoryAgent:
             logger.info("   7. 保存计划...")
             plan_file = self.plan_manager.save_plan(tick, plan, execution_results, context)
 
-            # Step 9: Write scene with retry on evaluation failure
+            # Step 9: Write scene with retry + quality polish loop
             logger.info("   8. 撰写场景正文...")
-            max_retries = self.config.get("generation", {}).get("eval_max_retries", 2)
-            eval_feedback = ""
-            for attempt in range(max_retries + 1):
-                writer_context = self.writer_context_builder.build_writer_context(
-                    plan, execution_results, self.state, eval_feedback=eval_feedback,
-                    notes=getattr(self, '_tick_notes', ''),
-                )
-                scene_data = self.writer.write_scene(writer_context)
-
-                logger.info("   9. 评估场景...")
-                eval_result = self.evaluator.evaluate_scene(
-                    scene_data["text"], writer_context,
-                )
-                if eval_result["passed"] or not eval_result.get("issues"):
-                    break
-                if attempt < max_retries:
-                    logger.warning("评估失败 (第%d次)，带反馈重试...", attempt + 1)
-                    eval_feedback = _format_eval_feedback(eval_result)
-                else:
-                    raise ValueError(f"Scene evaluation failed after {max_retries + 1} attempts: {eval_result['issues']}")
+            scene_data, eval_result, quality_info = self._write_with_quality_loop(
+                plan, execution_results, tick,
+            )
 
             logger.info("   10. 提交场景...")
             scene_id = self.committer.commit_scene(scene_data, tick, plan)

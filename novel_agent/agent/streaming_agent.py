@@ -4,6 +4,8 @@ import json
 import logging
 from typing import Any, Generator
 
+from .scene_committer import strip_markdown as _strip
+
 logger = logging.getLogger(__name__)
 
 
@@ -82,12 +84,11 @@ class StreamingStoryAgent:
         )
 
         yield self._event("phase", {"name": "generating", "tick": tick})
-        scene_data = self.agent.writer.write_scene(writer_context)
+        scene_data, eval_result, quality_info = self.agent._write_with_quality_loop(
+            plan, execution_results, tick,
+        )
 
         yield self._event("phase", {"name": "evaluation", "tick": tick})
-        eval_result = self.agent.evaluator.evaluate_scene(
-            scene_data["text"], writer_context
-        )
         if not eval_result["passed"] and eval_result.get("issues"):
             raise ValueError(f"Scene evaluation failed: {eval_result['issues']}")
 
@@ -120,8 +121,9 @@ class StreamingStoryAgent:
         result = self.agent._build_tick_result(
             tick, scene_id, scene_data, execution_results,
             eval_result, tension_result,
+            quality_info=quality_info,
         )
-        result["text"] = scene_data.get("text", "")[:8000]
+        result["text"] = _strip(scene_data.get("text", ""))[:8000]
         yield self._event("tick_complete", result)
 
     def _stream_first_tick(self, tick: int) -> Generator[str, None, None]:
@@ -157,12 +159,11 @@ class StreamingStoryAgent:
         )
 
         yield self._event("phase", {"name": "generating", "tick": tick})
-        scene_data = agent.writer.write_scene(writer_context)
+        scene_data, eval_result, quality_info = agent._write_with_quality_loop(
+            plan, execution_results, tick,
+        )
 
         yield self._event("phase", {"name": "evaluation", "tick": tick})
-        eval_result = agent.evaluator.evaluate_scene(
-            scene_data["text"], writer_context
-        )
         if not eval_result["passed"] and eval_result.get("issues"):
             raise ValueError(f"Scene evaluation failed: {eval_result['issues']}")
 
@@ -184,10 +185,13 @@ class StreamingStoryAgent:
             "success": True,
             "tick": tick,
             "scene_id": scene_id,
-            "scene_file": f"scenes/scene_{tick:03d}.md",
+            "scene_file": f"scenes/scene_{int(scene_id[1:]):03d}.md",
             "word_count": scene_data.get("word_count", 0),
-            "text": scene_data.get("text", "")[:8000],
+            "text": _strip(scene_data.get("text", ""))[:8000],
         }
+        if quality_info:
+            result["quality_score"] = quality_info.get("quality_score")
+            result["polish_rounds"] = quality_info.get("polish_rounds")
         yield self._event("tick_complete", result)
 
     @staticmethod

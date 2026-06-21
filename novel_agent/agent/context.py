@@ -238,6 +238,14 @@ class ContextBuilder:
         else:
             context["plan_rejection_feedback"] = ""
 
+        # Token 预算裁剪（try/except 包裹，失败返回原始 context）
+        try:
+            from ..context.budget import ContextBudgeter
+            budgeter = ContextBudgeter(self.config)
+            context = budgeter.budget_planner_context(context)
+        except Exception:
+            pass
+
         return context
 
     def _format_skill_context(self, project_state: dict) -> str:
@@ -413,10 +421,11 @@ class ContextBuilder:
         return "\n".join(lines)
 
     def _format_relevant_lore(self) -> str:
-        """Show top 5 lore items relevant to recent scenes (via ChromaDB).
+        """Show top 10 lore items relevant to recent scenes (via ChromaDB).
 
-        Falls back to showing the 5 most recently added lore items if
-        ChromaDB has no results.
+        Falls back to showing the 10 most important lore items if
+        ChromaDB has no results. No longer truncates content to 200 chars
+        — the full lore content is essential for planner compliance.
         """
         try:
             recent_ids = self.memory.list_scenes()
@@ -426,18 +435,18 @@ class ContextBuilder:
             if not last_scene or not last_scene.summary:
                 return ""
             query = " ".join(last_scene.summary) if isinstance(last_scene.summary, list) else str(last_scene.summary)
-            results = self.vector.search_lore(query, n_results=5)
+            results = self.vector.search_lore(query, n_results=10)
         except Exception:
             results = []
 
         if not results:
             return ""
 
-        lines = ["### 相关世界观", ""]
+        lines = ["### 相关世界观规则（必须遵守）", ""]
         for r in results:
             doc = r.get("document", "") or r.get("text", "") or ""
             if doc:
-                lines.append(f"- {doc[:200]}")
+                lines.append(f"- {doc}")
         return "\n".join(lines) if len(lines) > 2 else ""
 
     def _get_qa_summary(self) -> str:
@@ -744,10 +753,10 @@ class ContextBuilder:
         return "\n".join(lines)
 
     def _format_factions(self) -> str:
-        """Format factions (organizations) for prompt context.
-        
+        """Format factions (organizations) for prompt context, including stance toward protagonist.
+
         Returns:
-            Formatted list of factions by importance
+            Formatted list of factions by importance with stance info
         """
         # Access MemoryManager directly
         try:
@@ -775,7 +784,18 @@ class ContextBuilder:
             org_type = getattr(f, 'org_type', 'other')
             name = getattr(f, 'name', f.id)
             summary = getattr(f, 'summary', '')
-            lines.append(f"- {name} ({f.id}) — type: {org_type}, importance: {imp}. {summary}")
+            # Include stance toward protagonist
+            stance_map = getattr(f, 'stance_by_character', {}) or {}
+            stance_parts = []
+            for char_id, stance in stance_map.items():
+                char = self.memory.load_character(char_id) if char_id else None
+                char_name = char.display_name if char else char_id
+                stance_parts.append(f"{char_name}:{stance}")
+            stance_text = " | ".join(stance_parts) if stance_parts else "无立场记录"
+            lines.append(f"- {name} ({f.id}) — type: {org_type}, importance: {imp}")
+            lines.append(f"  立场: {stance_text}")
+            if summary:
+                lines.append(f"  概述: {summary}")
         return "\n".join(lines)
     
     def _get_beat_enforcement_instructions(self) -> str:

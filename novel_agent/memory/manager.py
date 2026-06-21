@@ -646,6 +646,13 @@ class MemoryManager:
     def list_factions(self) -> List[str]:
         """List all faction IDs."""
         return [f.stem for f in self.factions_path.glob("*.json")]
+
+    def delete_faction(self, faction_id: str):
+        """删除势力文件。"""
+        path = self.factions_path / f"{faction_id}.json"
+        if path.exists():
+            path.unlink()
+            self.invalidate_cache()
     
     # ========================================================================
     # Open Loops Management

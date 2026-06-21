@@ -1,363 +1,144 @@
-"""Checkpoint system for project state snapshots."""
+"""存档系统——基于 git tag + reset。"""
+
 import json
 import logging
-import shutil
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 from datetime import datetime
 from dataclasses import dataclass, asdict
+
+from .git_core import GitRepo
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class CheckpointManifest:
-    """Metadata for a checkpoint."""
     checkpoint_id: str
     tick: int
     timestamp: str
-    scenes_count: int
-    characters_count: int
-    locations_count: int
-    size_bytes: int
-    created_by: str
-    
+    scenes_count: int = 0
+    characters_count: int = 0
+    locations_count: int = 0
+    size_bytes: int = 0
+    created_by: str = ""
+
     def to_dict(self) -> dict:
         return asdict(self)
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> "CheckpointManifest":
-        return cls(**data)
+        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
 
 
 def get_checkpoint_dir(project_dir: Path) -> Path:
-    """Get checkpoints directory path.
-    
-    Args:
-        project_dir: Path to project directory
-        
-    Returns:
-        Path to checkpoints directory
-    """
     return project_dir / "checkpoints"
 
 
 def get_checkpoint_id(tick: int) -> str:
-    """Generate checkpoint ID from tick number.
-    
-    Args:
-        tick: Tick number
-        
-    Returns:
-        Checkpoint ID string
-    """
     return f"checkpoint_tick_{tick:03d}"
 
 
-def get_directory_size(path: Path) -> int:
-    """Calculate total size of directory in bytes.
-    
-    Args:
-        path: Directory path
-        
-    Returns:
-        Size in bytes
-    """
-    total = 0
-    for item in path.rglob('*'):
-        if item.is_file():
-            total += item.stat().st_size
-    return total
+def create_checkpoint(project_dir: Path, tick: int, created_by: str = "manual") -> str:
+    """创建存档——git tag。"""
+    repo = GitRepo(project_dir)
+    repo.init()
+    if repo.needs_migration():
+        repo.migrate_from_legacy()
 
-
-def count_files_in_dir(directory: Path, pattern: str = "*.json") -> int:
-    """Count files matching pattern in directory.
-    
-    Args:
-        directory: Directory to search
-        pattern: Glob pattern
-        
-    Returns:
-        File count
-    """
-    if not directory.exists():
-        return 0
-    return len(list(directory.glob(pattern)))
-
-
-def create_checkpoint(project_dir: Path, tick: int, created_by: str = "manual") -> Path:
-    """Create a checkpoint of the current project state.
-    
-    Args:
-        project_dir: Path to project directory
-        tick: Current tick number
-        created_by: Description of what created the checkpoint
-        
-    Returns:
-        Path to created checkpoint directory
-        
-    Raises:
-        IOError: If checkpoint cannot be created
-    """
-    base_id = get_checkpoint_id(tick)
+    # 旧 checkpoints 目录保留用于向后兼容的 manifest 索引
     checkpoints_dir = get_checkpoint_dir(project_dir)
     checkpoints_dir.mkdir(exist_ok=True)
 
-    # 自动存档：一个 tick 只有一个；手动存档：加时间戳允许多个
+    base_id = get_checkpoint_id(tick)
     if created_by == "auto":
-        checkpoint_id = base_id
-        checkpoint_path = checkpoints_dir / checkpoint_id
-        if checkpoint_path.exists():
-            logger.info("自动存档已存在，跳过: %s", checkpoint_id)
-            return str(checkpoint_path)
+        tag_name = base_id
+        existing = repo.list_tags()
+        if any(t["name"] == tag_name for t in existing):
+            logger.info("自动存档已存在，跳过: %s", tag_name)
+            return tag_name
     else:
         ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        checkpoint_id = f"{base_id}_{ts}"
-        checkpoint_path = checkpoints_dir / checkpoint_id
-    
-    try:
-        # Create checkpoint directory
-        checkpoint_path.mkdir()
-        
-        # Copy directories
-        dirs_to_copy = ['memory', 'scenes', 'plans']
-        for dir_name in dirs_to_copy:
-            src = project_dir / dir_name
-            if src.exists():
-                dst = checkpoint_path / dir_name
-                shutil.copytree(src, dst)
-        
-        # Copy files
-        files_to_copy = ['state.json', 'config.yaml']
-        for file_name in files_to_copy:
-            src = project_dir / file_name
-            if src.exists():
-                dst = checkpoint_path / file_name
-                shutil.copy2(src, dst)
-        
-        # Count entities
-        memory_dir = checkpoint_path / "memory"
-        scenes_count = count_files_in_dir(checkpoint_path / "scenes", "*.md")
-        chars_count = count_files_in_dir(memory_dir / "characters")
-        locs_count = count_files_in_dir(memory_dir / "locations")
-        
-        # Calculate size
-        size_bytes = get_directory_size(checkpoint_path)
-        
-        # Create manifest
-        manifest = CheckpointManifest(
-            checkpoint_id=checkpoint_id,
-            tick=tick,
-            timestamp=datetime.now().isoformat(),
-            scenes_count=scenes_count,
-            characters_count=chars_count,
-            locations_count=locs_count,
-            size_bytes=size_bytes,
-            created_by=created_by
-        )
-        
-        # Save manifest
-        manifest_path = checkpoint_path / "manifest.json"
-        with open(manifest_path, 'w', encoding='utf-8') as f:
-            json.dump(manifest.to_dict(), f, indent=2)
-        
-        return checkpoint_path
-        
-    except Exception as e:
-        # Clean up on error
-        if checkpoint_path.exists():
-            shutil.rmtree(checkpoint_path)
-        raise IOError(f"Error creating checkpoint: {e}")
+        tag_name = f"{base_id}_{ts}"
+
+    # 统计信息
+    memory_dir = project_dir / "memory"
+    scenes_count = len(list((project_dir / "scenes").glob("scene_*.md"))) if (project_dir / "scenes").exists() else 0
+    chars_count = len(list((memory_dir / "characters").glob("*.json"))) if (memory_dir / "characters").exists() else 0
+    locs_count = len(list((memory_dir / "locations").glob("*.json"))) if (memory_dir / "locations").exists() else 0
+
+    repo.create_tag(tag_name, created_by)
+
+    # 保存 manifest 到旧 checkpoints 目录（兼容）
+    manifest = CheckpointManifest(
+        checkpoint_id=tag_name, tick=tick,
+        timestamp=datetime.now().isoformat(),
+        scenes_count=scenes_count, characters_count=chars_count,
+        locations_count=locs_count, created_by=created_by,
+    )
+    manifest_path = checkpoints_dir / f"{tag_name}_manifest.json"
+    manifest_path.write_text(json.dumps(manifest.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+
+    logger.info("存档已创建: %s (tick %d)", tag_name, tick)
+    return tag_name
 
 
 def list_checkpoints(project_dir: Path) -> List[CheckpointManifest]:
-    """List all available checkpoints.
-    
-    Args:
-        project_dir: Path to project directory
-        
-    Returns:
-        List of checkpoint manifests, sorted by tick
-    """
+    """列出所有存档。"""
     checkpoints_dir = get_checkpoint_dir(project_dir)
-    
     if not checkpoints_dir.exists():
         return []
-    
     manifests = []
-    for checkpoint_dir in checkpoints_dir.iterdir():
-        if not checkpoint_dir.is_dir():
+    for mf in checkpoints_dir.glob("*_manifest.json"):
+        try:
+            manifests.append(CheckpointManifest.from_dict(json.loads(mf.read_text(encoding="utf-8"))))
+        except Exception:
             continue
-        
-        manifest_file = checkpoint_dir / "manifest.json"
-        if manifest_file.exists():
-            try:
-                with open(manifest_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    manifests.append(CheckpointManifest.from_dict(data))
-            except Exception:
-                # Skip invalid manifests
-                continue
-    
-    # Sort by tick
     return sorted(manifests, key=lambda m: m.tick)
 
 
-def restore_checkpoint(project_dir: Path, checkpoint_id: str, backup_current: bool = True) -> None:
-    """Restore project state from a checkpoint.
-    
-    Args:
-        project_dir: Path to project directory
-        checkpoint_id: Checkpoint ID to restore
-        backup_current: Create backup of current state before restoring
-        
-    Raises:
-        ValueError: If checkpoint not found
-        IOError: If restore fails
+def restore_checkpoint(project_dir: Path, checkpoint_id: str) -> dict:
+    """恢复存档——git reset --mixed。
+
+    旧路线自动分叉保存。
     """
-    checkpoints_dir = get_checkpoint_dir(project_dir)
-    checkpoint_path = checkpoints_dir / checkpoint_id
-    
-    if not checkpoint_path.exists():
-        raise ValueError(f"Checkpoint not found: {checkpoint_id}")
-    
-    # Backup current state if requested
-    if backup_current:
-        try:
-            # Load current tick
-            state_file = project_dir / "state.json"
-            if state_file.exists():
-                with open(state_file, 'r', encoding='utf-8') as f:
-                    state = json.load(f)
-                    current_tick = state.get('current_tick', 0)
-                
-                # Create backup checkpoint
-                backup_id = f"backup_before_restore_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-                backup_path = checkpoints_dir / backup_id
-                
-                # Copy current state
-                backup_path.mkdir(exist_ok=True)
-                for dir_name in ['memory', 'scenes', 'plans']:
-                    src = project_dir / dir_name
-                    if src.exists():
-                        dst = backup_path / dir_name
-                        shutil.copytree(src, dst)
-                
-                for file_name in ['state.json', 'config.yaml']:
-                    src = project_dir / file_name
-                    if src.exists():
-                        dst = backup_path / file_name
-                        shutil.copy2(src, dst)
-        except Exception as e:
-            print(f"Warning: Could not create backup: {e}")
-    
-    try:
-        state_file = project_dir / "state.json"
+    repo = GitRepo(project_dir)
+    repo.init()
 
-        # 记录回滚前的 tick
-        if state_file.exists():
-            old_state = json.loads(state_file.read_text(encoding="utf-8"))
-            old_tick = old_state.get("current_tick", 0)
-        else:
-            old_tick = 0
+    # 查找 tag
+    tags = repo.list_tags()
+    tag_info = None
+    for t in tags:
+        if t["name"] == checkpoint_id:
+            tag_info = t
+            break
+    if not tag_info:
+        # 兼容旧的 checkpoint 目录
+        raise ValueError(f"存档不存在: {checkpoint_id}")
 
-        # 恢复 memory、plans（覆盖式）
-        for dir_name in ["memory", "plans"]:
-            src = checkpoint_path / dir_name
-            dst = project_dir / dir_name
-            if dst.exists():
-                shutil.rmtree(dst)
-            if src.exists():
-                shutil.copytree(src, dst)
+    # 分叉
+    repo.fork_before_reset(tag_info["hash"])
 
-        # 恢复 state/config（场景目录不动——git 模型永久保留）
-        for file_name in ["state.json", "config.yaml"]:
-            src = checkpoint_path / file_name
-            dst = project_dir / file_name
-            if src.exists():
-                shutil.copy2(src, dst)
+    # reset --mixed（恢复 memory，保留 scenes）
+    result = repo.reset(tag_info["hash"], mode="mixed")
 
-        # git 分支管理：回滚到更早 tick → 保存分叉
-        from .branch_manager import fork_on_restore
-        fork_on_restore(project_dir, old_tick, backup_id if backup_current else "")
-
-    except Exception as e:
-        raise IOError(f"Error restoring checkpoint: {e}")
+    return {"restored": checkpoint_id, "tick": result["tick"], "branch": result["branch"]}
 
 
 def delete_checkpoint(project_dir: Path, checkpoint_id: str) -> None:
-    """Delete a checkpoint.
-    
-    Args:
-        project_dir: Path to project directory
-        checkpoint_id: Checkpoint ID to delete
-        
-    Raises:
-        ValueError: If checkpoint not found
-        IOError: If deletion fails
-    """
-    checkpoints_dir = get_checkpoint_dir(project_dir)
-    checkpoint_path = checkpoints_dir / checkpoint_id
-    
-    if not checkpoint_path.exists():
-        raise ValueError(f"Checkpoint not found: {checkpoint_id}")
-    
-    try:
-        shutil.rmtree(checkpoint_path)
-    except Exception as e:
-        raise IOError(f"Error deleting checkpoint: {e}")
+    """删除存档。"""
+    repo = GitRepo(project_dir)
+    repo.delete_tag(checkpoint_id)
+    # 也清理旧 manifest
+    mf = get_checkpoint_dir(project_dir) / f"{checkpoint_id}_manifest.json"
+    if mf.exists():
+        mf.unlink()
 
 
-def cleanup_old_checkpoints(project_dir: Path, keep_last: int = 5) -> List[str]:
-    """Remove old checkpoints, keeping only the most recent N.
-    
-    Args:
-        project_dir: Path to project directory
-        keep_last: Number of checkpoints to keep
-        
-    Returns:
-        List of deleted checkpoint IDs
-    """
-    manifests = list_checkpoints(project_dir)
-    
-    if len(manifests) <= keep_last:
-        return []
-    
-    # Sort by tick (oldest first)
-    manifests.sort(key=lambda m: m.tick)
-    
-    # Delete oldest checkpoints
-    to_delete = manifests[:-keep_last]
-    deleted = []
-    
-    for manifest in to_delete:
-        try:
-            delete_checkpoint(project_dir, manifest.checkpoint_id)
-            deleted.append(manifest.checkpoint_id)
-        except Exception:
-            # Continue even if one fails
-            continue
-    
-    return deleted
-
-
-def should_create_checkpoint(current_tick: int, checkpoint_interval: int, 
-                            last_checkpoint_tick: Optional[int] = None) -> bool:
-    """Determine if a checkpoint should be created.
-    
-    Args:
-        current_tick: Current tick number
-        checkpoint_interval: Interval between checkpoints
-        last_checkpoint_tick: Tick of last checkpoint (if any)
-        
-    Returns:
-        True if checkpoint should be created
-    """
+def should_create_checkpoint(current_tick: int, checkpoint_interval: int,
+                             last_checkpoint_tick=None) -> bool:
     if checkpoint_interval <= 0:
         return False
-    
     if last_checkpoint_tick is None:
-        # First checkpoint
         return current_tick > 0 and current_tick % checkpoint_interval == 0
-    
     return current_tick - last_checkpoint_tick >= checkpoint_interval
