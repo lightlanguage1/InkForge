@@ -32,4 +32,9 @@ reference_analysis.md
 logs/
 *.log
 
+# Frontend
+frontend/node_modules/
+frontend/dist/
+*.tar.gz
+
 work/**/portrait.json
