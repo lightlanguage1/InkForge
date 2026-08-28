@@ -130,13 +130,8 @@ class ContextBuilder:
             rejection_feedback: Feedback from a rejected plan for retry
         """
         foundation = project_state.get("story_foundation", {})
-        foundation_summary = (
-            f"Genre: {foundation.get('genre', '')}\n"
-            f"Premise: {foundation.get('premise', '')}\n"
-            f"Protagonist: {foundation.get('protagonist_archetype', '')}\n"
-            f"Setting: {foundation.get('setting', '')}\n"
-            f"Tone: {foundation.get('tone', '')}"
-        )
+        active_char_id = project_state.get("active_character", "")
+        foundation_summary = self._format_story_foundation(foundation, active_char_id)
         context = {
             "novel_name": project_state.get("novel_name", "Untitled"),
             "current_tick": project_state.get("current_tick", 0),
@@ -201,7 +196,23 @@ class ContextBuilder:
             beat_id = getattr(current_beat, "id", "") or ""
             description = getattr(current_beat, "description", "") or ""
             if beat_id and description:
-                context["next_plot_beat"] = f"{beat_id}: {description}"
+                parts = [f"**{beat_id}**: {description}"]
+                chars = getattr(current_beat, "characters_involved", []) or []
+                if chars:
+                    parts.append(f"  涉及角色：{', '.join(chars)}")
+                loc = getattr(current_beat, "location", "")
+                if loc:
+                    parts.append(f"  地点：{loc}")
+                tension = getattr(current_beat, "tension_target", None)
+                if tension is not None:
+                    parts.append(f"  目标张力：{tension}/10")
+                threads = getattr(current_beat, "plot_threads", []) or []
+                if threads:
+                    parts.append(f"  推进支线：{', '.join(threads)}")
+                prereqs = getattr(current_beat, "prerequisites", []) or []
+                if prereqs:
+                    parts.append(f"  前置条件：{', '.join(prereqs)}")
+                context["next_plot_beat"] = "\n".join(parts)
             else:
                 context["next_plot_beat"] = description or "None"
             # Store beat object for multi-stage planner (internal use)
@@ -302,7 +313,48 @@ class ContextBuilder:
             return f"{beat_id}: {description}"
         return description or ""
     
-    def _format_character(self, character) -> str:
+    def _format_story_foundation(self, foundation: dict, active_char_id: str = "") -> str:
+        """Format story foundation with protagonist details for prompt context.
+
+        Merges the sparse foundation fields with the active character's
+        description, personality, backstory, and goals so the LLM has a
+        complete picture of the protagonist constraints.
+        """
+        lines = [
+            f"类型：{foundation.get('genre', '')}",
+            f"前提：{foundation.get('premise', '')}",
+            f"背景：{foundation.get('setting', '')}",
+            f"基调：{foundation.get('tone', '')}",
+        ]
+
+        # Protagonist from foundation
+        protagonist = foundation.get("protagonist_archetype", "")
+        if protagonist:
+            lines.append(f"主角概要：{protagonist}")
+
+        # Protagonist details from character entity
+        if active_char_id:
+            char = self.memory.load_character(active_char_id)
+            if char:
+                name = char.display_name or char.name
+                lines.append(f"\n### 主角 {name} 详细设定（必须严格遵守）")
+                if char.description:
+                    lines.append(f"描述：{char.description}")
+                if char.personality:
+                    traits = getattr(char.personality, "core_traits", []) or []
+                    if traits:
+                        lines.append(f"性格特质：{', '.join(traits)}")
+                    flaws = getattr(char.personality, "flaws", []) or []
+                    if flaws:
+                        lines.append(f"性格缺陷：{', '.join(flaws)}")
+                if char.backstory:
+                    lines.append(f"背景故事：{char.backstory}")
+                if char.current_state.goals:
+                    lines.append(f"当前目标：{', '.join(char.current_state.goals)}")
+                if char.role:
+                    lines.append(f"角色定位：{char.role}")
+
+        return "\n".join(lines)
         """Format character details for prompt.
         
         Args:
@@ -423,30 +475,60 @@ class ContextBuilder:
     def _format_relevant_lore(self) -> str:
         """Show top 10 lore items relevant to recent scenes (via ChromaDB).
 
-        Falls back to showing the 10 most important lore items if
-        ChromaDB has no results. No longer truncates content to 200 chars
-        — the full lore content is essential for planner compliance.
+        Falls back to critical / important lore entries when ChromaDB
+        returns fewer than 5 results, ensuring the Planner always sees
+        the most important world rules regardless of semantic match.
         """
+        results = []
         try:
             recent_ids = self.memory.list_scenes()
-            if not recent_ids or len(recent_ids) < 1:
-                return ""
-            last_scene = self.memory.load_scene(recent_ids[-1])
-            if not last_scene or not last_scene.summary:
-                return ""
-            query = " ".join(last_scene.summary) if isinstance(last_scene.summary, list) else str(last_scene.summary)
-            results = self.vector.search_lore(query, n_results=10)
+            if recent_ids and len(recent_ids) >= 1:
+                last_scene = self.memory.load_scene(recent_ids[-1])
+                if last_scene and last_scene.summary:
+                    query = " ".join(last_scene.summary) if isinstance(last_scene.summary, list) else str(last_scene.summary)
+                    results = self.vector.search_lore(query, n_results=10)
         except Exception:
-            results = []
+            pass
 
-        if not results:
+        # Build a set of lore content already covered by ChromaDB results
+        seen_content = set()
+        for r in (results or []):
+            doc = r.get("document", "") or r.get("text", "") or ""
+            if doc:
+                seen_content.add(doc[:80])
+
+        # Fallback: always append critical / important lore not already shown
+        all_lore = self.memory.load_all_lore() if hasattr(self.memory, 'load_all_lore') else []
+        high_priority = [l for l in all_lore if (l.importance or "") in ("critical", "关键", "important", "重要")]
+        # Also include up to 3 "normal" lore items for coverage
+        normal_lore = [l for l in all_lore if (l.importance or "") not in ("critical", "关键", "important", "重要")]
+
+        fallback_entries = []
+        for l in high_priority + normal_lore[:3]:
+            content = getattr(l, "content", "")[:80]
+            if content and content not in seen_content:
+                cat = getattr(l, "category", "其他")
+                tag = getattr(l, "lore_type", "规则")
+                imp = getattr(l, "importance", "")
+                fallback_entries.append(f"- [{cat}·{tag}] [{imp}] {getattr(l, 'content', '')}")
+                seen_content.add(content)
+
+        if not results and not fallback_entries:
             return ""
 
         lines = ["### 相关世界观规则（必须遵守）", ""]
-        for r in results:
+        for r in (results or []):
             doc = r.get("document", "") or r.get("text", "") or ""
             if doc:
                 lines.append(f"- {doc}")
+
+        if fallback_entries:
+            if results:
+                lines.append("")
+                lines.append("**补充——所有高优先级世界观规则（以下同样必须遵守）：**")
+                lines.append("")
+            lines.extend(fallback_entries)
+
         return "\n".join(lines) if len(lines) > 2 else ""
 
     def _get_qa_summary(self) -> str:

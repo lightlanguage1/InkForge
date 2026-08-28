@@ -481,13 +481,16 @@ class MemoryManager:
         """List all scene IDs."""
         return sorted([f.stem for f in self.scenes_path.glob("*.json")])
 
-    def save_scene_qa(self, scene_id: str, tick: int, evaluation: Dict[str, Any]):
-        """Save QA evaluation data for a scene."""
+    def save_scene_qa(self, scene_id: str, tick: int, evaluation: Dict[str, Any],
+                       quality: Dict[str, Any] = None):
+        """Save QA evaluation data + optional quality score for a scene."""
         data = {
             "scene_id": scene_id,
             "tick": tick,
             "evaluation": evaluation,
         }
+        if quality:
+            data["quality"] = quality
         path = self.qa_path / f"{scene_id}.json"
         self._write_json(path, data)
 

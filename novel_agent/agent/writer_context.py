@@ -64,13 +64,8 @@ class WriterContextBuilder:
         novel_name = project_state.get("novel_name", "Untitled Novel")
         current_tick = project_state.get("current_tick", 0)
         foundation = project_state.get("story_foundation", {})
-        foundation_summary = (
-            f"Genre: {foundation.get('genre', '')}\n"
-            f"Premise: {foundation.get('premise', '')}\n"
-            f"Protagonist: {foundation.get('protagonist_archetype', '')}\n"
-            f"Setting: {foundation.get('setting', '')}\n"
-            f"Tone: {foundation.get('tone', '')}"
-        )
+        active_char_id = project_state.get("active_character", "")
+        foundation_summary = self._format_story_foundation(foundation, active_char_id)
         scene_intention = plan.get("scene_intention", "Continue the story")
         key_change = plan.get("key_change", "Advance the plot")
         progress_milestone = plan.get("progress_milestone", "")
@@ -174,6 +169,39 @@ class WriterContextBuilder:
             '在满足用户方向的前提下，保持故事连续性和角色性格一致。'
         )
     
+    def _format_story_foundation(self, foundation: dict, active_char_id: str = "") -> str:
+        """Format story foundation with protagonist details for prompt context."""
+        lines = [
+            f"类型：{foundation.get('genre', '')}",
+            f"前提：{foundation.get('premise', '')}",
+            f"背景：{foundation.get('setting', '')}",
+            f"基调：{foundation.get('tone', '')}",
+        ]
+        protagonist = foundation.get("protagonist_archetype", "")
+        if protagonist:
+            lines.append(f"主角概要：{protagonist}")
+        if active_char_id:
+            char = self.memory.load_character(active_char_id)
+            if char:
+                name = char.display_name or char.name
+                lines.append(f"\n### 主角 {name} 详细设定（必须严格遵守）")
+                if char.description:
+                    lines.append(f"描述：{char.description}")
+                if char.personality:
+                    traits = getattr(char.personality, "core_traits", []) or []
+                    if traits:
+                        lines.append(f"性格特质：{', '.join(traits)}")
+                    flaws = getattr(char.personality, "flaws", []) or []
+                    if flaws:
+                        lines.append(f"性格缺陷：{', '.join(flaws)}")
+                if char.backstory:
+                    lines.append(f"背景故事：{char.backstory}")
+                if char.current_state.goals:
+                    lines.append(f"当前目标：{', '.join(char.current_state.goals)}")
+                if char.role:
+                    lines.append(f"角色定位：{char.role}")
+        return "\n".join(lines)
+
     def _get_character_details(self, character_id: str) -> tuple[str, str]:
         """Get character name and formatted details.
         
@@ -601,25 +629,37 @@ class WriterContextBuilder:
     def _format_world_rules(self) -> str:
         """Format world lore rules for the Writer prompt.
 
-        Collects critical and important lore entries so the Writer is
-        aware of established world constraints.
+        Priority: 关键 > 重要 > (稀有度) > 普通.
+        Always includes all critical/important entries; fills remaining
+        slots with normal entries sorted by rarity (fewer = more distinctive).
         """
         lore_entries = self.memory.load_all_lore()
         if not lore_entries:
             return ""
-        # 数据驱动：按稀有度排序，条目少的重要性值=高优先级
+
+        # Priority tiers: explicit labels first, then rarity within each tier
+        HIGH_PRIORITY = {"critical", "关键", "important", "重要"}
+        critical = [l for l in lore_entries if (l.importance or "") in HIGH_PRIORITY]
+        normal = [l for l in lore_entries if (l.importance or "") not in HIGH_PRIORITY]
+
+        # Within normal tier, sort by rarity (fewer occurrences = more distinctive)
         imp_counts: dict[str, int] = {}
-        for l in lore_entries:
+        for l in normal:
             imp = l.importance or "未知"
             imp_counts[imp] = imp_counts.get(imp, 0) + 1
-        sorted_imps = sorted(imp_counts, key=lambda k: imp_counts[k])
-        high_imps = set(sorted_imps[:max(1, len(sorted_imps)//2)])
-        important = [l for l in lore_entries if (l.importance or "未知") in high_imps]
-        if not important:
-            important = lore_entries[:3]
+        normal.sort(key=lambda l: imp_counts.get(l.importance or "未知", 99))
+
+        # Show all critical + up to 5 normal, capped at 10 total
+        shown = critical + normal[:max(0, 10 - len(critical))]
+
+        if not shown:
+            return ""
+
         lines = ["\n## 世界观规则（请遵守）\n"]
-        for l in important[:5]:
+        for l in shown[:10]:
             cat = l.category or "其他"
             tag = l.lore_type or "事实"
-            lines.append(f"- [{cat}·{tag}] {l.content}")
+            imp = l.importance or ""
+            imp_mark = f"[{imp}] " if imp else ""
+            lines.append(f"- [{cat}·{tag}] {imp_mark}{l.content}")
         return "\n".join(lines)

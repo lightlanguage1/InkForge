@@ -97,10 +97,12 @@ DEFAULT_CONFIG = {
         'planner_model': 'deepseek-chat',
         'planner_backend': 'api',
         'fallback_planner': 'deepseek-chat',
-        # Extractor / Evaluator / Agent tools: local llama-server — cost efficiency
-        'extractor_model': 'local-llama',
+        # Extractor / Evaluator / Agent tools.
+        # Defaults to empty → same as main LLM (no separate connection).
+        # Set to e.g. 'local-llama' to use a local server for cost efficiency.
+        'extractor_model': '',
         'extractor_backend': 'api',
-        'fallback_extractor': 'deepseek-chat',
+        'fallback_extractor': '',
     },
 }
 

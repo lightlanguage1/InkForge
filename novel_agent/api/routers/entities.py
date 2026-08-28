@@ -314,7 +314,7 @@ def _rename_in_project(project_dir: Path, old_name: str, new_name: str, characte
                 logger.warning("Failed to rename in %s", char_file.name)
 
     # 3. Plot outline — direct replace
-    plot_file = project_dir / "memory" / "plot_outline.json"
+    plot_file = project_dir / "plot_outline.json"
     if plot_file.exists():
         try:
             text = plot_file.read_text(encoding="utf-8")

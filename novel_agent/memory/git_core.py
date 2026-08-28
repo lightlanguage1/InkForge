@@ -96,8 +96,15 @@ class GitRepo:
 
     # ── tree 快照（完整工作区） ─────────────────────────
 
+    # Project root files included in every snapshot alongside directories.
+    _ROOT_FILES = ["state.json", "plot_outline.json", "config.yaml"]
+
     def _snapshot_working_tree(self) -> str:
-        """序列化整个工作区 → JSON 字符串。包含 memory/（不含 ChromaDB index）+ state.json + scenes/。"""
+        """序列化整个工作区 → JSON 字符串。
+
+        包含 memory/（不含 ChromaDB index）、scenes/、以及项目根目录的
+        state.json / plot_outline.json / config.yaml。
+        """
         data = {"_type": "tree"}
         for subdir in ["memory", "scenes"]:
             d = self.project_dir / subdir
@@ -105,9 +112,10 @@ class GitRepo:
                 data[subdir] = _serialize_directory(d, skip_patterns=["index/", ".sqlite3", ".bin", "chroma.sqlite3"])
             else:
                 data[subdir] = {}
-        sf = self.project_dir / "state.json"
-        if sf.exists():
-            data["state_json"] = sf.read_text(encoding="utf-8")
+        for root_file in self._ROOT_FILES:
+            f = self.project_dir / root_file
+            if f.exists():
+                data[f"root_{root_file}"] = f.read_text(encoding="utf-8")
         return json.dumps(data, ensure_ascii=False, separators=(",", ":"))
 
     def _restore_working_tree(self, json_data: str) -> None:
@@ -121,7 +129,7 @@ class GitRepo:
         if data.get("_type") == "tree":
             mem_data = data.get("memory", "{}")
             scenes_data = data.get("scenes")
-            state_raw = data.get("state_json")
+            state_raw = data.get("state_json") or data.get("root_state.json")
         else:
             mem_data = json_data
             scenes_data = None
@@ -152,9 +160,16 @@ class GitRepo:
                 shutil.rmtree(scenes_dir)
             _restore_directory(scenes_dir, scenes_data if isinstance(scenes_data, str) else json.dumps(scenes_data, ensure_ascii=False))
 
-        # 恢复 state.json（仅新格式有此字段）
+        # 恢复 state.json（兼容新旧键名）
         if state_raw:
             (self.project_dir / "state.json").write_text(state_raw, encoding="utf-8")
+
+        # 恢复项目根目录文件（plot_outline.json, config.yaml）
+        for root_file in self._ROOT_FILES:
+            key = f"root_{root_file}"
+            content = data.get(key)
+            if content:
+                (self.project_dir / root_file).write_text(content, encoding="utf-8")
 
         # 恢复后 ChromaDB 索引可能和实体不同步——标记待刷新
         # 不删除不重建，只记录。下次访问时 VectorStore 检测并自动修复。

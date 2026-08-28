@@ -89,23 +89,17 @@ class StoryAgent:
         self._router = ModelRouter(config)
 
         # Dual-connection architecture:
-        #   api_llm  → DeepSeek (Writer, Planner) — creative quality
-        #   agent_llm → Ollama local (Evaluator, Extractors) — cost efficiency
+        #   self.llm       → Writer + Planner (creative quality)
+        #   self.agent_llm → Evaluator + Extractors (cost efficiency)
+        #
+        # When no separate extractor model is configured (empty or same as
+        # main model), agent_llm reuses self.llm — both tasks share one
+        # API connection.  When a different model is configured (e.g. a
+        # local Ollama server) it is used for agent tasks; if that model
+        # is unreachable the initialisation falls back to self.llm.
         backend_type = "anthropic" if "claude" in str(config.get("llm.model", "")).lower() else "api"
         self.llm = LLMProvider(llm_interface, backend_type)
-
-        if self._router.enabled:
-            try:
-                _agent_raw = self._router.get_interface_for_task("extractor")
-                self.agent_llm = LLMProvider(_agent_raw, "api")
-                logger.info("Agent LLM: %s (backend=%s)",
-                            self._router.get_model_for_task("extractor"),
-                            self._router.get_backend_for_task("extractor"))
-            except Exception:
-                logger.warning("Agent LLM init failed, using API fallback")
-                self.agent_llm = self.llm
-        else:
-            self.agent_llm = self.llm
+        self.agent_llm = self._init_agent_llm(llm_interface, config, backend_type)
 
         # Initialize components
         self.memory = MemoryManager(self.project_path)
@@ -144,6 +138,55 @@ class StoryAgent:
         # Load state
         self.state = self._load_state()
 
+    def _init_agent_llm(self, llm_interface, config: dict, backend_type: str):
+        """Initialise the agent LLM for evaluator / extractor tasks.
+
+        When no separate extractor model is configured (empty string or
+        same as the main model), reuses *self.llm* so both task groups
+        share one API connection — the common case in cloud deployments.
+
+        When a different model is configured (e.g. a local Ollama server
+        for cost efficiency), attempts to initialise it.  If that model
+        is unreachable the initialisation falls back to *self.llm*.
+        """
+        from ..tools.provider import LLMProvider
+
+        # Router disabled → single-LLM mode
+        if not self._router.enabled:
+            logger.info("Router disabled — agent_llm reuses main LLM")
+            return self.llm
+
+        extractor_model = self._router.get_model_for_task("extractor")
+
+        # Empty or same as main model → reuse the existing connection
+        if not extractor_model:
+            logger.info("No extractor model configured — agent_llm reuses main LLM")
+            return self.llm
+
+        main_model = config.get("llm.model", "")
+        if extractor_model == main_model:
+            logger.info(
+                "Extractor model matches main (%s) — agent_llm reuses main LLM",
+                main_model,
+            )
+            return self.llm
+
+        # Different model configured → try to initialise it
+        try:
+            _agent_raw = self._router.get_interface_for_task("extractor")
+            agent = LLMProvider(_agent_raw, "api")
+            logger.info(
+                "Agent LLM: %s (backend=%s)",
+                extractor_model,
+                self._router.get_backend_for_task("extractor"),
+            )
+            return agent
+        except Exception as exc:
+            logger.warning(
+                "Agent LLM init failed (%s), falling back to main LLM", exc
+            )
+            return self.llm
+
     def _load_state(self) -> dict:
         """Load project state from state.json."""
         state_file = self.project_path / "state.json"
@@ -156,15 +199,25 @@ class StoryAgent:
         write_json(str(self.project_path / "state.json"), self.state)
 
     def _auto_checkpoint(self):
-        """Auto-save checkpoint every 3 chapters (ticks)."""
-        tick = self.state["current_tick"]
-        if tick > 0 and tick % 3 == 0:
+        """Auto-save checkpoint every 3 scenes.
+
+        Uses the actual scene count (from scene_*.md files) rather than
+        ``current_tick``, so the checkpoint label always matches the
+        number of completed scenes regardless of tick semantics.
+        """
+        scene_files = list(self.project_path.glob("scenes/scene_*.md"))
+        scene_count = len(scene_files)
+        if scene_count > 0 and scene_count % 3 == 0:
+            # 避免同一场景数重复存档
+            if getattr(self, "_last_auto_checkpoint_count", 0) == scene_count:
+                return
             try:
                 from ..memory.checkpoint import create_checkpoint
-                create_checkpoint(self.project_path, tick, "auto")
-                logger.info("Auto-checkpoint saved at tick %d", tick)
+                checkpoint_id = create_checkpoint(self.project_path, scene_count, "auto")
+                self._last_auto_checkpoint_count = scene_count
+                logger.info("Auto-checkpoint saved: %s (%d scenes)", checkpoint_id, scene_count)
             except Exception as e:
-                logger.warning("Auto-checkpoint failed at tick %d: %s", tick, e)
+                logger.warning("Auto-checkpoint failed at %d scenes: %s", scene_count, e)
 
     def tick(self, notes: str = "") -> Dict[str, Any]:
         """Execute one story generation tick.
@@ -233,7 +286,7 @@ class StoryAgent:
             scene_id = self.committer.commit_scene(scene_data, tick, plan)
 
             # Phase 3: Post-commit
-            self._save_qa(scene_id, tick, eval_result, plan)
+            self._save_qa(scene_id, tick, eval_result, plan, quality_info=quality_info)
             self._verify_beat(scene_id, plan, current_beat, scene_data, tick=tick)
             self._save_tension(scene_id, tension)
 
@@ -492,11 +545,11 @@ class StoryAgent:
                         self.memory.save_character(char)
                     break
 
-    def _save_qa(self, scene_id, tick, eval_result, plan):
-        if not eval_result:
+    def _save_qa(self, scene_id, tick, eval_result, plan, quality_info=None):
+        if not eval_result and not quality_info:
             return
         try:
-            self.memory.save_scene_qa(scene_id, tick, eval_result)
+            self.memory.save_scene_qa(scene_id, tick, eval_result, quality=quality_info)
         except (IOError, OSError) as e:
             logger.warning("Failed to save scene QA: %s", e)
         try:
@@ -854,9 +907,9 @@ class StoryAgent:
             logger.info("   10. 提交场景...")
             scene_id = self.committer.commit_scene(scene_data, tick, plan)
 
-            if eval_result:
+            if eval_result or quality_info:
                 try:
-                    self.memory.save_scene_qa(scene_id, tick, eval_result)
+                    self.memory.save_scene_qa(scene_id, tick, eval_result, quality=quality_info)
                 except (IOError, OSError) as e:
                     logger.warning("Failed to save scene QA (first tick): %s", e)
                 try:

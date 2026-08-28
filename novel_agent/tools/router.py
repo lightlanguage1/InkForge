@@ -37,10 +37,16 @@ class ModelRouter:
         return self._enabled
 
     def get_model_for_task(self, task: str) -> str:
-        """Return the configured model name for *task*."""
+        """Return the configured model name for *task*.
+
+        Returns empty string when the task model is not explicitly set,
+        signalling the caller to use the main LLM instead.
+        """
         if not self._enabled:
             return self._default_model
-        return self._router_cfg.get(f"{task}_model", self._default_model) if isinstance(self._router_cfg, dict) else self._default_model
+        if isinstance(self._router_cfg, dict):
+            return self._router_cfg.get(f"{task}_model", "")
+        return ""
 
     def get_backend_for_task(self, task: str) -> str:
         """Return the configured backend for *task*."""
@@ -57,6 +63,10 @@ class ModelRouter:
     def get_interface_for_task(self, task: str) -> LLMClient:
         """Return an initialised LLM client suitable for *task*.
 
+        When the task model is empty (not configured), raises ValueError
+        immediately so the caller can fall back to the main LLM without
+        a failed connection attempt.
+
         Tries the primary backend/model.  If a fallback is configured
         and the primary raises a ``ConnectionError`` / ``OSError`` /
         ``RuntimeError``, attempts the fallback (with ``codex`` backend)
@@ -64,6 +74,9 @@ class ModelRouter:
         """
         model = self.get_model_for_task(task)
         backend = self.get_backend_for_task(task)
+
+        if not model:
+            raise ValueError(f"No model configured for task '{task}'")
 
         try:
             return initialize_llm(backend=backend, model=model)

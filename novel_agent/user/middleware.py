@@ -18,6 +18,7 @@ _NO_AUTH_PATHS = {
 }
 _NO_AUTH_PREFIXES = (
     "/api/v1/log",
+    "/api/v1/announcements",   # 公告公开可读
     "/health",
     "/docs",
     "/openapi.json",
